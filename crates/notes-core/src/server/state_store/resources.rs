@@ -160,6 +160,35 @@ impl Store {
 }
 
 impl ProjectStore {
+    pub(in crate::server) fn resource_with_revision(
+        &self,
+        id: &str,
+        include_deleted: bool,
+    ) -> Result<(Resource, u64), ApiError> {
+        validate_id(id)?;
+        self.store.with_read(|connection| {
+            let row = connection
+                .query_row(
+                    "SELECT resources.id,resources.project,resources.path,resources.kind,
+                            resources.deleted,COALESCE(resource_epochs.revision,0)
+                     FROM resources
+                     LEFT JOIN resource_epochs ON resource_epochs.project=resources.project
+                     WHERE resources.id=?1 AND resources.project=?2 AND (?3 OR resources.deleted=0)",
+                    params![id, self.project, include_deleted],
+                    |row| Ok((from_row(row)?, row.get(5)?)),
+                )
+                .optional()
+                .map_err(db_error)?
+                .ok_or_else(|| {
+                    ApiError::new(
+                        axum::http::StatusCode::NOT_FOUND,
+                        "This resource no longer exists.",
+                    )
+                })?;
+            Ok((resource(row.0)?, row.1))
+        })
+    }
+
     pub(in crate::server) fn resource_at_path(
         &self,
         path: &str,

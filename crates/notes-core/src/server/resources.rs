@@ -93,6 +93,19 @@ impl AppState {
         self.resource_path(id, ResourceKind::Document, false)
     }
 
+    pub(super) fn document_path_with_revision(&self, id: &str) -> Result<(String, u64), ApiError> {
+        let (resource, revision) = self
+            .root
+            .resource_store()?
+            .resource_with_revision(id, false)?;
+        if resource.kind != ResourceKind::Document {
+            return Err(ApiError::bad_request(
+                "The resource ID has a different type.",
+            ));
+        }
+        Ok((resource.path, revision))
+    }
+
     fn resource_access(&self, resource: &Resource, document: Option<&str>) -> Result<(), ApiError> {
         match resource.kind {
             ResourceKind::Document | ResourceKind::Directory => {

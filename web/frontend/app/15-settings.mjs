@@ -206,7 +206,8 @@ function populateSettings() {
   settingsUi.line_height_value.value = `${webPreferences.lineHeightPercent}%`;
   settingsUi.density.value = webPreferences.density;
   setText(element("settings-library-label"), activeProject ? "Current project" : "Current folder");
-  settingsUi.library_root.value = activeProject?.name ?? currentRoot ?? "Not connected";
+  settingsUi.library_root.value = activeProject?.name
+    ?? currentRoot?.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, "") ?? "Not connected";
   ui.settingsHiddenPatterns.value = hiddenPatterns.join("\n");
   settingsUi.tree_refresh.value = String(webPreferences.treeRefreshSeconds);
   ui.settingsPageWidth.value = document.documentElement.dataset.pageWidth || "balanced";

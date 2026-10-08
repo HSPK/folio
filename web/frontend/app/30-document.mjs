@@ -159,7 +159,7 @@ function useDocument(payload, root, url, mode, message = "") {
   if (["editor", "split"].includes(ui.panes.dataset.view)) ui.editor.prepare();
   commitUrl(makeNoteUrl(url, payload.id, url.hash), mode);
   notice(element("rich-warning"), "");
-  loadInlineEditor();
+  loadInlineEditorAfterPaint();
   conflict = false;
   notice(ui.conflictMessage, "");
   documentNotice(message, message ? "success" : "");
@@ -244,7 +244,9 @@ async function navigateTo(path, hash = "", { mode = "push", url, reload = false 
   const originalDocument = documentId;
   const root = currentRoot;
   loadingDocument = { ticket, controller, mode };
-  notice(ui.loadingMessage, `${reload ? "Reloading" : "Opening"} “${path}”…${activeDocument ? " You can keep typing to cancel." : ""}`);
+  const known = resourceIndex.get(path)?.path ?? (isResourceId(path) ? null : path);
+  const label = known ? `“${known}”` : "the note";
+  notice(ui.loadingMessage, `${reload ? "Reloading" : "Opening"} ${label}…${activeDocument ? " You can keep typing to cancel." : ""}`);
   if (activeDocument) previewStatus("Waiting for the requested note…");
   refreshControls();
   try {
@@ -257,14 +259,16 @@ async function navigateTo(path, hash = "", { mode = "push", url, reload = false 
       return switchProject(resource.project, { url: targetUrl, mode });
     }
     targetUrl = makeNoteUrl(targetUrl, resource.id, hash);
-    const payload = expectDocument(await api(`/api/document?id=${encodeURIComponent(resource.id)}`, { signal: controller.signal }));
+    const prefetched = reload ? null : await prefetchedDocument(resource.id, controller.signal);
+    const payload = expectDocument(prefetched
+      ?? await api(`/api/document?id=${encodeURIComponent(resource.id)}`, { signal: controller.signal }));
     if (!documentGate.isCurrent(ticket) || originalRevision !== editorRevision || originalDocument !== documentId) return false;
     if (root !== currentRoot) throw new ApiError("The notes folder changed while this file was opening. Try opening it again.");
     useDocument(payload, root, targetUrl, mode, reload ? "Reloaded from disk." : "");
     return true;
   } catch (error) {
     if (!documentGate.isCurrent(ticket) || aborted(error)) return false;
-    documentNotice(`Could not ${reload ? "reload" : "open"} “${path}”: ${error.message} Your current editor text has been kept.`, "error");
+    documentNotice(`Could not ${reload ? "reload" : "open"} ${label}: ${error.message} Your current editor text has been kept.`, "error");
     connectionFailure(error);
     if (mode === "pop") restoreCommittedUrl();
     if (activeDocument) schedulePreview(0);

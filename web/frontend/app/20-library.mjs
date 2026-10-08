@@ -1,6 +1,12 @@
 let fileFilterFrame = null;
 let selectedFileButton = null;
 let treeRefreshTimer = null;
+let treeTabStop = null;
+const TREE_ITEMS = ".file-button, .directory > summary";
+
+function fileLabel(file) {
+  return file.title ?? (file.name.replace(/\.(?:md|markdown)$/i, "") || file.name);
+}
 
 function scheduleTreeRefresh() {
   window.clearTimeout(treeRefreshTimer);
@@ -62,6 +68,7 @@ function renderFiles() {
       details.dataset.path = directory.path;
       details.open = filtering || !collapsedFolders.has(directory.path);
       const summary = document.createElement("summary");
+      summary.tabIndex = -1;
       summary.draggable = true;
       summary.dataset.entryPath = directory.path;
       summary.dataset.entryKind = "directory";
@@ -75,6 +82,7 @@ function renderFiles() {
       const action = (type, title, path) => {
         const button = document.createElement("button");
         button.type = "button";
+        button.tabIndex = -1;
         button.title = title;
         button.setAttribute("aria-label", `${title} in ${directory.title ?? directory.name}`);
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -103,6 +111,7 @@ function renderFiles() {
       appendBranch(directory, children);
       details.append(summary, children);
       details.addEventListener("toggle", () => {
+        if (!details.open && treeTabStop !== summary && details.contains(treeTabStop)) setTreeTabStop(summary);
         if (ui.filter.value.trim() || !details.isConnected) return;
         if (details.open) collapsedFolders.delete(directory.path);
         else collapsedFolders.add(directory.path);
@@ -115,6 +124,7 @@ function renderFiles() {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "file-button";
+      button.tabIndex = -1;
       button.draggable = true;
       button.dataset.path = file.path;
       button.dataset.entryPath = file.path;
@@ -127,7 +137,7 @@ function renderFiles() {
       }
       const name = document.createElement("span");
       name.className = "file-name";
-      name.textContent = file.title ?? file.name;
+      name.textContent = fileLabel(file);
       button.append(name);
       item.append(button);
       list.append(item);
@@ -137,6 +147,7 @@ function renderFiles() {
   appendBranch(tree, fragment);
   ui.fileList.replaceChildren(fragment);
   selectedFileButton = nextSelectedFileButton;
+  syncTreeTabStop();
   renderTreeStatus(libraryFiles, visible);
 }
 
@@ -164,7 +175,7 @@ function reconcileFileTree(previousFiles, previousDirectories) {
   for (let index = 0; index < files.length; index += 1) {
     if ((previousFiles[index].title ?? null) === (files[index].title ?? null)) continue;
     const label = fileNodes.get(files[index].path)?.querySelector(".file-name");
-    if (label) label.textContent = files[index].title ?? files[index].name;
+    if (label) label.textContent = fileLabel(files[index]);
   }
   for (let index = 0; index < directories.length; index += 1) {
     if ((previousDirectories[index].title ?? null) === (directories[index].title ?? null)) continue;
@@ -207,9 +218,11 @@ function updateFileSelection() {
     selectedFileButton.removeAttribute("aria-current");
   }
   selectedFileButton = next;
-  if (!selectedFileButton) return;
+  if (!selectedFileButton) return syncTreeTabStop();
   selectedFileButton.setAttribute("aria-current", "page");
   revealFileButton(selectedFileButton);
+  syncTreeTabStop();
+  selectedFileButton.scrollIntoView({ block: "nearest" });
 }
 
 function revealFileButton(button) {

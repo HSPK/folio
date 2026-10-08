@@ -10,7 +10,7 @@ use super::{
 use crate::server::{ApiError, frontmatter, markdown};
 
 const MAX_CACHE_BYTES: usize = 32 * 1024 * 1024;
-const MAX_CACHE_ENTRIES: usize = 16;
+const MAX_CACHE_ENTRIES: usize = 64;
 const MAX_CACHED_DOCUMENT_BYTES: usize = 8 * 1024 * 1024;
 
 impl Document {
@@ -75,8 +75,12 @@ impl Root {
         Ok(document)
     }
 
-    pub(in crate::server) fn document_json(&self, path: &str) -> Result<Bytes, ApiError> {
-        self.resource_revision()?;
+    pub(in crate::server) fn document_json_with_revision(
+        &self,
+        path: &str,
+        revision: u64,
+    ) -> Result<Bytes, ApiError> {
+        self.apply_resource_revision(revision)?;
         let (mut file, fingerprint) = self.open_document(path)?;
         if let Ok(mut cache) = self.document_cache.lock() {
             if let Some(json) = cache.get_json(path, fingerprint) {
@@ -335,12 +339,18 @@ mod tests {
         assert!(!cache.entries.contains_key("folder/0.md"));
         assert!(
             cache
-                .get("folder/16.md", platform::EntryFingerprint([16_u64; 5]))
+                .get(
+                    &format!("folder/{MAX_CACHE_ENTRIES}.md"),
+                    platform::EntryFingerprint([MAX_CACHE_ENTRIES as u64; 5])
+                )
                 .is_some()
         );
         assert!(
             cache
-                .get("folder/16.md", platform::EntryFingerprint([17_u64; 5]))
+                .get(
+                    &format!("folder/{MAX_CACHE_ENTRIES}.md"),
+                    platform::EntryFingerprint([(MAX_CACHE_ENTRIES + 1) as u64; 5])
+                )
                 .is_none()
         );
         cache.remove_tree("folder");

@@ -42,6 +42,9 @@ fn ids_are_persistent_scoped_and_not_derived_from_path_or_content() {
             .id,
         resource.id
     );
+    let (resolved, revision) = a.resource_with_revision(&resource.id, false).unwrap();
+    assert_eq!(resolved.path, resource.path);
+    assert_eq!(revision, a.identity_revision().unwrap());
     assert_ne!(
         b.identify("notes/one.md", ResourceKind::Document)
             .unwrap()

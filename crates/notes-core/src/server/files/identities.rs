@@ -15,17 +15,22 @@ pub(in crate::server) struct Reference {
 }
 
 impl Root {
-    pub(in crate::server) fn resource_revision(&self) -> Result<u64, ApiError> {
-        let Some(store) = self.resources.get() else {
-            return Ok(0);
-        };
-        let revision = store.identity_revision()?;
+    pub(in crate::server) fn apply_resource_revision(&self, revision: u64) -> Result<(), ApiError> {
         if self.resource_epoch.swap(revision, Ordering::AcqRel) != revision {
             self.document_cache
                 .lock()
                 .map_err(|_| ApiError::internal("The document cache is unavailable."))?
                 .clear();
         }
+        Ok(())
+    }
+
+    pub(in crate::server) fn resource_revision(&self) -> Result<u64, ApiError> {
+        let Some(store) = self.resources.get() else {
+            return Ok(0);
+        };
+        let revision = store.identity_revision()?;
+        self.apply_resource_revision(revision)?;
         Ok(revision)
     }
 

@@ -314,6 +314,23 @@ function loadInlineEditor() {
   void inlineEditor.load(ui.editor.value, activeDocument.path);
 }
 
+// Large notes block the main thread while the formatted editor parses them. Paint the
+// selection, title and an empty busy page first so the switch responds immediately.
+const DEFERRED_EDITOR_CHARS = 48 * 1024;
+function loadInlineEditorAfterPaint() {
+  if (!activeDocument || ui.panes.dataset.view !== "rich" || ui.editor.value.length < DEFERRED_EDITOR_CHARS) {
+    loadInlineEditor();
+    return;
+  }
+  inlineEditorPath = null;
+  inlineEditor.clear();
+  element("rich-editor").setAttribute("aria-busy", "true");
+  const id = documentId;
+  window.requestAnimationFrame(() => window.setTimeout(() => {
+    if (id === documentId) loadInlineEditor();
+  }, 0));
+}
+
 function stopAppearancePolling() {
   window.clearTimeout(appearanceTimer);
   appearanceTimer = null;

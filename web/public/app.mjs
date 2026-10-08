@@ -315,6 +315,23 @@ function loadInlineEditor() {
   void inlineEditor.load(ui.editor.value, activeDocument.path);
 }
 
+// Large notes block the main thread while the formatted editor parses them. Paint the
+// selection, title and an empty busy page first so the switch responds immediately.
+const DEFERRED_EDITOR_CHARS = 48 * 1024;
+function loadInlineEditorAfterPaint() {
+  if (!activeDocument || ui.panes.dataset.view !== "rich" || ui.editor.value.length < DEFERRED_EDITOR_CHARS) {
+    loadInlineEditor();
+    return;
+  }
+  inlineEditorPath = null;
+  inlineEditor.clear();
+  element("rich-editor").setAttribute("aria-busy", "true");
+  const id = documentId;
+  window.requestAnimationFrame(() => window.setTimeout(() => {
+    if (id === documentId) loadInlineEditor();
+  }, 0));
+}
+
 function stopAppearancePolling() {
   window.clearTimeout(appearanceTimer);
   appearanceTimer = null;
@@ -1888,7 +1905,8 @@ function populateSettings() {
   settingsUi.line_height_value.value = `${webPreferences.lineHeightPercent}%`;
   settingsUi.density.value = webPreferences.density;
   setText(element("settings-library-label"), activeProject ? "Current project" : "Current folder");
-  settingsUi.library_root.value = activeProject?.name ?? currentRoot ?? "Not connected";
+  settingsUi.library_root.value = activeProject?.name
+    ?? currentRoot?.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, "") ?? "Not connected";
   ui.settingsHiddenPatterns.value = hiddenPatterns.join("\n");
   settingsUi.tree_refresh.value = String(webPreferences.treeRefreshSeconds);
   ui.settingsPageWidth.value = document.documentElement.dataset.pageWidth || "balanced";
@@ -2968,6 +2986,12 @@ document.addEventListener("keydown", (event) => {
 let fileFilterFrame = null;
 let selectedFileButton = null;
 let treeRefreshTimer = null;
+let treeTabStop = null;
+const TREE_ITEMS = ".file-button, .directory > summary";
+
+function fileLabel(file) {
+  return file.title ?? (file.name.replace(/\.(?:md|markdown)$/i, "") || file.name);
+}
 
 function scheduleTreeRefresh() {
   window.clearTimeout(treeRefreshTimer);
@@ -3029,6 +3053,7 @@ function renderFiles() {
       details.dataset.path = directory.path;
       details.open = filtering || !collapsedFolders.has(directory.path);
       const summary = document.createElement("summary");
+      summary.tabIndex = -1;
       summary.draggable = true;
       summary.dataset.entryPath = directory.path;
       summary.dataset.entryKind = "directory";
@@ -3042,6 +3067,7 @@ function renderFiles() {
       const action = (type, title, path) => {
         const button = document.createElement("button");
         button.type = "button";
+        button.tabIndex = -1;
         button.title = title;
         button.setAttribute("aria-label", `${title} in ${directory.title ?? directory.name}`);
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -3070,6 +3096,7 @@ function renderFiles() {
       appendBranch(directory, children);
       details.append(summary, children);
       details.addEventListener("toggle", () => {
+        if (!details.open && treeTabStop !== summary && details.contains(treeTabStop)) setTreeTabStop(summary);
         if (ui.filter.value.trim() || !details.isConnected) return;
         if (details.open) collapsedFolders.delete(directory.path);
         else collapsedFolders.add(directory.path);
@@ -3082,6 +3109,7 @@ function renderFiles() {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "file-button";
+      button.tabIndex = -1;
       button.draggable = true;
       button.dataset.path = file.path;
       button.dataset.entryPath = file.path;
@@ -3094,7 +3122,7 @@ function renderFiles() {
       }
       const name = document.createElement("span");
       name.className = "file-name";
-      name.textContent = file.title ?? file.name;
+      name.textContent = fileLabel(file);
       button.append(name);
       item.append(button);
       list.append(item);
@@ -3104,6 +3132,7 @@ function renderFiles() {
   appendBranch(tree, fragment);
   ui.fileList.replaceChildren(fragment);
   selectedFileButton = nextSelectedFileButton;
+  syncTreeTabStop();
   renderTreeStatus(libraryFiles, visible);
 }
 
@@ -3131,7 +3160,7 @@ function reconcileFileTree(previousFiles, previousDirectories) {
   for (let index = 0; index < files.length; index += 1) {
     if ((previousFiles[index].title ?? null) === (files[index].title ?? null)) continue;
     const label = fileNodes.get(files[index].path)?.querySelector(".file-name");
-    if (label) label.textContent = files[index].title ?? files[index].name;
+    if (label) label.textContent = fileLabel(files[index]);
   }
   for (let index = 0; index < directories.length; index += 1) {
     if ((previousDirectories[index].title ?? null) === (directories[index].title ?? null)) continue;
@@ -3174,9 +3203,11 @@ function updateFileSelection() {
     selectedFileButton.removeAttribute("aria-current");
   }
   selectedFileButton = next;
-  if (!selectedFileButton) return;
+  if (!selectedFileButton) return syncTreeTabStop();
   selectedFileButton.setAttribute("aria-current", "page");
   revealFileButton(selectedFileButton);
+  syncTreeTabStop();
+  selectedFileButton.scrollIntoView({ block: "nearest" });
 }
 
 function revealFileButton(button) {
@@ -3278,6 +3309,153 @@ element("new-note-template").addEventListener("change", () => {
   suggestedNoteTitle = title;
   ui.newTitle.setAttribute("aria-invalid", "false");
   refreshNewNoteHint();
+});
+
+// Keyboard navigation, a single tab stop, and press-time prefetch for the file tree.
+const PREFETCH_TTL_MS = 1500;
+const documentPrefetch = new Map();
+let treeTypeahead = { text: "", at: 0 };
+
+function treeItemVisible(item) {
+  const start = item.matches("summary") ? item.parentElement.parentElement : item.parentElement;
+  return !start?.closest("details:not([open])");
+}
+
+function treeItems() {
+  return [...ui.fileList.querySelectorAll(TREE_ITEMS)].filter(treeItemVisible);
+}
+
+function setTreeTabStop(item) {
+  if (treeTabStop === item) return;
+  if (treeTabStop?.isConnected) {
+    treeTabStop.tabIndex = -1;
+    for (const action of treeTabStop.querySelectorAll(".directory-actions button")) action.tabIndex = -1;
+  }
+  treeTabStop = item ?? null;
+  if (!treeTabStop) return;
+  treeTabStop.tabIndex = 0;
+  for (const action of treeTabStop.querySelectorAll(".directory-actions button")) action.tabIndex = 0;
+}
+
+function syncTreeTabStop() {
+  if (selectedFileButton?.isConnected) return setTreeTabStop(selectedFileButton);
+  if (treeTabStop?.isConnected && treeItemVisible(treeTabStop)) return;
+  setTreeTabStop(ui.fileList.querySelector(TREE_ITEMS));
+}
+
+function focusTreeItem(item) {
+  if (!item) return;
+  setTreeTabStop(item);
+  item.focus();
+}
+
+function treeItemLabel(item) {
+  return (item.querySelector(".file-name, .directory-label")?.textContent ?? "").toLocaleLowerCase();
+}
+
+function moveTreeFocus(item, key) {
+  const items = treeItems();
+  const index = items.indexOf(item);
+  const directory = item.matches("summary") ? item.parentElement : null;
+  switch (key) {
+    case "ArrowDown": return items[index + 1];
+    case "ArrowUp": return items[index - 1];
+    case "Home": return items[0];
+    case "End": return items.at(-1);
+    case "ArrowRight":
+      if (directory && !directory.open) { directory.open = true; return item; }
+      return directory && directory.contains(items[index + 1]) ? items[index + 1] : item;
+    case "ArrowLeft": {
+      if (directory?.open) { directory.open = false; return item; }
+      const parent = (directory ?? item).parentElement.closest("details.directory");
+      return parent?.querySelector(":scope > summary") ?? item;
+    }
+    default: return null;
+  }
+}
+
+function typeaheadTreeItem(item, character) {
+  const now = performance.now();
+  treeTypeahead = { text: (now - treeTypeahead.at < 600 ? treeTypeahead.text : "") + character.toLocaleLowerCase(), at: now };
+  const items = treeItems();
+  const start = items.indexOf(item);
+  const ordered = [...items.slice(start + (treeTypeahead.text.length === 1 ? 1 : 0)), ...items.slice(0, start + 1)];
+  return ordered.find((candidate) => treeItemLabel(candidate).startsWith(treeTypeahead.text)) ?? null;
+}
+
+function prefetchTreeDocument(path) {
+  if (connectionState !== "ready" || publicView || rootChanged() || !currentRoot) return;
+  const project = activeDocument?.project ?? activeProject?.id ?? "local";
+  const resource = resourceLocations.get(resourceLocation(project, path));
+  if (!resource || resource.kind !== "document" || resource.id === activeDocument?.id) return;
+  if (authMode === "users" && resource.project !== activeProject?.id) return;
+  const now = performance.now();
+  for (const [id, entry] of documentPrefetch) {
+    if (now - entry.at > PREFETCH_TTL_MS) documentPrefetch.delete(id);
+  }
+  if (documentPrefetch.has(resource.id)) return;
+  const promise = api(`/api/document?id=${encodeURIComponent(resource.id)}`);
+  promise.catch(() => {});
+  documentPrefetch.set(resource.id, { promise, at: now, root: currentRoot });
+}
+
+async function prefetchedDocument(id, signal) {
+  const entry = documentPrefetch.get(id);
+  documentPrefetch.delete(id);
+  if (!entry || entry.root !== currentRoot || performance.now() - entry.at > PREFETCH_TTL_MS) return null;
+  if (signal.aborted) throw new DOMException("The note request was canceled.", "AbortError");
+  let cancel;
+  const canceled = new Promise((_, reject) => {
+    cancel = () => reject(new DOMException("The note request was canceled.", "AbortError"));
+    signal.addEventListener("abort", cancel, { once: true });
+  });
+  try {
+    return await Promise.race([entry.promise, canceled]);
+  } catch (error) {
+    if (aborted(error) && signal.aborted) throw error;
+    return null;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
+ui.fileList.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || event.pointerType === "touch"
+      || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  const button = event.target.closest("button[data-path]");
+  if (button) prefetchTreeDocument(button.dataset.path);
+});
+ui.fileList.addEventListener("focusin", (event) => {
+  if (event.target.matches(TREE_ITEMS)) setTreeTabStop(event.target);
+});
+ui.fileList.addEventListener("keydown", (event) => {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+  const item = event.target;
+  if (!item.matches(TREE_ITEMS)) return;
+  const navigation = ["ArrowDown", "ArrowUp", "Home", "End", "ArrowRight", "ArrowLeft"].includes(event.key);
+  if (!navigation && (event.key.length !== 1 || !event.key.trim())) return;
+  const next = navigation ? moveTreeFocus(item, event.key) : typeaheadTreeItem(item, event.key);
+  event.preventDefault();
+  if (next && next !== item) focusTreeItem(next);
+});
+ui.filter.addEventListener("keydown", (event) => {
+  if (event.isComposing) return;
+  if (event.key === "Escape" && ui.filter.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    ui.filter.value = "";
+    renderFiles();
+    updateFileSelection();
+    selectedFileButton?.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (event.key !== "ArrowDown" && event.key !== "Enter") return;
+  if (fileFilterFrame !== null) renderFiles();
+  const first = ui.fileList.querySelector(".file-button");
+  if (!first || event.key === "Enter" && !ui.filter.value.trim()) return;
+  event.preventDefault();
+  if (event.key === "Enter") first.click();
+  else focusTreeItem(first);
 });
 
 let attachmentEntries = [];
@@ -4687,7 +4865,7 @@ function useDocument(payload, root, url, mode, message = "") {
   if (["editor", "split"].includes(ui.panes.dataset.view)) ui.editor.prepare();
   commitUrl(makeNoteUrl(url, payload.id, url.hash), mode);
   notice(element("rich-warning"), "");
-  loadInlineEditor();
+  loadInlineEditorAfterPaint();
   conflict = false;
   notice(ui.conflictMessage, "");
   documentNotice(message, message ? "success" : "");
@@ -4772,7 +4950,9 @@ async function navigateTo(path, hash = "", { mode = "push", url, reload = false 
   const originalDocument = documentId;
   const root = currentRoot;
   loadingDocument = { ticket, controller, mode };
-  notice(ui.loadingMessage, `${reload ? "Reloading" : "Opening"} “${path}”…${activeDocument ? " You can keep typing to cancel." : ""}`);
+  const known = resourceIndex.get(path)?.path ?? (isResourceId(path) ? null : path);
+  const label = known ? `“${known}”` : "the note";
+  notice(ui.loadingMessage, `${reload ? "Reloading" : "Opening"} ${label}…${activeDocument ? " You can keep typing to cancel." : ""}`);
   if (activeDocument) previewStatus("Waiting for the requested note…");
   refreshControls();
   try {
@@ -4785,14 +4965,16 @@ async function navigateTo(path, hash = "", { mode = "push", url, reload = false 
       return switchProject(resource.project, { url: targetUrl, mode });
     }
     targetUrl = makeNoteUrl(targetUrl, resource.id, hash);
-    const payload = expectDocument(await api(`/api/document?id=${encodeURIComponent(resource.id)}`, { signal: controller.signal }));
+    const prefetched = reload ? null : await prefetchedDocument(resource.id, controller.signal);
+    const payload = expectDocument(prefetched
+      ?? await api(`/api/document?id=${encodeURIComponent(resource.id)}`, { signal: controller.signal }));
     if (!documentGate.isCurrent(ticket) || originalRevision !== editorRevision || originalDocument !== documentId) return false;
     if (root !== currentRoot) throw new ApiError("The notes folder changed while this file was opening. Try opening it again.");
     useDocument(payload, root, targetUrl, mode, reload ? "Reloaded from disk." : "");
     return true;
   } catch (error) {
     if (!documentGate.isCurrent(ticket) || aborted(error)) return false;
-    documentNotice(`Could not ${reload ? "reload" : "open"} “${path}”: ${error.message} Your current editor text has been kept.`, "error");
+    documentNotice(`Could not ${reload ? "reload" : "open"} ${label}: ${error.message} Your current editor text has been kept.`, "error");
     connectionFailure(error);
     if (mode === "pop") restoreCommittedUrl();
     if (activeDocument) schedulePreview(0);
