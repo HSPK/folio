@@ -306,7 +306,7 @@ async function drainCollaboration(current) {
 }
 
 const collaborativeTarget = (target) => target?.closest(
-  "#editor, .virtual-source-editor .cm-content, #rich-editor .ProseMirror, .notes-metadata-source",
+  "#editor, .virtual-source-editor .cm-content, #rich-editor .ProseMirror, .folio-metadata-source",
 );
 document.addEventListener("compositionstart", (event) => {
   if (collaboration && collaborativeTarget(event.target)) collaboration.composing = true;

@@ -1,5 +1,5 @@
 use super::*;
-use notes_core::settings::SettingsStore;
+use folio_core::settings::SettingsStore;
 use std::{
     process::{Child, Command},
     time::{Duration, Instant},
@@ -90,20 +90,16 @@ unsafe fn send(hwnd: HWND, command: usize) {
     }
 }
 
-/// Run explicitly with NOTES_NATIVE_SMOKE_EXE set to the built notes.exe.
+/// Run explicitly with FOLIO_NATIVE_SMOKE_EXE set to the built folio.exe.
 #[test]
-#[ignore = "requires an interactive Windows desktop and a built notes.exe"]
+#[ignore = "requires an interactive Windows desktop and a built folio.exe"]
 fn isolated_native_settings_and_quit() {
     unsafe {
-        let mutex = OpenMutexW(
-            MUTEX_ALL_ACCESS,
-            0,
-            wide("Local\\RustMarkdownNotes.Native.v2").as_ptr(),
-        );
+        let mutex = OpenMutexW(MUTEX_ALL_ACCESS, 0, wide("Local\\Folio.Native.v2").as_ptr());
         if !mutex.is_null() {
             CloseHandle(mutex);
             eprintln!(
-                "Skipping external native smoke: another Notes instance owns the shared singleton."
+                "Skipping external native smoke: another Folio instance owns the shared singleton."
             );
             return;
         }
@@ -114,7 +110,7 @@ fn isolated_native_settings_and_quit() {
             return;
         }
     }
-    let exe = std::env::var_os("NOTES_NATIVE_SMOKE_EXE").expect("Set NOTES_NATIVE_SMOKE_EXE");
+    let exe = std::env::var_os("FOLIO_NATIVE_SMOKE_EXE").expect("Set FOLIO_NATIVE_SMOKE_EXE");
     let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join(format!("native-smoke-{}", std::process::id()));
@@ -125,7 +121,7 @@ fn isolated_native_settings_and_quit() {
         auto_open_browser: false,
         ..Settings::default()
     };
-    let path = directory.join("NotesApp").join("settings.json");
+    let path = directory.join("Folio").join("settings.json");
     let store = SettingsStore::new(path.clone());
     store.save(&config).unwrap();
     let child = Command::new(exe)
@@ -262,7 +258,7 @@ fn in_process_settings_drafts_appearance_and_brushes() {
             ..Settings::default()
         };
         let path = directory.join("settings.json");
-        let mut core = NotesCore::new(Some(path.clone())).unwrap();
+        let mut core = FolioCore::new(Some(path.clone())).unwrap();
         core.save_settings(config).unwrap();
         let original_url = core.open_url().unwrap();
         let mut app = Box::new(App {
@@ -310,7 +306,7 @@ fn in_process_settings_drafts_appearance_and_brushes() {
         assert_eq!(restored.directory, directory);
         assert_eq!(
             restored.appearance,
-            notes_core::appearance::Appearance::default()
+            folio_core::appearance::Appearance::default()
         );
         SendDlgItemMessageW(app.preferences, THEME, CB_SETCURSEL, 2, 0);
         SetDlgItemTextW(app.preferences, LATIN_FONT, wide("Georgia").as_ptr());
@@ -319,7 +315,7 @@ fn in_process_settings_drafts_appearance_and_brushes() {
         assert!(app.preferences.is_null());
         assert_eq!(
             app.core.settings().appearance.theme,
-            notes_core::appearance::Theme::Dark
+            folio_core::appearance::Theme::Dark
         );
         assert_eq!(
             SettingsStore::new(&path)
@@ -343,7 +339,7 @@ fn in_process_settings_drafts_appearance_and_brushes() {
         app.core.start().unwrap();
         assert!(app.core.status().running);
         app.core.stop().unwrap();
-        app.core = NotesCore::new(Some(directory.join("first-run.json"))).unwrap();
+        app.core = FolioCore::new(Some(directory.join("first-run.json"))).unwrap();
         app.open();
         assert!(
             !app.preferences.is_null(),

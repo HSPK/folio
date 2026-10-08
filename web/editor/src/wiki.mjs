@@ -32,7 +32,7 @@ export const wikiInputRule = $inputRule((ctx) => new InputRule(/\[\[([^\]\n]+)\]
 export function wikiNodeView(path, transformUrl) {
   return (initial) => {
     const dom = document.createElement("a");
-    dom.className = "notes-wiki-link";
+    dom.className = "folio-wiki-link";
     const update = (node) => {
       const destination = wikiDestination(node.attrs.target);
       const target = destination === null ? null : resolveMarkdownUrl(destination, path);

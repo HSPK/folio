@@ -1,0 +1,150 @@
+name: Release Folio
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag to publish (must match package versions)
+        required: true
+        default: v0.1.0
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, platform: linux, arch: x64 }
+          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64 }
+          - { runner: macos-15-intel, platform: macos, arch: x64 }
+          - { runner: macos-15, platform: macos, arch: arm64 }
+          - { runner: windows-2025, platform: windows, arch: x64 }
+          - { runner: windows-11-arm, platform: windows, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    env:
+      CARGO_TARGET_DIR: build/rust
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Select Rust stable
+        run: rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            build/rust
+          key: release-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('Cargo.lock') }}
+      - name: Build and test frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+          npm run check:lines
+          npm test
+      - name: Test shared core and installers
+        if: matrix.platform == 'linux'
+        run: |
+          cargo test --locked --workspace
+          node --test scripts/installers.test.mjs
+      - name: Package Linux CLI
+        if: matrix.platform == 'linux'
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          cargo build --locked --release -p folio-cli
+          test "$(build/rust/release/folio-core --version)" = "Folio 0.1.0"
+          mkdir -p build/release build/package
+          cp build/rust/release/folio-core build/package/folio
+          tar -czf "build/release/folio-linux-$ARCH.tar.gz" -C build/package folio
+      - name: Package macOS application
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          cargo test --locked -p folio-core-ffi --lib
+          zsh apps/macos/Scripts/build.sh
+          codesign --verify --deep --strict build/Folio.app
+          mkdir -p build/release
+          tar -czf "build/release/folio-macos-$ARCH.tar.gz" -C build Folio.app
+      - name: Package Windows application
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          $target = if ($env:ARCH -eq "arm64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
+          rustup target add $target
+          if ($LASTEXITCODE -ne 0) { throw "Could not install the Rust target." }
+          ./apps/windows/Scripts/build.ps1 -Runtime "win-$env:ARCH" -Toolchain msvc
+          $exe = Get-Item "build/windows/win-$env:ARCH/Folio.exe"
+          if ($exe.VersionInfo.ProductVersion -ne "0.1.0") { throw "Unexpected application version." }
+          ./scripts/installers.test.ps1 -Executable $exe.FullName
+          New-Item -ItemType Directory -Path build/release -Force | Out-Null
+          Compress-Archive -Path $exe.FullName -DestinationPath "build/release/folio-windows-$env:ARCH.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: folio-${{ matrix.platform }}-${{ matrix.arch }}
+          path: build/release/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: folio-*
+          merge-multiple: true
+          path: build/release
+      - name: Verify version and generate checksums
+        shell: bash
+        run: |
+          test "$RELEASE_TAG" = "v$(node -p 'require("./web/package.json").version')"
+          cp install.sh install.ps1 build/release/
+          node --input-type=module <<'JS'
+          import { createHash } from "node:crypto";
+          import { readFile, readdir, writeFile } from "node:fs/promises";
+          const directory = "build/release";
+          const names = (await readdir(directory)).sort();
+          for (const platform of ["linux", "macos", "windows"]) {
+            for (const arch of ["x64", "arm64"]) {
+              const file = `folio-${platform}-${arch}.${platform === "windows" ? "zip" : "tar.gz"}`;
+              if (!names.includes(file)) throw new Error(`Missing release asset: ${file}`);
+            }
+          }
+          const sums = await Promise.all(names.map(async name =>
+            `${createHash("sha256").update(await readFile(`${directory}/${name}`)).digest("hex")}  ${name}\n`));
+          await writeFile(`${directory}/SHA256SUMS`, sums.join(""));
+          JS
+      - name: Publish GitHub release
+        run: |
+          gh release create "$RELEASE_TAG" build/release/* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Folio ${RELEASE_TAG#v}" --notes-file .github/release-notes.md

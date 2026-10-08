@@ -50,7 +50,7 @@ export async function buildEditor(output = defaultOutput) {
     if (directory) packages.add(directory);
   }
   const notices = [
-    "Third-party software bundled with @notes-app/editor\n"
+    "Third-party software bundled with @folio/editor\n"
       + "Rebuild: npm install && npm run build\n",
   ];
   for (const directory of [...packages].sort()) {

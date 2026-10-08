@@ -1,18 +1,18 @@
 [package]
-name = "notes-app-windows"
-version = "2.0.0"
+name = "folio-windows"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 publish = false
 build = "build.rs"
 
 [[bin]]
-name = "notes"
+name = "folio"
 path = "src/main.rs"
 
 [dependencies]
-notes-cli = { path = "../../crates/notes-cli" }
-notes-core = { path = "../../crates/notes-core" }
+folio-cli = { path = "../../crates/folio-cli" }
+folio-core = { path = "../../crates/folio-core" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

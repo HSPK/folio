@@ -8,9 +8,9 @@ import { fileURLToPath } from "node:url";
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repository = path.resolve(webRoot, "..");
-const executable = process.env.NOTES_TEST_EXE
-  ?? path.join(repository, "target", "debug", process.platform === "win32" ? "notes-core.exe" : "notes-core");
-const temporary = await mkdtemp(path.join(os.tmpdir(), "notes-document-benchmark-"));
+const executable = process.env.FOLIO_TEST_EXE
+  ?? path.join(repository, "target", "debug", process.platform === "win32" ? "folio-core.exe" : "folio-core");
+const temporary = await mkdtemp(path.join(os.tmpdir(), "folio-document-benchmark-"));
 const notes = path.join(temporary, "notes");
 const ready = path.join(temporary, "ready.json");
 const stop = path.join(temporary, "stop");
@@ -49,9 +49,9 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
-  if (!launchUrl) throw new Error(`Notes did not start: ${diagnostics}`);
+  if (!launchUrl) throw new Error(`Folio did not start: ${diagnostics}`);
   const token = new URL(launchUrl).hash.match(/(?:^#|&)token=([a-f0-9]+)/i)?.[1];
-  if (!token) throw new Error("Notes did not expose a launch token.");
+  if (!token) throw new Error("Folio did not expose a launch token.");
   const id = await fixtureResourceId(launchUrl, "large.md");
   const url = new URL(`/api/document?id=${id}`, launchUrl);
   const request = async () => {

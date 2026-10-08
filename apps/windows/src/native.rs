@@ -1,4 +1,4 @@
-use notes_core::{NotesCore, settings::Settings};
+use folio_core::{FolioCore, settings::Settings};
 use std::{
     mem::{size_of, zeroed},
     path::PathBuf,
@@ -11,7 +11,7 @@ use windows_sys::Win32::{
     UI::{Shell::*, WindowsAndMessaging::*},
 };
 
-const CLASS: &str = "RustMarkdownNotes.Owner.v2";
+const CLASS: &str = "Folio.Owner.v2";
 #[path = "native/preferences.rs"]
 mod preferences;
 #[cfg(test)]
@@ -53,7 +53,7 @@ unsafe fn message(hwnd: HWND, text: &str) {
         MessageBoxW(
             hwnd,
             wide(text).as_ptr(),
-            wide("Rust Markdown Notes").as_ptr(),
+            wide("Folio").as_ptr(),
             MB_OK | MB_ICONINFORMATION,
         );
     }
@@ -62,7 +62,7 @@ unsafe fn message(hwnd: HWND, text: &str) {
 struct App {
     hwnd: HWND,
     preferences: HWND,
-    core: NotesCore,
+    core: FolioCore,
     last_running: bool,
     taskbar_created: u32,
     tray_present: bool,
@@ -90,7 +90,7 @@ impl App {
             );
             if data.hIcon.is_null() {
                 eprintln!(
-                    "Could not load the small Notes icon: {}",
+                    "Could not load the small Folio icon: {}",
                     std::io::Error::last_os_error()
                 );
                 data.hIcon = LoadIconW(null_mut(), IDI_APPLICATION);
@@ -114,7 +114,7 @@ impl App {
                 );
                 DrawMenuBar(self.hwnd);
             }
-            let tip = wide(&format!("Rust Markdown Notes — {status}"));
+            let tip = wide(&format!("Folio — {status}"));
             data.szTip[..tip.len()].copy_from_slice(&tip);
             self.tray_present =
                 Shell_NotifyIconW(if add { NIM_ADD } else { NIM_MODIFY }, &data) != 0;
@@ -238,7 +238,7 @@ impl App {
                     if self.core.status().running {
                         message(
                             hwnd,
-                            "Stopping this app's service. Existing browser sessions will become stale; reopen Notes after restarting.",
+                            "Stopping this app's service. Existing browser sessions will become stale; reopen Folio after restarting.",
                         );
                         if let Err(e) = self.core.stop() {
                             message(hwnd, &e);
@@ -277,7 +277,7 @@ unsafe fn menu(service: bool) -> HMENU {
     unsafe {
         let menu = CreatePopupMenu();
         for (id, label) in [
-            (OPEN, "Open Notes"),
+            (OPEN, "Open Folio"),
             (SETTINGS, "Settings…"),
             (FOLDER, "Show folder"),
             (
@@ -460,11 +460,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 
 pub fn run() {
     unsafe {
-        let mutex = CreateMutexW(
-            null(),
-            0,
-            wide("Local\\RustMarkdownNotes.Native.v2").as_ptr(),
-        );
+        let mutex = CreateMutexW(null(), 0, wide("Local\\Folio.Native.v2").as_ptr());
         if mutex.is_null() {
             message(
                 null_mut(),
@@ -475,7 +471,7 @@ pub fn run() {
         if GetLastError() == ERROR_ALREADY_EXISTS {
             message(
                 null_mut(),
-                "Rust Markdown Notes is already running. Use its notification-area icon (it may be under hidden icons).",
+                "Folio is already running. Use its notification-area icon (it may be under hidden icons).",
             );
             CloseHandle(mutex);
             return;
@@ -494,7 +490,7 @@ pub fn run() {
 
 unsafe fn run_inner() {
     unsafe {
-        let core = match NotesCore::new(None) {
+        let core = match FolioCore::new(None) {
             Ok(core) => core,
             Err(e) => {
                 message(null_mut(), &e);
@@ -511,13 +507,13 @@ unsafe fn run_inner() {
         wc.hIcon = LoadIconW(instance, 1usize as *const u16);
         wc.hbrBackground = (COLOR_WINDOW + 1) as HBRUSH;
         if RegisterClassW(&wc) == 0 {
-            message(null_mut(), "Could not register the Notes window.");
+            message(null_mut(), "Could not register the Folio window.");
             return;
         }
         let hwnd = CreateWindowExW(
             0,
             class.as_ptr(),
-            wide("Rust Markdown Notes — use the Notes menu").as_ptr(),
+            wide("Folio — use the Folio menu").as_ptr(),
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
@@ -529,7 +525,7 @@ unsafe fn run_inner() {
             null(),
         );
         if hwnd.is_null() {
-            message(null_mut(), "Could not create the Notes window.");
+            message(null_mut(), "Could not create the Folio window.");
             return;
         }
         let mut app = Box::new(App {
@@ -545,7 +541,7 @@ unsafe fn run_inner() {
         });
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, &mut *app as *mut App as isize);
         let bar = CreateMenu();
-        AppendMenuW(bar, MF_POPUP, menu(false) as usize, wide("Notes").as_ptr());
+        AppendMenuW(bar, MF_POPUP, menu(false) as usize, wide("Folio").as_ptr());
         SetMenu(hwnd, bar);
         app.tray(true);
         if app.core.is_first_run() || !app.core.status().has_folder {

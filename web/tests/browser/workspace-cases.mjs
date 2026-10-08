@@ -10,7 +10,7 @@ async function append(page, text) {
 async function draftRows(page) {
   return page.evaluate(async () => {
     const database = await new Promise((resolve, reject) => {
-      const request = indexedDB.open("notes-private-drafts", 1);
+      const request = indexedDB.open("folio-private-drafts", 1);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -93,7 +93,7 @@ test("metadata tags drive permission-filtered search and history restores withou
     await expect(metadata).toHaveValue(/tags: \["research"\]/);
     await expect(metadata).toHaveValue(/custom: \{x: 1\}/);
     await expect(alice.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-    await alice.locator(".notes-tag").getByRole("button", { name: "research", exact: true }).click();
+    await alice.locator(".folio-tag").getByRole("button", { name: "research", exact: true }).click();
     await expect(alice.locator("#search-dialog")).toBeVisible();
     await expect(alice.locator("#search-results")).toContainText("Shared");
     await expect(alice.locator("#search-results")).not.toContainText("Other.md");

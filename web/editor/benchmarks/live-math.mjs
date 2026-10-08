@@ -40,7 +40,7 @@ const harness = `
     onLink() {},
     onOutline() {},
     onSelection() {},
-    styleNonce: document.querySelector('meta[name="notes-style-nonce"]').content,
+    styleNonce: document.querySelector('meta[name="folio-style-nonce"]').content,
   });
   window.benchmarkMath = async (source, name) => {
     fallback = "";

@@ -24,16 +24,16 @@ export async function startEditorBenchmark(harness) {
   const server = createServer(async (request, response) => {
     response.setHeader(
       "Content-Security-Policy",
-      "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-notes-editor-benchmark'; "
+      "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-folio-editor-benchmark'; "
         + "style-src-attr 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:",
     );
     try {
       if (request.url === "/") {
         response.setHeader("Content-Type", "text/html");
         response.end(
-          '<!doctype html><meta name="notes-style-nonce" content="notes-editor-benchmark">'
+          '<!doctype html><meta name="folio-style-nonce" content="folio-editor-benchmark">'
             + '<link rel="stylesheet" href="/editor.bundle.css">'
-            + '<style nonce="notes-editor-benchmark">html,body,#root{height:100%;margin:0}</style>'
+            + '<style nonce="folio-editor-benchmark">html,body,#root{height:100%;margin:0}</style>'
             + '<div id="root"></div><script type="module" src="/benchmark.mjs"></script>',
         );
       } else if (request.url === "/benchmark.mjs") {

@@ -75,7 +75,7 @@ test("writing surfaces stay frameless and forced colors retain keyboard focus", 
   await expectQuietFocus(page, metadata, "ring");
   const prose = page.locator(".ProseMirror");
   await expectQuietFocus(page, prose, "none");
-  const math = page.locator(".notes-math-output");
+  const math = page.locator(".folio-math-output");
   await expectQuietFocus(page, math, "ring");
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Inline TeX source")).toBeVisible();

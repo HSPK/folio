@@ -49,10 +49,10 @@ test("title-only filenames remain portable and never treat title text as a direc
 });
 
 test("browser titles prefer metadata and keep the unsaved marker without exposing folder paths", () => {
-  assert.equal(browserDocumentTitle(null), "Notes");
+  assert.equal(browserDocumentTitle(null), "Folio");
   const note = { path: "Guides/physical-name.md", title: "Document title" };
-  assert.equal(browserDocumentTitle(note), "Document title — Notes");
-  assert.equal(browserDocumentTitle(note, true), "Document title * — Notes");
-  assert.equal(browserDocumentTitle({ ...note, title: null }), "physical-name.md — Notes");
-  assert.equal(browserDocumentTitle({ ...note, title: "  " }), "physical-name.md — Notes");
+  assert.equal(browserDocumentTitle(note), "Document title — Folio");
+  assert.equal(browserDocumentTitle(note, true), "Document title * — Folio");
+  assert.equal(browserDocumentTitle({ ...note, title: null }), "physical-name.md — Folio");
+  assert.equal(browserDocumentTitle({ ...note, title: "  " }), "physical-name.md — Folio");
 });

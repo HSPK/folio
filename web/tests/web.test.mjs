@@ -27,8 +27,8 @@ import {
   validateNewNotePath,
 } from "../public/model.mjs";
 
-const response = (content, version = "v1", path = "Notes.md") => ({
-  id: path === "Notes.md" ? "01961e0b-9831-7000-8000-000000000001" : "01961e0b-9831-7000-8000-000000000002",
+const response = (content, version = "v1", path = "Folio.md") => ({
+  id: path === "Folio.md" ? "01961e0b-9831-7000-8000-000000000001" : "01961e0b-9831-7000-8000-000000000002",
   path, content, html: "<p>Rendered by the service</p>", version,
 });
 
@@ -153,7 +153,7 @@ test("the Markdown byte limit counts UTF-8, BOM and serialized line endings", ()
 });
 
 test("new note paths support nested Windows input and both Markdown extensions", () => {
-  assert.equal(validateNewNotePath(" Projects\\Meeting notes.md "), "Projects/Meeting notes.md");
+  assert.equal(validateNewNotePath(" Projects\\Meeting folio.md "), "Projects/Meeting folio.md");
   assert.equal(validateNewNotePath("日记/Today.MARKDOWN"), "日记/Today.MARKDOWN");
 });
 
@@ -414,8 +414,8 @@ test("note routing accepts UUID identity, rejects path locators and preserves vi
   assert.equal(empty.searchParams.has("document"), false);
   assert.equal(empty.hash, "");
   assert.throws(() => makeNoteUrl(url, "Work/A & B.md"), /UUID/);
-  assert.throws(() => readNoteRoute("http://localhost/?file=Notes.md"), /no longer supported/);
-  assert.throws(() => readNoteRoute("http://localhost/?document=Notes.md"), /UUID/);
+  assert.throws(() => readNoteRoute("http://localhost/?file=Folio.md"), /no longer supported/);
+  assert.throws(() => readNoteRoute("http://localhost/?document=Folio.md"), /UUID/);
   const shared = makeNoteUrl("http://localhost/share?share=opaque-capability", id, "#section");
   assert.equal(shared.searchParams.has("document"), false);
   assert.equal(shared.searchParams.get("share"), "opaque-capability");
@@ -431,7 +431,7 @@ test("a rename changes location without changing the identity accepted by save r
 });
 
 test("a new resource at an old path invalidates the existing tree structure", () => {
-  const previous = [{id:"01961e0b-9831-7000-8000-000000000001", path:"Notes.md", name:"Notes.md"}];
+  const previous = [{id:"01961e0b-9831-7000-8000-000000000001", path:"Folio.md", name:"Folio.md"}];
   const replaced = [{...previous[0], id:"01961e0b-9831-7000-8000-000000000002"}];
   assert.equal(sameTreeStructure(previous, replaced), false);
   assert.equal(sameTreeEntries(previous, replaced), false);

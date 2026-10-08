@@ -1,6 +1,7 @@
-# @notes-app/editor
+# @folio/editor
 
-Independent browser editor package used by Notes App.
+Independent browser editor package used by Folio, published within this workspace
+as `@folio/editor`.
 
 ## Public API
 
@@ -11,7 +12,7 @@ import {
   createInlineEditor,
   createSourceEditor,
   extractOutline,
-} from "@notes-app/editor";
+} from "@folio/editor";
 ```
 
 - `createInlineEditor` provides the Milkdown Live Markdown editor.
@@ -38,7 +39,7 @@ uses the existing round-trip fingerprint comparison; no source is rewritten on l
 `createInlineEditor` accepts an optional `transformUrl(url, documentPath)` callback.
 Hosts can use it to scope rendered attachment and note links to a project without
 changing the Markdown stored on disk. Local targets are normalized, encoded
-project-relative URL paths; Notes resolves them to resource UUID URLs. Hosts may
+project-relative URL paths; Folio resolves them to resource UUID URLs. Hosts may
 call `refreshLinks()` after asynchronous identity resolution. Changes to projected
 link attributes are ignored by the editor's DOM observer, not serialized as edits
 to Markdown link destinations. Image upload, clipboard handling and
@@ -86,4 +87,4 @@ npm run benchmark:source-prepare
 ```
 
 The build writes self-contained assets and third-party notices to `dist/`.
-Notes App copies these assets into `web/public/` during its aggregate build.
+Folio copies these assets into `web/public/` during its aggregate build.

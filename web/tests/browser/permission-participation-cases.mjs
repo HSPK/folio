@@ -79,7 +79,7 @@ test("private page overrides disable collaboration even for an owner in an edita
     await expect(owner.locator("#editor")).toBeEnabled();
     await expect(owner.locator("#editor")).toHaveJSProperty("readOnly", false);
     const doc = await owner.request.get(new URL(`/api/document?id=${document}`, library.url).href);
-    expect(JSON.parse(doc.headers()["x-notes-document-permissions"])).toEqual({
+    expect(JSON.parse(doc.headers()["x-folio-document-permissions"])).toEqual({
       writable: true, collaborative: false, owner: true,
     });
     await expect(owner.locator("#collaboration-join")).toBeHidden();

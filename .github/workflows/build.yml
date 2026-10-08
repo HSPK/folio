@@ -39,7 +39,7 @@ jobs:
       - name: Test shared core and platform adapters
         run: cargo test --locked --workspace
       - name: Build headless core
-        run: cargo build --locked -p notes-cli
+        run: cargo build --locked -p folio-cli
       - name: Install test browser
         if: runner.os != 'Windows'
         working-directory: web
@@ -54,17 +54,17 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           zsh apps/macos/Scripts/build.sh
-          tar -czf build/Notes-macOS.tar.gz -C build Notes.app
+          tar -czf build/Folio-macOS.tar.gz -C build Folio.app
       - name: Build Linux CLI archive
         if: runner.os == 'Linux'
         run: |
-          cargo build --locked --release -p notes-cli
-          tar -czf build/notes-core-linux.tar.gz -C build/rust/release notes-core
+          cargo build --locked --release -p folio-cli
+          tar -czf build/folio-core-linux.tar.gz -C build/rust/release folio-core
       - uses: actions/upload-artifact@v4
         with:
-          name: notes-${{ runner.os }}
+          name: folio-${{ runner.os }}
           if-no-files-found: error
           path: |
-            build/windows/win-x64/Notes.exe
-            build/Notes-macOS.tar.gz
-            build/notes-core-linux.tar.gz
+            build/windows/win-x64/Folio.exe
+            build/Folio-macOS.tar.gz
+            build/folio-core-linux.tar.gz

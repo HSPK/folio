@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <meta name="referrer" content="no-referrer">
-    <meta name="notes-style-nonce" content="__STYLE_NONCE__">
-    <title>Notes</title>
+    <meta name="folio-style-nonce" content="__STYLE_NONCE__">
+    <title>Folio</title>
     <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48 256x256">
     <link rel="icon" href="/icon.svg" type="image/svg+xml" sizes="any">
     <link rel="stylesheet" href="/styles.css">
@@ -19,8 +19,8 @@
     <main id="auth-screen" class="auth-screen" aria-labelledby="auth-title" hidden>
       <section class="auth-card">
         <img src="/icon.svg" alt="" width="52" height="52">
-        <h1 id="auth-title">Log in to Notes</h1>
-        <p id="auth-description">Enter your local Notes account.</p>
+        <h1 id="auth-title">Log in to Folio</h1>
+        <p id="auth-description">Enter your local Folio account.</p>
         <form id="auth-form">
           <div id="auth-invitation-field" hidden>
             <label for="auth-invitation">Invitation key</label>
@@ -45,7 +45,7 @@
     <div id="app-shell" class="app-shell">
       <aside id="sidebar" class="sidebar" aria-label="Library">
         <header class="library-heading" data-directory-path="">
-          <span id="app-name" class="app-name">Notes</span>
+          <span id="app-name" class="app-name">Folio</span>
           <button id="projects-open" class="app-name project-switcher" type="button" title="Switch or manage projects" hidden>Projects</button>
           <div class="library-actions">
             <button id="new-note" class="icon-button" type="button" title="New note" aria-label="New note" disabled>
@@ -506,7 +506,7 @@
                 <input id="settings-git-sync-interval" type="number" min="1" max="1440" step="1" value="30" disabled>
               </div>
               <p id="settings-git-sync-summary" class="settings-note"></p>
-              <p class="settings-note">Owner only. Runs on the server while the browser is closed. Stages and commits all saved project files, including deletions and other users' changes; respects .gitignore, not Notes hidden paths or sharing rules. Unsaved browser drafts are not included. Requires an upstream and Git author identity. No automatic Pull, force push, or merge conflict resolution.</p>
+              <p class="settings-note">Owner only. Runs on the server while the browser is closed. Stages and commits all saved project files, including deletions and other users' changes; respects .gitignore, not Folio hidden paths or sharing rules. Unsaved browser drafts are not included. Requires an upstream and Git author identity. No automatic Pull, force push, or merge conflict resolution.</p>
               <p class="settings-note">Manual Pull and Push still require confirmation. Git hooks and external diff commands are disabled.</p>
             </section>
             <section class="settings-panel" data-settings-panel="performance" hidden>
@@ -594,7 +594,7 @@
         <div class="dialog-actions"><button id="account-password-cancel" type="button">Cancel</button><button class="button-primary" type="submit">Reset password</button></div>
       </form>
     </dialog>
-    <noscript><p class="notice is-error">Enable JavaScript, then reopen Notes using the desktop app or CLI launch URL.</p></noscript>
+    <noscript><p class="notice is-error">Enable JavaScript, then reopen Folio using the desktop app or CLI launch URL.</p></noscript>
     __WORKSPACE_PANELS__
   </body>
 </html>

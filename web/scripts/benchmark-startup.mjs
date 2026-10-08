@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repository = path.resolve(webRoot, "..");
-const executable = process.env.NOTES_TEST_EXE
-  ?? path.join(repository, "target", "debug", process.platform === "win32" ? "notes-core.exe" : "notes-core");
-const temporary = await mkdtemp(path.join(os.tmpdir(), "notes-startup-benchmark-"));
+const executable = process.env.FOLIO_TEST_EXE
+  ?? path.join(repository, "target", "debug", process.platform === "win32" ? "folio-core.exe" : "folio-core");
+const temporary = await mkdtemp(path.join(os.tmpdir(), "folio-startup-benchmark-"));
 const notes = path.join(temporary, "notes");
 const authFile = path.join(temporary, "users.json");
 await mkdir(notes);
@@ -42,7 +42,7 @@ async function measure(mode, index) {
       await new Promise((resolve) => setTimeout(resolve, 2));
     }
   }
-  if (duration === undefined) throw new Error(`Notes did not become ready: ${diagnostics}`);
+  if (duration === undefined) throw new Error(`Folio did not become ready: ${diagnostics}`);
   await writeFile(stop, "");
   for (let attempt = 0; attempt < 1000 && child.exitCode === null; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 2));

@@ -7,7 +7,7 @@ test("slash commands insert blocks without a permanent formatting toolbar", asyn
   const editor = page.locator(".ProseMirror[contenteditable=true]");
   await editor.focus();
   await editor.press("/");
-  const menu = page.locator("#notes-slash-menu");
+  const menu = page.locator("#folio-slash-menu");
   await expect(menu).toBeVisible();
   await expect(menu.getByRole("option")).toHaveCount(10);
   await menu.getByRole("option", { name: /Heading 2/ }).click();
@@ -29,11 +29,11 @@ test("sidebar and page width controls resize and persist across reloads", async 
   await page.mouse.up();
   await expect.poll(async () => (await sidebar.boundingBox()).width).toBeGreaterThan(initialSidebar.width + 50);
 
-  const initialPageWidth = (await page.locator(".notes-live-page").boundingBox()).width;
+  const initialPageWidth = (await page.locator(".folio-live-page").boundingBox()).width;
   await page.locator("#layout-menu > summary").click();
   await page.getByRole("button", { name: /Wide/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-page-width", "wide");
-  await expect.poll(async () => (await page.locator(".notes-live-page").boundingBox()).width)
+  await expect.poll(async () => (await page.locator(".folio-live-page").boundingBox()).width)
     .toBeGreaterThan(initialPageWidth + 100);
 
   const resizedWidth = (await sidebar.boundingBox()).width;
@@ -177,7 +177,7 @@ test("writing surface has compact chrome in light, dark and hidden-sidebar frame
     + "no permanent formatting ribbon, and nothing to publish before you start.\n\n"
     + "> Write first. Shape the details when they matter.\n\n"
     + "## A small example\n\n"
-    + "```rust\nfn main() {\n    let message = \"Notes stay on this computer\";\n    println!(\"{message}\");\n}\n```\n\n"
+    + "```rust\nfn main() {\n    let message = \"Folio stay on this computer\";\n    println!(\"{message}\");\n}\n```\n\n"
     + "## Next steps\n\n- [x] Keep the original Markdown\n- [ ] Follow the next idea\n";
   await fs.writeFile(path.join(root, "README.md"), content);
   await page.reload();
@@ -221,7 +221,7 @@ test("body scrollbars overlay content without changing the writing width or sour
   await openFixture(page, "Scrolling.md", short);
   const viewport = page.locator("[data-editor-scroller]");
   const geometry = () => viewport.evaluate((element) => {
-    const page = element.querySelector(".notes-live-page").getBoundingClientRect();
+    const page = element.querySelector(".folio-live-page").getBoundingClientRect();
     return { width: element.clientWidth, gutter: element.offsetWidth - element.clientWidth, pageWidth: page.width, pageLeft: page.left };
   });
   await expect.poll(() => viewport.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBeTruthy();
@@ -400,11 +400,11 @@ test("hidden outline analysis refreshes when the Outline tab opens", async ({ pa
 });
 
 test("source and metadata scrollbars do not change textarea width or consume a gutter", async ({ page }) => {
-  const raw = "---\ntitle: Notes\n---\n\n# Body\n";
-  await openFixture(page, "Textarea-scroll.md", raw, "Notes");
+  const raw = "---\ntitle: Folio\n---\n\n# Body\n";
+  await openFixture(page, "Textarea-scroll.md", raw, "Folio");
   const metadata = await metadataField(page);
   const metadataWidth = await metadata.evaluate((element) => element.clientWidth);
-  await metadata.fill("title: Notes\n" + Array.from({ length: 60 }, (_, index) => `field${index}: value`).join("\n"));
+  await metadata.fill("title: Folio\n" + Array.from({ length: 60 }, (_, index) => `field${index}: value`).join("\n"));
   expect(await metadata.evaluate((element) => element.clientWidth)).toBe(metadataWidth);
   expect(await metadata.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -433,7 +433,7 @@ test("source and metadata scrollbars do not change textarea width or consume a g
 
 test("horizontal code scrolling overlays rather than increasing the code block height", async ({ page }) => {
   await openFixture(page, "Code-scroll.md", "# Code\n\n```js\nshort\n```\n\nAfter the code.\n");
-  const block = page.locator(".notes-code-block");
+  const block = page.locator(".folio-code-block");
   const code = block.locator("pre code");
   const viewport = block.locator("pre");
   const before = await block.boundingBox();

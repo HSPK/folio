@@ -3,7 +3,7 @@ import path from "node:path";
 
 export async function addPermissionOverrides(library, count) {
   if (!Number.isInteger(count) || count < 0 || count > 5000) {
-    throw new Error("NOTES_BENCH_ACL must be an integer from 0 through 5000.");
+    throw new Error("FOLIO_BENCH_ACL must be an integer from 0 through 5000.");
   }
   if (!count) return;
   const directory = path.dirname(library.notes);

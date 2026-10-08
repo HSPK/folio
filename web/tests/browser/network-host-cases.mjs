@@ -30,7 +30,7 @@ test("network HTTP binding supports login and online editing without plaintext r
     await page.locator('[data-path="Other.md"]').click();
     await expect(page.locator("#document-title")).toHaveText("Other.md");
     await expect(page.locator("#document-message")).toBeHidden();
-    expect(await page.evaluate(async () => (await indexedDB.databases()).some(db => db.name === "notes-private-drafts"))).toBe(false);
+    expect(await page.evaluate(async () => (await indexedDB.databases()).some(db => db.name === "folio-private-drafts"))).toBe(false);
     await page.locator("#more-menu > summary").click();
     await page.locator("#drafts-open").click();
     await expect(page.locator("#document-message")).toContainText("Local recovery is unavailable:");
@@ -40,7 +40,7 @@ test("network HTTP binding supports login and online editing without plaintext r
 });
 
 test("configured DNS hostname supports login, session refresh and collaborative sockets", async ({ browser, playwright }) => {
-  const hostname = "notes.example.test";
+  const hostname = "folio.example.test";
   const library = await collaborativeLibrary(browser, {
     host: "0.0.0.0", allowedHosts: [hostname], source: true, participants: 1,
   });

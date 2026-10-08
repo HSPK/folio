@@ -29,7 +29,7 @@ async function connect() {
     await refreshSharedPreferences();
     const tokenStorageUnavailable = authMode === "launchToken" && storageUnavailable;
     notice(ui.connectionMessage, tokenStorageUnavailable
-      ? "This browser could not store the connection token for this tab. Copy unsaved work before refreshing; you may need to reopen Notes using the app or CLI launch URL."
+      ? "This browser could not store the connection token for this tab. Copy unsaved work before refreshing; you may need to reopen Folio using the app or CLI launch URL."
       : "", tokenStorageUnavailable ? "warning" : "");
     refreshControls();
     void refreshAppearance(true);
@@ -46,7 +46,7 @@ async function connect() {
   } catch (error) {
     if (!connectionGate.isCurrent(ticket) || aborted(error)) return;
     connectionFailure(error, true);
-    previewStatus(activeDocument ? "Disconnected. Your editor text and last preview are kept." : "Open Notes using the app or CLI launch URL to connect", true);
+    previewStatus(activeDocument ? "Disconnected. Your editor text and last preview are kept." : "Open Folio using the app or CLI launch URL to connect", true);
     renderTreeStatus();
   } finally {
     if (connectionGate.isCurrent(ticket)) {

@@ -1,4 +1,4 @@
-Third-party software bundled with @notes-app/editor
+Third-party software bundled with @folio/editor
 Rebuild: npm install && npm run build
 
 

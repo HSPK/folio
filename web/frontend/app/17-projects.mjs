@@ -6,7 +6,7 @@ let sharingTarget = null;
 const projectDialog = element("projects-dialog");
 const sharingDialog = element("sharing-dialog");
 
-function projectStorageKey() { return `notes.projects.${authUser?.username ?? "local"}`; }
+function projectStorageKey() { return `folio.projects.${authUser?.username ?? "local"}`; }
 function projectWritable(path = activeDocument?.path) {
   if (path === activeDocument?.path && documentPermissions) return documentPermissions.writable;
   if (publicView) return publicWritable;

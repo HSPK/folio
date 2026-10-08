@@ -157,14 +157,14 @@ test("Live and Compare editors share Markdown and metadata without mixing docume
     await sourceCaret(bob, "Beta");
     await bob.keyboard.insertText(" 中文 $x^2$");
     await expect(alice.locator(".ProseMirror")).toContainText("Beta 中文");
-    await expect(alice.locator(".notes-math-output .katex")).toHaveCount(1);
+    await expect(alice.locator(".folio-math-output .katex")).toHaveCount(1);
     await expect(alice.locator(".collaboration-caret-name")).toHaveText("bob");
     await alice.screenshot({ path: path.join(buildRoot, "collaboration-live.png") });
     await alice.locator(".ProseMirror h1").click();
     await alice.keyboard.press("End");
     await alice.keyboard.insertText(" jointly");
     await expect(bob.locator("#editor")).toHaveValue(/# Shared jointly/);
-    const metadata = alice.locator(".notes-metadata");
+    const metadata = alice.locator(".folio-metadata");
     await metadata.locator("summary").click();
     await metadata.locator("textarea").fill("title: Shared together\n");
     await expect(bob.locator("#editor")).toHaveValue(/title: Shared together/);

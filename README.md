@@ -1,15 +1,60 @@
-# Notes App
+# Folio
 
-基于 **notes-core + 平台薄壳** 的轻量本地 Markdown 编辑器。Windows、macOS 和 Linux CLI 共用同一份 Rust 核心与网页编辑器；系统默认浏览器提供保留排版的 Live 编辑。
+**Folio** 意为书页或文稿集：把零散想法写成自己的知识库。图标以黑白两色的折角纸页结合字母 **F**，无渐变、阴影或叠层。
+
+基于 **folio-core + 平台薄壳** 的轻量本地 Markdown 编辑器。Windows、macOS 和 Linux CLI 共用同一份 Rust 核心与网页编辑器；系统默认浏览器提供保留排版的 Live 编辑。
 
 **不依赖 Python、MkDocs、.NET、Windows App SDK 或 WebView2，也不打包浏览器。** 笔记仍然是自己目录中的 `.md` / `.markdown` 文件，不导入数据库、不上传云端。
+
+## 安装 0.1.0
+
+仓库：[HSPK/folio](https://github.com/HSPK/folio)。[GitHub Releases](https://github.com/HSPK/folio/releases) 提供 Windows、macOS 和 Linux 的 x64 / ARM64 构建；安装不需要开发工具或管理员权限。
+
+Linux / macOS：
+
+```sh
+curl -fsSL https://github.com/HSPK/folio/releases/latest/download/install.sh | sh
+```
+
+Windows PowerShell：
+
+```powershell
+irm https://github.com/HSPK/folio/releases/latest/download/install.ps1 | iex
+```
+
+脚本自动识别架构，下载发布包并核对 `SHA256SUMS`；下载或校验失败不会覆盖已有程序。也可以先下载、检查脚本内容，再执行，或直接从 Releases 手动安装。
+
+| 平台 | 默认安装位置 | 启动 |
+| --- | --- | --- |
+| Linux | `~/.local/bin/folio` | `folio --serve /path/to/markdown` |
+| macOS | `~/Applications/Folio.app` | `open ~/Applications/Folio.app` |
+| Windows | `%LOCALAPPDATA%\Programs\Folio\Folio.exe` | 开始菜单 Folio，或新终端中执行 `folio` |
+
+Linux 用户需把 `~/.local/bin` 加入 PATH；若尚未配置，安装脚本会提示。Windows 安装脚本创建开始菜单快捷方式并更新用户 PATH。macOS 构建仅使用 ad-hoc 签名，尚未公证；首次运行可能需要在「系统设置 → 隐私与安全性」中批准。脚本不会禁用 Gatekeeper。更新前请保存未保存文本并退出旧程序。
+
+固定版本或指定安装目录：
+
+```sh
+curl -fsSL https://github.com/HSPK/folio/releases/download/v0.1.0/install.sh |
+  FOLIO_VERSION=0.1.0 FOLIO_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+```powershell
+$env:FOLIO_VERSION = "0.1.0"
+$env:FOLIO_INSTALL_DIR = "$env:LOCALAPPDATA\Programs\Folio"
+irm https://github.com/HSPK/folio/releases/download/v0.1.0/install.ps1 | iex
+```
+
+`FOLIO_INSTALL_DIR` 在 macOS 表示放置 `Folio.app` 的父目录。`folio --version` 显示版本（Linux / Windows CLI）；桌面应用的版本信息也为 0.1.0。
+
+推送 `v*` tag 会触发 `.github/workflows/release.yml`：六个平台构建全部成功后，统一发布对应 archive、两个安装脚本及 SHA-256 校验清单。安装脚本的离线回归测试可运行 `npm --prefix web run test:installers`。
 
 ## 架构
 
 ```mermaid
 flowchart LR
-  Windows["Windows · Win32 wrapper"] -->|Rust API| Core["notes-core"]
-  macOS["macOS · AppKit wrapper"] -->|C ABI| Bridge["notes-core-ffi"]
+  Windows["Windows · Win32 wrapper"] -->|Rust API| Core["folio-core"]
+  macOS["macOS · AppKit wrapper"] -->|C ABI| Bridge["folio-core-ffi"]
   Bridge --> Core
   CLI["Linux / 跨平台 CLI"] --> Core
   Core --> Web["内置共享 web 编辑器"]
@@ -20,20 +65,20 @@ flowchart LR
 
 | 目录 | 职责 |
 | --- | --- |
-| `crates\notes-core\` | 共享服务、用户认证、Markdown/YAML 渲染、受限文件访问、版本冲突保护、配置和 `NotesCore` 控制器 |
-| `crates\notes-core-ffi\` | 将控制器暴露为小型 C ABI，供 Swift 等宿主调用 |
-| `crates\notes-cli\` | 跨平台命令行适配器，负责参数、退出信号及诊断文件，不包含桌面 UI |
+| `crates\folio-core\` | 共享服务、用户认证、Markdown/YAML 渲染、受限文件访问、版本冲突保护、配置和 `FolioCore` 控制器 |
+| `crates\folio-core-ffi\` | 将控制器暴露为小型 C ABI，供 Swift 等宿主调用 |
+| `crates\folio-cli\` | 跨平台命令行适配器，负责参数、退出信号及诊断文件，不包含桌面 UI |
 | `web\` | 浏览器应用壳、API 状态管理、生成资源和端到端测试 |
-| `web\editor\` | 独立 `@notes-app/editor` package，包含 Milkdown、CodeMirror、KaTeX、Markdown 语义、滚动条、单测和性能基准 |
+| `web\editor\` | 独立 `@folio/editor` package，包含 Milkdown、CodeMirror、KaTeX、Markdown 语义、滚动条、单测和性能基准 |
 | `apps\windows\` | Win32 托盘、设置窗口、目录选择、系统浏览器/文件管理器调用 |
 | `apps\macos\` | AppKit 托盘和设置窗口，通过静态链接的 C ABI 使用同一个 core |
 | `Shared\Resources\` | 共用的 SVG、PNG 和 ICO 图标 |
 
-平台壳不再启动 MkDocs 或实现另一套文件/渲染逻辑。新增 Rust 宿主可调用 `NotesCore::new`、`save_settings`、`start`、`stop` 和 `open_url`；其他语言使用 `crates\notes-core-ffi\include\notes_core.h`。C ABI 返回的字符串必须由 `notes_core_string_free` 释放，句柄须串行使用并在退出时释放。文件访问的 Windows handle / Unix descriptor 适配仍由 core 统一管理。
+平台壳不再启动 MkDocs 或实现另一套文件/渲染逻辑。新增 Rust 宿主可调用 `FolioCore::new`、`save_settings`、`start`、`stop` 和 `open_url`；其他语言使用 `crates\folio-core-ffi\include\folio_core.h`。C ABI 返回的字符串必须由 `folio_core_string_free` 释放，句柄须串行使用并在退出时释放。文件访问的 Windows handle / Unix descriptor 适配仍由 core 统一管理。
 
 ## 桌面使用
 
-1. 双击 `Notes.exe`，首次运行在 Settings 中选择存放 Markdown 的目录。
+1. 双击 `Folio.exe`，首次运行在 Settings 中选择存放 Markdown 的目录。
 2. 首次打开浏览器时创建本机管理员账号；Windows、macOS 和 Linux CLI 共用同一套网页设置及登录流程。
 3. 登录后选择笔记，直接在排版后的正文里编辑。标题、加粗、列表和表格会保持原有格式，并随输入动态更新。
 4. 停止输入后默认 1 秒自动保存，也可按 **Ctrl+S** 立即保存；未保存修改用页面标题及浏览器标题中的 `*` 表示，保存完成后自动消失。底部不显示 Saved 或未保存的常驻文本，仍保留保存中、只读、冲突和错误提示。关闭浏览器不会停止服务；左键点击托盘图标直接打开网页，右键打开菜单。
@@ -62,11 +107,11 @@ Settings 提供 Editor、Appearance、Layout、Library、Git、Performance、Acc
 
 Settings 的 Library 页面支持按相对路径 Glob 隐藏文件和目录，每行一条，例如 `drafts/**`、`*.private.md`，并可配置自动刷新。`*` 不跨目录，因此 `*/index.md` 只匹配一级子目录；`**/` 匹配零层或多层目录，使用 `**/index.md` 可隐藏 Project 根目录及所有子目录中的 `index.md`，`docs/**/index.md` 则覆盖 `docs/index.md` 及更深层的同名文件。规则不能重新显示 core 强制排除的隐藏目录、依赖目录、符号链接或联接目录。
 
-Git 面板显示分支、upstream、ahead/behind、逐文件 staged/working 状态和安全的行级 diff，并支持 Stage、Unstage、Commit、fast-forward-only Pull 和显式确认 Push。notes 目录必须本身就是仓库根；不接受任意 Git 命令，hooks、pager、外部 diff、fsmonitor、未知 transport 和交互式凭据提示均被禁用。远端认证由用户现有的 Git/SSH/credential helper 配置负责，Notes 不保存凭据。
+Git 面板显示分支、upstream、ahead/behind、逐文件 staged/working 状态和安全的行级 diff，并支持 Stage、Unstage、Commit、fast-forward-only Pull 和显式确认 Push。notes 目录必须本身就是仓库根；不接受任意 Git 命令，hooks、pager、外部 diff、fsmonitor、未知 transport 和交互式凭据提示均被禁用。远端认证由用户现有的 Git/SSH/credential helper 配置负责，Folio 不保存凭据。
 
 Git 文件列表按 Staged changes / Changes 分组，文件名与目录分行显示，`+` 暂存、`−` 取消暂存；点击文件查看对应组的差异。同一个文件可同时出现在两组中，提交框固定在底部，刷新状态不会清空提交说明。文件数量只在分组标题显示；悬停和键盘焦点均使用统一圆角底色，不添加侧线或下划线。错误与操作进度仍明确显示。
 
-**Settings → Git → Auto commit and push this project** 可按 Project 配置定时提交并推送，仅项目所有者可查看或修改。默认关闭、默认间隔 30 分钟，可设为 1–1440 分钟。保存启用时需要确认：后台会暂存该仓库全部已保存的非忽略文件（包括其他用户修改、附件和删除），有变更时创建 `Notes: automatic sync` 提交，再推送已有及新提交；无变更时不生成空提交。遵守 `.gitignore`，但 Notes 隐藏规则及页面共享权限不是 Git 排除规则；未保存的浏览器/协作草稿不在本次提交内。
+**Settings → Git → Auto commit and push this project** 可按 Project 配置定时提交并推送，仅项目所有者可查看或修改。默认关闭、默认间隔 30 分钟，可设为 1–1440 分钟。保存启用时需要确认：后台会暂存该仓库全部已保存的非忽略文件（包括其他用户修改、附件和删除），有变更时创建 `Folio: automatic sync` 提交，再推送已有及新提交；无变更时不生成空提交。遵守 `.gitignore`，但 Folio 隐藏规则及页面共享权限不是 Git 排除规则；未保存的浏览器/协作草稿不在本次提交内。
 
 定时任务属于 Rust 后台服务，浏览器关闭或退出登录不影响执行；配置持久化，服务重启后重新等待完整间隔，运行结果和下次时间在 Settings 显示，失败通过底部状态区提示并在下一间隔重试。启用前需配置 Git 作者身份及分支 upstream；任务绑定启用时的分支、上游及推送地址，改变后需关闭再启用确认新目标。不会自动 Pull、强推或处理冲突；合并/变基进行中会拒绝运行，推送失败保留本地提交。自动提交禁用 hooks 和交互式签名；手工提交行为不变。共享库上的多个服务通过仓库锁避免重复运行，所有者账户删除后停止自动写入。
 
@@ -82,7 +127,7 @@ Git 文件列表按 Staged changes / Changes 分组，文件名与目录分行�
 
 应用内移动保持资源 UUID，删除后在同路径新建不会复用旧 UUID 或其历史，回收站恢复则使用被回收资源的身份。Markdown 源文档仍保留可移植的相对路径；渲染时解析为资源 URL。外部 Git/文件管理器移动不做内容相似度匹配，无法确认身份时不会猜测新位置。诊断 token 模式的身份表仅存在于当前服务进程，不提供跨重启书签保证。
 
-用户模式下，左上角的项目名称打开 Projects：每个用户可创建多个私有目录项目、克隆 GitHub 仓库，管理员还可接入已有的服务器绝对目录。目录项目与 GitHub 项目都以本地文件夹存储 Markdown；不能接入 Notes 的账户存储目录或与已有项目重叠的目录。原 CLI `--serve` 目录首次访问时迁移为初始管理员拥有的私有 `default` Project，其他用户不再自动获得访问权限。诊断 token 模式保留单目录行为。
+用户模式下，左上角的项目名称打开 Projects：每个用户可创建多个私有目录项目、克隆 GitHub 仓库，管理员还可接入已有的服务器绝对目录。目录项目与 GitHub 项目都以本地文件夹存储 Markdown；不能接入 Folio 的账户存储目录或与已有项目重叠的目录。原 CLI `--serve` 目录首次访问时迁移为初始管理员拥有的私有 `default` Project，其他用户不再自动获得访问权限。诊断 token 模式保留单目录行为。
 
 Projects → Manage 可设置名称、图片目录和面向**所有已登录用户**的共享权限：不共享、只读或共同编辑。单篇笔记在右上角 More → Share page 打开 Document permissions，可选择继承 Project、仅所有者可见、登录用户只读/编辑或公开链接。独立文档权限优先于 Project 权限，可以把共享项目内的一篇笔记设为私有或只读；所有者始终保留管理和编辑权限。恢复 Inherit Project permission 会移除该文档的独立规则及公开链接。
 
@@ -98,7 +143,7 @@ Projects → Manage 可设置名称、图片目录和面向**所有已登录用�
 
 Project 的文件、缓存、Git 操作和协同房间彼此隔离；共享设置持久保存，撤销访问后现有协同连接也会停止接收更新。只读用户仍可实时查看、选择和复制内容，但不能编辑、创建页面或上传图片。共享管理及 Git 写操作仅项目所有者可执行；Git Pull 前需退出该 Project 内的协同会话，避免拉取覆盖正在编辑的页面。改密码不改变项目归属，删除账户后重新注册同名用户不会继承旧项目。
 
-GitHub 项目接受 `owner/repository` 或 `https://github.com/owner/repository`，克隆最长等待 120 秒。私有仓库和 Push 使用该 Project 独立配置的 GitHub token，建议使用仅授权目标仓库 Contents 读写的细粒度 token；Manage 可替换 token。token 仅保存在服务端权限受限的项目目录配置中，不会通过共享 API 返回，也不写入 URL、进程命令行或 `.git/config`。GitHub 项目不继承服务器其他用户的 credential helper；Git 默认提交身份为创建者的本地用户名与 `<username>@notes.invalid`，可在本地仓库 Git 配置中调整。已有服务器仓库仍使用其既有 Git 配置。
+GitHub 项目接受 `owner/repository` 或 `https://github.com/owner/repository`，克隆最长等待 120 秒。私有仓库和 Push 使用该 Project 独立配置的 GitHub token，建议使用仅授权目标仓库 Contents 读写的细粒度 token；Manage 可替换 token。token 仅保存在服务端权限受限的项目目录配置中，不会通过共享 API 返回，也不写入 URL、进程命令行或 `.git/config`。GitHub 项目不继承服务器其他用户的 credential helper；Git 默认提交身份为创建者的本地用户名与 `<username>@folio.invalid`，可在本地仓库 Git 配置中调整。已有服务器仓库仍使用其既有 Git 配置。
 
 ### 粘贴图片
 
@@ -158,7 +203,7 @@ New note 可选择空白、日记、周报或会议记录模板，自动生成�
 
 共享草稿由服务端按自动保存间隔统一落盘，保留 Markdown/YAML、BOM、换行习惯和磁盘版本检查。撤销/重做只操作当前编辑者自己的修改。中文输入法组合期间会暂存远端更新，提交输入后再合并；连接中断时保留本地文本，同一服务会话恢复后自动同步。
 
-每个房间最多 12 个连接，每个 Project 内存中最多保留 16 个协同文档；单篇笔记仍限 4 MiB，协同历史另有限额。用户模式下，服务先将接受的 CRDT 更新写入 SQLite WAL，再确认并广播；房间身份与草稿可跨服务重启恢复。外部磁盘修改与恢复草稿冲突时不会覆盖磁盘，所有者可从 History 处理恢复版本。最后一位编辑者断开连接时，服务会立即尝试保存没有保存错误的已接收修改，不再等待自动保存延迟。保存后可点击 Sharing 离开协同；移动或重命名涉及引用时需退出受影响笔记的会话。文档租约阻止另一个 Notes 服务同时接管同一协同文档。诊断 token 模式仍通过 Collaborate 手动加入，不提供账户工作区持久化。
+每个房间最多 12 个连接，每个 Project 内存中最多保留 16 个协同文档；单篇笔记仍限 4 MiB，协同历史另有限额。用户模式下，服务先将接受的 CRDT 更新写入 SQLite WAL，再确认并广播；房间身份与草稿可跨服务重启恢复。外部磁盘修改与恢复草稿冲突时不会覆盖磁盘，所有者可从 History 处理恢复版本。最后一位编辑者断开连接时，服务会立即尝试保存没有保存错误的已接收修改，不再等待自动保存延迟。保存后可点击 Sharing 离开协同；移动或重命名涉及引用时需退出受影响笔记的会话。文档租约阻止另一个 Folio 服务同时接管同一协同文档。诊断 token 模式仍通过 Collaborate 手动加入，不提供账户工作区持久化。
 
 ### 邀请码与账户管理
 
@@ -197,11 +242,11 @@ custom:
 
 服务默认监听 `127.0.0.1`；用户模式 CLI 可显式指定 `--host 0.0.0.0` 监听所有 IPv4 网卡。首个浏览器访问者需要创建管理员，之后使用本地用户名和密码登录；密码仅保存为 Argon2id 哈希。登录有效期为 12 小时，刷新页面及同一用户库/笔记目录的服务重启均保留登录；浏览器需继续使用同一主机名。会话文件位于用户库旁，只持久化 token 的 SHA-256 哈希、账号校验信息和到期时间，原始 token 保留在 HttpOnly、SameSite=Strict Cookie 中。注销会持久撤销会话，重启时拒绝已过期、改密或删除的账号会话。旧版内存会话无法迁移，首次升级后需重新登录一次。所有账号共享宿主选择的笔记目录，账号与会话文件不写入笔记目录。相对图片从选定目录读取；正文和预览都不自动加载远程图片，原始地址仍保留在 Markdown 中。正文内的链接使用 Ctrl+点击打开。
 
-通过 SSH 本地端口转发访问时，可使用 `localhost`、`127.0.0.1` 或其他回环地址及不同的本地端口，但浏览器的 Host 与 Origin 必须保持一致。默认回环绑定拒绝非回环 Host；显式网络绑定允许相应的 IPv4 字面地址。通过 DNS 域名访问时，需显式配置 `--allow-host notes.example.com`；可重复指定多个受信任域名，仅接受完整 ASCII 主机名（国际化域名使用 Punycode），不含协议、端口、路径、末尾点或通配符，大小写不敏感，不自动信任子域名。未配置的 DNS Host 和跨源请求仍被拒绝，即使两个域名都在白名单中也不能跨源。`0.0.0.0` 是监听地址，其他设备应访问服务器的实际 IPv4 地址或已配置域名。该选项不会配置 DNS、防火墙或 TLS；不要把明文 HTTP 登录直接暴露到不可信网络。非 localhost 的普通 HTTP 页面不能使用浏览器加密草稿存储，不显示常驻 HTTPS 提示，也不会退回明文草稿存储；主动打开 Local recovery 或需要保留未保存草稿时，仍会明确报告不可用。单次启动 token 模式仅通过 `--auth-mode token` 保留给回环地址上的隔离诊断和自动化测试，不支持 `--allow-host`。
+通过 SSH 本地端口转发访问时，可使用 `localhost`、`127.0.0.1` 或其他回环地址及不同的本地端口，但浏览器的 Host 与 Origin 必须保持一致。默认回环绑定拒绝非回环 Host；显式网络绑定允许相应的 IPv4 字面地址。通过 DNS 域名访问时，需显式配置 `--allow-host folio.example.com`；可重复指定多个受信任域名，仅接受完整 ASCII 主机名（国际化域名使用 Punycode），不含协议、端口、路径、末尾点或通配符，大小写不敏感，不自动信任子域名。未配置的 DNS Host 和跨源请求仍被拒绝，即使两个域名都在白名单中也不能跨源。`0.0.0.0` 是监听地址，其他设备应访问服务器的实际 IPv4 地址或已配置域名。该选项不会配置 DNS、防火墙或 TLS；不要把明文 HTTP 登录直接暴露到不可信网络。非 localhost 的普通 HTTP 页面不能使用浏览器加密草稿存储，不显示常驻 HTTPS 提示，也不会退回明文草稿存储；主动打开 Local recovery 或需要保留未保存草稿时，仍会明确报告不可用。单次启动 token 模式仅通过 `--auth-mode token` 保留给回环地址上的隔离诊断和自动化测试，不支持 `--allow-host`。
 
 ## Windows 构建
 
-运行环境：Windows 10 1809 或更新版本，以及现代浏览器（Edge、Chrome、Firefox 等）。目标电脑只需要 `Notes.exe`，无需安装开发工具或额外运行时。
+运行环境：Windows 10 1809 或更新版本，以及现代浏览器（Edge、Chrome、Firefox 等）。目标电脑只需要 `Folio.exe`，无需安装开发工具或额外运行时。
 
 构建环境任选一种：
 
@@ -213,7 +258,7 @@ custom:
 .\apps\windows\Scripts\build.ps1 -Runtime win-x64 -Toolchain gnu
 ```
 
-生成 `build\windows\win-x64\Notes.exe`。ARM64 使用 `-Runtime win-arm64 -Toolchain msvc`，需要安装对应 Rust target 和 Visual C++ ARM64 构建工具。构建脚本默认根据 Rust host 选择工具链，不在运行时解压 DLL 或网页资源。
+生成 `build\windows\win-x64\Folio.exe`。ARM64 使用 `-Runtime win-arm64 -Toolchain msvc`，需要安装对应 Rust target 和 Visual C++ ARM64 构建工具。构建脚本默认根据 Rust host 选择工具链，不在运行时解压 DLL 或网页资源。
 
 普通 Cargo 构建使用仓库中已经生成的前端资源，**不需要 Node.js**。只有修改编辑器前端时才需要 Node.js 22 或更新版本：
 
@@ -233,14 +278,14 @@ npm --prefix web/editor test
 npm --prefix web/editor run benchmark:math
 ```
 
-图标的可编辑源文件是 `Shared\Resources\NotesIcon.svg`。修改后在 `web` 目录运行 `npm run icons`（Windows 使用本机 Edge，其他平台使用 Playwright Chromium），生成共用的 1024px PNG 和包含 16–256px 九种尺寸的 ICO。普通应用构建直接使用生成好的图标，不需要 Node.js、浏览器构建工具或 Python；浏览器标签页也使用相同图标。
+图标的可编辑源文件是 `Shared\Resources\FolioIcon.svg`。修改后在 `web` 目录运行 `npm run icons`（Windows 使用本机 Edge，其他平台使用 Playwright Chromium），生成共用的 1024px PNG、包含 16–256px 九种尺寸的 ICO，以及明暗背景预览 `build/icon-preview.png`。普通应用构建直接使用生成好的图标，不需要 Node.js、浏览器构建工具或 Python；浏览器标签页与桌面应用也使用相同图标。
 
 ### 开发验证
 
 ```powershell
 .\apps\windows\Scripts\build.ps1 -Test
 cargo test --locked --workspace --target-dir .\build\rust
-cargo build --locked -p notes-cli --target-dir .\build\rust
+cargo build --locked -p folio-cli --target-dir .\build\rust
 Set-Location web
 npm test
 npm run check:lines
@@ -263,7 +308,7 @@ npm --prefix web run audit:library -- ../notes
 npm --prefix web run benchmark:tree
 ```
 
-附加 `NOTES_BENCH_NOTE_KIB=128` 可测试 1,000 篇大正文笔记；输出包含首次目录请求耗时和成功读取的 YAML 标题数量，避免仅测速度而漏掉标题。
+附加 `FOLIO_BENCH_NOTE_KIB=128` 可测试 1,000 篇大正文笔记；输出包含首次目录请求耗时和成功读取的 YAML 标题数量，避免仅测速度而漏掉标题。
 
 约 1 MiB 文档的 Source 输入响应基准：
 
@@ -286,74 +331,74 @@ npm --prefix web run benchmark:views
 点击到首帧、工作区请求和文件请求的隔离基准（20 篇约 267 KB 的合成笔记）：
 
 ```bash
-cargo build --locked --release -p notes-cli
+cargo build --locked --release -p folio-cli
 cd web
-NOTES_TEST_EXE=../target/release/notes-core NOTES_BENCH_CLICKS=baseline \
+FOLIO_TEST_EXE=../target/release/folio-core FOLIO_BENCH_CLICKS=baseline \
   npx playwright test --timeout=180000 --grep 'click latency benchmark'
 ```
 
-报告写入 `build/click-performance/baseline.json`；更换 `NOTES_BENCH_CLICKS` 标签可保留前后测量，附加 `NOTES_BENCH_PROFILE=1` 可保存 Chromium CPU profile。常规测试不运行此基准；应在相同机器上单独运行，避免并行构建影响尾延迟。
+报告写入 `build/click-performance/baseline.json`；更换 `FOLIO_BENCH_CLICKS` 标签可保留前后测量，附加 `FOLIO_BENCH_PROFILE=1` 可保存 Chromium CPU profile。常规测试不运行此基准；应在相同机器上单独运行，避免并行构建影响尾延迟。
 
 项目切换与搜索基准使用 512 篇约 34 KB 的合成笔记，并在首次索引时持续请求工作区，记录交互尾延迟：
 
 ```bash
 cd web
-NOTES_TEST_EXE=../target/release/notes-core NOTES_BENCH_WORKSPACE=baseline \
+FOLIO_TEST_EXE=../target/release/folio-core FOLIO_BENCH_WORKSPACE=baseline \
   npx playwright test --timeout=240000 --grep 'workspace interaction benchmark'
 ```
 
 报告保存在 `build/workspace-performance/baseline.json`，区分弹窗首帧、项目目录可用、首次搜索结果、索引完成及已有索引时的结果延迟。
 
-给工作区或文件点击基准加上 `NOTES_BENCH_ACL=2048`，可在隔离项目中加入 2,048 条页面权限规则，检查权限目录规模对交互的影响；允许范围为 0–5,000，不修改真实项目配置。
+给工作区或文件点击基准加上 `FOLIO_BENCH_ACL=2048`，可在隔离项目中加入 2,048 条页面权限规则，检查权限目录规模对交互的影响；允许范围为 0–5,000，不修改真实项目配置。
 
-给工作区基准加上 `NOTES_BENCH_PUBLIC_READS=1`，可将索引期间的探针改为已解锁的受密码保护公开文档读取，测量访客认证路径的尾延迟。
+给工作区基准加上 `FOLIO_BENCH_PUBLIC_READS=1`，可将索引期间的探针改为已解锁的受密码保护公开文档读取，测量访客认证路径的尾延迟。
 
-加上 `NOTES_BENCH_HISTORY_READS=1` 可在索引期间读取约 1 MiB 的合成历史内容；可以与公开文档探针同时启用，以确认较重的历史读取没有拖慢轻量认证查询。
+加上 `FOLIO_BENCH_HISTORY_READS=1` 可在索引期间读取约 1 MiB 的合成历史内容；可以与公开文档探针同时启用，以确认较重的历史读取没有拖慢轻量认证查询。
 
-用 `NOTES_BENCH_WORKSPACE_WRITES=baseline npx playwright test --grep 'workspace write benchmark'`（同样设置 `NOTES_TEST_EXE`）可单独比较重复访问、重复收藏和真实顺序变化。报告写入 `build/workspace-write-performance/baseline.json`，同时记录请求耗时、状态变化次数和 revision 变化次数。
+用 `FOLIO_BENCH_WORKSPACE_WRITES=baseline npx playwright test --grep 'workspace write benchmark'`（同样设置 `FOLIO_TEST_EXE`）可单独比较重复访问、重复收藏和真实顺序变化。报告写入 `build/workspace-write-performance/baseline.json`，同时记录请求耗时、状态变化次数和 revision 变化次数。
 
 公开文档打开基准使用 12 篇约 267 KB 的只读合成笔记，分别测量冷打开和再次打开：
 
 ```bash
 cd web
-NOTES_TEST_EXE=../target/release/notes-core NOTES_BENCH_PUBLIC=baseline \
+FOLIO_TEST_EXE=../target/release/folio-core FOLIO_BENCH_PUBLIC=baseline \
   npx playwright test --timeout=240000 --grep 'public document benchmark'
 ```
 
-报告保存在 `build/public-performance/baseline.json`。可加 `NOTES_BENCH_PROFILE=1` 对单篇文档做 Chromium CPU 采样，或加 `NOTES_BENCH_CANONICAL=1` 测量已符合序列化格式的正文。Live 仅在序列化结果与原正文完全相同时省去重复语义解析，空白等任何差异仍走完整检查。页面可读帧通过 DOM 事件直接计时，不把测试定位器的轮询等待算入页面耗时。
+报告保存在 `build/public-performance/baseline.json`。可加 `FOLIO_BENCH_PROFILE=1` 对单篇文档做 Chromium CPU 采样，或加 `FOLIO_BENCH_CANONICAL=1` 测量已符合序列化格式的正文。Live 仅在序列化结果与原正文完全相同时省去重复语义解析，空白等任何差异仍走完整检查。页面可读帧通过 DOM 事件直接计时，不把测试定位器的轮询等待算入页面耗时。
 
 独立测量 Rust 渲染流水线（普通混合 Markdown 与长中文标题）：
 
 ```bash
-cargo test --locked --release -p notes-core benchmark_markdown_render_pipeline -- --ignored --nocapture
+cargo test --locked --release -p folio-core benchmark_markdown_render_pipeline -- --ignored --nocapture
 ```
 
 公开会话数据库规模基准（0 / 65,536 条未过期访客记录，隔离数据库）：
 
 ```bash
-cargo test --locked --release -p notes-core --test server benchmark_public_session_with_many_unexpired_visitors -- --ignored --nocapture
+cargo test --locked --release -p folio-core --test server benchmark_public_session_with_many_unexpired_visitors -- --ignored --nocapture
 ```
 
-浏览器测试默认直接使用共享 core CLI：Windows 为 `build\rust\debug\notes-core.exe`，其他平台为同目录的 `notes-core`。Windows 使用本机 Edge，其他平台需先运行 `npx playwright install chromium`。可通过 `NOTES_TEST_EXE` 改为测试 Windows wrapper 的诊断入口。测试创建隔离笔记，不读取真实笔记或用户设置。
+浏览器测试默认直接使用共享 core CLI：Windows 为 `build\rust\debug\folio-core.exe`，其他平台为同目录的 `folio-core`。Windows 使用本机 Edge，其他平台需先运行 `npx playwright install chromium`。可通过 `FOLIO_TEST_EXE` 改为测试 Windows wrapper 的诊断入口。测试创建隔离笔记，不读取真实笔记或用户设置。
 
 原生托盘/设置测试需要交互式 Windows 桌面，默认不运行。在仓库根目录执行：
 
 ```powershell
-$env:NOTES_NATIVE_SMOKE_EXE = (Resolve-Path .\build\windows\win-x64\Notes.exe).Path
-cargo test --locked -p notes-app-windows --lib native::tests::isolated_native_settings_and_quit -- --ignored
+$env:FOLIO_NATIVE_SMOKE_EXE = (Resolve-Path .\build\windows\win-x64\Folio.exe).Path
+cargo test --locked -p folio-windows --lib native::tests::isolated_native_settings_and_quit -- --ignored
 ```
 
 无托盘诊断模式：
 
 ```powershell
-.\Notes.exe --serve "C:\MyNotes" --port 8123 --ready-file "C:\Temp\notes-ready.json" --stop-file "C:\Temp\notes-stop"
+.\Folio.exe --serve "C:\MyNotes" --port 8123 --ready-file "C:\Temp\folio-ready.json" --stop-file "C:\Temp\folio-stop"
 ```
 
 `--ready-file` 包含本次服务的浏览器 URL 和进程信息。创建指定的 `--stop-file` 可正常停止服务。端口占用会明确报错，不会接管或终止其他程序。
 
 ## macOS 构建
 
-需要 macOS 13 或更高版本、Rust 工具链和 Xcode Command Line Tools。构建会把 `notes-core-ffi` 静态链接到 Swift / AppKit 程序；不需要额外启动 core 子进程，也不需要 Python 或 MkDocs。
+需要 macOS 13 或更高版本、Rust 工具链和 Xcode Command Line Tools。构建会把 `folio-core-ffi` 静态链接到 Swift / AppKit 程序；不需要额外启动 core 子进程，也不需要 Python 或 MkDocs。
 
 图标使用系统自带的 `sips` / `iconutil` 生成。
 
@@ -362,20 +407,20 @@ make app
 make install
 ```
 
-生成 `build/Notes.app`，安装到 `~/Applications/Notes.app`。
+生成 `build/Folio.app`，安装到 `~/Applications/Folio.app`。
 
 首次运行会尝试从旧版 UserDefaults 导入目录、端口及自动启动/打开选项；旧偏好不删除。无效目录会提示在设置中修正，不会重新依赖旧版 MkDocs 配置。Windows 环境只能交叉检查 Rust 的 macOS 目标；Swift 链接和 macOS 运行需在 macOS 主机验证。
 
 ## Linux / 通用 core CLI
 
 ```bash
-cargo build --locked --release -p notes-cli --target-dir build/rust
-./build/rust/release/notes-core --serve "$HOME/notes" --port 8123
+cargo build --locked --release -p folio-cli --target-dir build/rust
+./build/rust/release/folio-core --serve "$HOME/notes" --port 8123
 # Explicit network access (user authentication remains required):
-./build/rust/release/notes-core --serve "$HOME/notes" --host 0.0.0.0 --port 8123
+./build/rust/release/folio-core --serve "$HOME/notes" --host 0.0.0.0 --port 8123
 # Access through an explicitly trusted DNS hostname:
-./build/rust/release/notes-core --serve "$HOME/notes" --host 0.0.0.0 --port 8123 \
-  --allow-host notes.example.com
+./build/rust/release/folio-core --serve "$HOME/notes" --host 0.0.0.0 --port 8123 \
+  --allow-host folio.example.com
 ```
 
 终端会输出浏览器 URL；绑定 `0.0.0.0` 时仍输出可在本机打开的回环 URL，ready JSON 的 `host` 字段记录实际监听地址，`allowedHosts` 记录额外允许的 DNS 主机名。首次访问创建管理员，之后登录。支持 `--host <IPv4>`、可重复的 `--allow-host <hostname>`、`--theme system|light|dark`、`--latin-font`、`--cjk-font`、自定义 `--auth-file`，以及诊断用的 `--ready-file` / `--stop-file`。CLI 不读取或修改桌面编辑器偏好；不需要 GTK、桌面壳或浏览器内核依赖。
@@ -383,23 +428,33 @@ cargo build --locked --release -p notes-cli --target-dir build/rust
 初始管理员只在网页首次设置。之后可通过 CLI 管理共享账号，密码默认从终端隐藏输入，也可从标准输入读取：
 
 ```bash
-./build/rust/release/notes-core user list
-./build/rust/release/notes-core user add writer --role user
-./build/rust/release/notes-core user password writer
-./build/rust/release/notes-core user remove writer
+./build/rust/release/folio-core user list
+./build/rust/release/folio-core user add writer --role user
+./build/rust/release/folio-core user password writer
+./build/rust/release/folio-core user remove writer
 ```
 
-修改密码或删除账号后重启正在运行的 Notes 服务，以立即撤销该账号已有的内存会话。
+修改密码或删除账号后重启正在运行的 Folio 服务，以立即撤销该账号已有的内存会话。
 
 GitHub Actions 对 Windows、Linux、macOS 运行共享 workspace 测试，并在原生主机构建对应 wrapper / CLI。macOS 的 Swift 构建只能由 macOS 主机完成。
 
 ## 数据与代码
 
-- Windows 设置：`%LOCALAPPDATA%\NotesApp\settings.json`；笔记在用户选择的原目录中。
-- macOS 设置：`~/Library/Application Support/NotesApp/settings.json`；旧 plist 只用于迁移。
-- Linux core 设置默认位置：`$XDG_CONFIG_HOME/notes-app/settings.json`，未设置时为 `~/.config/notes-app/settings.json`；CLI 诊断模式不读写它。
+应用、crate、CLI、package、资源、bundle identifier、协议和浏览器存储统一使用 Folio 命名。Rust workspace 使用 `folio-core`、`folio-cli`、`folio-core-ffi` 和 `folio-windows`；浏览器编辑器 package 为 `@folio/editor`。
+
+- Windows 设置：`%LOCALAPPDATA%\Folio\settings.json`；笔记在用户选择的原目录中。
+- macOS 设置：`~/Library/Application Support/Folio/settings.json`；旧 plist 只用于迁移。
+- Linux core 设置默认位置：`$XDG_CONFIG_HOME/folio/settings.json`，未设置时为 `~/.config/folio/settings.json`；CLI 诊断模式不读写它。
 - 用户账号：与平台设置位于同一目录的 `users.json`；只包含规范化用户名、角色和 Argon2id 密码哈希。
 - `web\public\`：嵌入 core 的网页和生成资源；`web\frontend\`：应用壳源码；`web\editor\`：独立编辑器 package。
 - 根目录 `Cargo.toml` / `Cargo.lock` 管理统一 Rust workspace，`web\package-lock.json` 固定前端依赖。
+
+### 从旧名称升级
+
+旧名称只保留在迁移代码和说明中，不再用于新资源或发行包。首次使用 Folio 桌面壳且新配置不存在时，自动读取原 `NotesApp/settings.json`（Windows / macOS）或 `notes-app/settings.json`（Linux），验证后写入 Folio 配置目录；原文件不会被删除，有效的新配置不会被覆盖。macOS 同时支持从旧 `local.hangxing.notes` UserDefaults 导入设置。
+
+账户、项目和历史数据不自动搬移；需要保留旧工作区时，先停止旧服务并备份，再把原配置目录内的所有文件与子目录复制到新的 Folio 配置目录，**不要覆盖已经使用的 Folio 数据目录，也不要删除原目录**。已管理项目可能仍引用原目录中的绝对路径，保留原目录可确保这些笔记继续可访问。原 Markdown 文件不会改名或移动。
+
+协议、cookie 与浏览器存储的命名也已更新：请先保存未保存草稿，退出旧服务，重新打开 Folio 并登录；旧浏览器中的布局和本机恢复草稿不自动导入。CLI 可通过 `--auth-file /path/to/users.json` 显式使用原账户和项目存储目录。
 
 布局与交互研究参考 [Typora 文件管理](https://support.typora.io/File-Management/)、[实时预览说明](https://support.typora.io/Quick-Start/#live-preview)和 [Markdown 行内编辑说明](https://support.typora.io/Markdown-Reference/#span-elements)。本项目采用保留排版的原位编辑，源码模式由用户主动切换，并非 Typora 全部行为的逐项复刻；程序不包含 Typora 的截图、图标或主题代码。

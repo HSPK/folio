@@ -143,14 +143,14 @@ attachScrollbars(ui.editor.parentElement, ui.editor);
 attachScrollbars(ui.preview.parentElement, ui.preview);
 ui.editor = createSourceEditor({
   textarea: ui.editor,
-  nonce: document.querySelector('meta[name="notes-style-nonce"]').content,
+  nonce: document.querySelector('meta[name="folio-style-nonce"]').content,
 });
 
 const compactLayout = window.matchMedia("(max-width: 650px)");
-const SIDEBAR_WIDTH_KEY = "notes.layout.sidebarWidth";
-const PAGE_WIDTH_KEY = "notes.layout.pageWidth";
-const COMMAND_SHORTCUT_KEY = "notes.shortcuts.commandPanel";
-const HIDDEN_PATTERNS_KEY = "notes.library.hiddenPatterns";
+const SIDEBAR_WIDTH_KEY = "folio.layout.sidebarWidth";
+const PAGE_WIDTH_KEY = "folio.layout.pageWidth";
+const COMMAND_SHORTCUT_KEY = "folio.shortcuts.commandPanel";
+const HIDDEN_PATTERNS_KEY = "folio.library.hiddenPatterns";
 const SIDEBAR_MIN = 210;
 const SIDEBAR_MAX = 420;
 const SIDEBAR_DEFAULT = 260;
@@ -166,7 +166,7 @@ let sidebarBeforeFocus = true;
 let wordSource = null;
 let wordCount = 0;
 const wordCounter = createWordCounter();
-const TOKEN_KEY = "notes.connection.token";
+const TOKEN_KEY = "folio.connection.token";
 const launch = readLaunchUrl(window.location.href);
 let token = launch.token;
 let storageUnavailable = false;
@@ -234,7 +234,7 @@ const outlineExtractor = createOutlineExtractor();
 const inlineEditor = createInlineEditor({
   root: element("rich-editor"),
   outlineExtractor,
-  styleNonce: document.querySelector('meta[name="notes-style-nonce"]').content,
+  styleNonce: document.querySelector('meta[name="folio-style-nonce"]').content,
   transformUrl: (url, path) => projectUrl(url, path),
   onTag: (tag) => openWorkspaceSearch({ tags: [tag] }),
   onNotice: (message) => notice(element("metadata-message"), message, "warning"),

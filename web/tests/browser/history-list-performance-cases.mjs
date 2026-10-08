@@ -3,7 +3,7 @@ import { collaborativeLibrary } from "./collaboration-cases.mjs";
 import { measureClickFrame, summarizeTimings } from "./performance-helpers.mjs";
 
 test("large history list benchmark measures snapshot capture and usable dialog latency", async ({ browser }) => {
-  test.skip(!process.env.NOTES_BENCH_HISTORY_LIST, "Opt-in large-document history measurement.");
+  test.skip(!process.env.FOLIO_BENCH_HISTORY_LIST, "Opt-in large-document history measurement.");
   const block = "## Topic\n\nA paragraph with **bold** and [link](Other.md).\n\n";
   const content = "---\ntitle: Large history\n---\n\n# Large history\n\n"
     + block.repeat(Math.floor(3.5 * 1024 * 1024 / block.length));
@@ -29,7 +29,7 @@ test("large history list benchmark measures snapshot capture and usable dialog l
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe(content);
     const report = { bytes: Buffer.byteLength(content), summary: summarizeTimings(timings), timings };
     await fs.mkdir(path.join(buildRoot, "history-list-performance"), { recursive: true });
-    await fs.writeFile(path.join(buildRoot, "history-list-performance", `${process.env.NOTES_BENCH_HISTORY_LIST}.json`), JSON.stringify(report, null, 2));
+    await fs.writeFile(path.join(buildRoot, "history-list-performance", `${process.env.FOLIO_BENCH_HISTORY_LIST}.json`), JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ bytes: report.bytes, ...report.summary }, null, 2));
   } finally { await library.close(); }
 });

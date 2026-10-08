@@ -105,12 +105,12 @@ test("Git groups retain focus and drafts, show errors and open the matching diff
   await expect(page.locator("#git-commit-message")).toHaveValue("Keep this draft");
 });
 
-test("Git layout fits narrow sidebars and has a continuous Notes divider", async ({ page }) => {
+test("Git layout fits narrow sidebars and has a continuous Folio divider", async ({ page }) => {
   const files = [
     file("docs/weekly/LLM/20260918.md", "?", "?"),
     file("research/experiments/very-long-folder-name/training-observations-and-follow-up.md"),
     file("README.md", "M", "."),
-    file("archive/previous-notes.md", ".", "D"),
+    file("archive/previous-folio.md", ".", "D"),
     ...Array.from({ length: 18 }, (_, index) => file(`notes/Note-${index}.md`)),
   ];
   await page.route(gitRoute, (route) => route.fulfill({

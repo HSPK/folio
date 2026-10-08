@@ -15,7 +15,7 @@ const harness = `
   root.append(textarea);
   const editor = createSourceEditor({
     textarea,
-    nonce: document.querySelector('meta[name="notes-style-nonce"]').content,
+    nonce: document.querySelector('meta[name="folio-style-nonce"]').content,
   });
   window.benchmarkSourcePrepare = (source, count) => {
     editor.reset(source);

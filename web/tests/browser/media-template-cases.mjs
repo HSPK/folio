@@ -28,8 +28,8 @@ test("daily templates create tagged notes and dropped images respect compression
   const body = page.locator(".ProseMirror");
   const bounds = await body.boundingBox();
   await body.dispatchEvent("drop", { dataTransfer: transfer, clientX: bounds.x + 20, clientY: bounds.y + 20 });
-  await expect(page.locator(".notes-inline-image img")).toHaveCount(1);
-  const image = page.locator(".notes-inline-image img");
+  await expect(page.locator(".folio-inline-image img")).toHaveCount(1);
+  const image = page.locator(".folio-inline-image img");
   await expect(image).toHaveAttribute("src", /\/assets\?id=[a-f0-9-]+&document=[a-f0-9-]+/);
   const asset = await page.request.get(new URL(await image.getAttribute("src"), page.url()).href);
   expect(asset.ok()).toBe(true);

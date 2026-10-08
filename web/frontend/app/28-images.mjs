@@ -61,7 +61,7 @@ async function insertImages(images) {
 }
 
 document.addEventListener("paste", (event) => {
-  if (!activeDocument || !collaborativeTarget(event.target) || event.target.closest(".notes-metadata-source")) return;
+  if (!activeDocument || !collaborativeTarget(event.target) || event.target.closest(".folio-metadata-source")) return;
   const images = [...(event.clipboardData?.items ?? [])].filter((item) => item.kind === "file" && item.type.startsWith("image/"));
   if (!images.length) return;
   event.preventDefault();
@@ -78,7 +78,7 @@ document.addEventListener("drop", (event) => {
   if (!event.dataTransfer?.files.length || !event.target.closest(".editor-pane, .rich-pane")) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  if (!activeDocument || !projectWritable() || event.target.closest(".notes-metadata")) {
+  if (!activeDocument || !projectWritable() || event.target.closest(".folio-metadata")) {
     documentNotice("Drop images into an editable document body.", "warning");
     return;
   }

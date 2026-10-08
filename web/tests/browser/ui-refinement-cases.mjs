@@ -9,7 +9,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     + "| Area | Goal |\n| --- | --- |\n| Typography | Clear hierarchy |\n| Layout | Consistent spacing |\n";
   const library = await collaborativeLibrary(browser, { content });
   const anonymous = await browser.newContext();
-  const output = path.join(buildRoot, "ui-refinement", process.env.NOTES_UI_CAPTURE ?? "current");
+  const output = path.join(buildRoot, "ui-refinement", process.env.FOLIO_UI_CAPTURE ?? "current");
   const geometry = [];
   try {
     await fs.mkdir(output, { recursive: true });
@@ -81,9 +81,9 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
       await page.locator(`#${id}`).click();
     };
     await capture("desktop-document");
-    await page.locator(".notes-metadata summary").click();
+    await page.locator(".folio-metadata summary").click();
     await capture("desktop-metadata");
-    await page.locator(".notes-metadata summary").click();
+    await page.locator(".folio-metadata summary").click();
     await page.locator("#more-menu > summary").click();
     await capture("desktop-menu");
     await page.keyboard.press("Escape");

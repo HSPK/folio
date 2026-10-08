@@ -5,7 +5,7 @@ let workspaceLoaded = false;
 let workspaceControlSignature = null;
 const workspaceDialog = element("workspace-dialog");
 const sameWorkspaceNote = (note, project, id) => note.project === project && note.id === id;
-function activeWorkspaceKey() { return `notes.workspace.active.${authUser?.scope ?? ""}.${authUser?.id ?? ""}`; }
+function activeWorkspaceKey() { return `folio.workspace.active.${authUser?.scope ?? ""}.${authUser?.id ?? ""}`; }
 
 function acceptWorkspace(result) {
   if (!Number.isSafeInteger(result?.revision) || !result.workspace

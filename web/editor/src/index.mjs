@@ -63,7 +63,7 @@ export function applyAppearance(value, root = document.documentElement) {
         try {
           // A local, CJK-only face precedes the English family, even when that family
           // also contains Han glyphs. No font URLs, downloads, or CSS rules are used.
-          const alias = `Notes Local CJK ${++fontGeneration}`;
+          const alias = `Folio Local CJK ${++fontGeneration}`;
           const face = new FontFace(alias, `local(${cjk})`, { unicodeRange: cjkGlyphs });
           owner.fonts.add(face);
           state.face = face;
@@ -90,12 +90,12 @@ export function applyAppearance(value, root = document.documentElement) {
 }
 
 const codeHighlighter = tagHighlighter([
-  { tag: tags.keyword, class: "notes-code-keyword" },
-  { tag: [tags.string, tags.character], class: "notes-code-string" },
-  { tag: [tags.number, tags.bool, tags.null], class: "notes-code-number" },
-  { tag: tags.comment, class: "notes-code-comment" },
-  { tag: tags.typeName, class: "notes-code-type" },
-  { tag: tags.function(tags.variableName), class: "notes-code-function" },
+  { tag: tags.keyword, class: "folio-code-keyword" },
+  { tag: [tags.string, tags.character], class: "folio-code-string" },
+  { tag: [tags.number, tags.bool, tags.null], class: "folio-code-number" },
+  { tag: tags.comment, class: "folio-code-comment" },
+  { tag: tags.typeName, class: "folio-code-type" },
+  { tag: tags.function(tags.variableName), class: "folio-code-function" },
 ]);
 
 function codeParser(language = "") {
@@ -193,10 +193,10 @@ export function createInlineEditor({ root, onChange, onFallback, onLink, onReady
     session = state;
     root.dataset.editorMode = "formatted";
     const scroll = document.createElement("div");
-    scroll.className = "notes-live-scroll";
+    scroll.className = "folio-live-scroll";
     scroll.setAttribute("data-editor-scroller", "");
     const page = document.createElement("div");
-    page.className = "notes-live-page";
+    page.className = "folio-live-page";
     scroll.append(page);
     root.append(scroll);
     state.scrollbars.push(attachScrollbars(root, scroll, { nonce: styleNonce }));
@@ -208,7 +208,7 @@ export function createInlineEditor({ root, onChange, onFallback, onLink, onReady
       return;
     }
     const mount = document.createElement("div");
-    mount.className = "notes-prose";
+    mount.className = "folio-prose";
     page.append(mount);
     root.setAttribute("aria-busy", "true");
     let instance;
@@ -229,7 +229,7 @@ export function createInlineEditor({ root, onChange, onFallback, onLink, onReady
             const dom = document.createElement("li");
             const checkbox = document.createElement("input");
             checkbox.type = "checkbox";
-            checkbox.className = "notes-task-checkbox";
+            checkbox.className = "folio-task-checkbox";
             checkbox.contentEditable = "false";
             const contentDOM = document.createElement("div");
             dom.append(checkbox, contentDOM);
@@ -237,7 +237,7 @@ export function createInlineEditor({ root, onChange, onFallback, onLink, onReady
               checkbox.hidden = node.attrs.checked == null;
               checkbox.checked = node.attrs.checked === true;
               checkbox.setAttribute("aria-label", checkbox.checked ? "Mark task incomplete" : "Mark task complete");
-              dom.classList.toggle("notes-task-item", node.attrs.checked != null);
+              dom.classList.toggle("folio-task-item", node.attrs.checked != null);
             };
             checkbox.addEventListener("change", () => {
               const position = getPos();
@@ -259,15 +259,15 @@ export function createInlineEditor({ root, onChange, onFallback, onLink, onReady
           },
           code_block(node) {
             const dom = document.createElement("div");
-            dom.className = "notes-code-block";
+            dom.className = "folio-code-block";
             const gutter = document.createElement("div");
-            gutter.className = "notes-code-gutter";
+            gutter.className = "folio-code-gutter";
             gutter.contentEditable = "false";
             gutter.setAttribute("aria-hidden", "true");
             const pre = document.createElement("pre");
             const contentDOM = document.createElement("code");
             const scrollHost = document.createElement("div");
-            scrollHost.className = "notes-code-scroll";
+            scrollHost.className = "folio-code-scroll";
             scrollHost.setAttribute("data-overlayscrollbars-initialize", "");
             pre.append(contentDOM);
             scrollHost.append(pre);
@@ -305,7 +305,7 @@ export function createInlineEditor({ root, onChange, onFallback, onLink, onReady
           },
           image(node) {
             const dom = document.createElement("span");
-            dom.className = "notes-inline-image";
+            dom.className = "folio-inline-image";
             const update = (value) => {
               dom.replaceChildren();
               const url = resolveMarkdownUrl(value.attrs.src, path, true);

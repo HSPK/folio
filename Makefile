@@ -7,7 +7,7 @@ windows:
 	pwsh -NoProfile -File ./apps/windows/Scripts/build.ps1
 
 core:
-	cargo build --locked --release -p notes-cli --target-dir build/rust
+	cargo build --locked --release -p folio-cli --target-dir build/rust
 
 web:
 	npm --prefix web ci
@@ -20,8 +20,8 @@ test:
 
 install: app
 	mkdir -p "$(HOME)/Applications"
-	rm -rf "$(HOME)/Applications/Notes.app"
-	cp -R build/Notes.app "$(HOME)/Applications/Notes.app"
+	rm -rf "$(HOME)/Applications/Folio.app"
+	cp -R build/Folio.app "$(HOME)/Applications/Folio.app"
 
 clean:
 	rm -rf build

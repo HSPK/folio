@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128" fill="none">
+  <title>Folio - Folded F</title>
+  <desc>A white F on a charcoal page with a folded corner. Two flat colors, no gradients or shadows.</desc>
+  <path fill="#292929" d="M32 12H78L108 42V104A12 12 0 0 1 96 116H32A12 12 0 0 1 20 104V24A12 12 0 0 1 32 12Z"/>
+  <path fill="#FFFFFF" d="M40 38H76V52H54V64H76V78H54V96H40ZM82 20L100 38H82Z"/>
+</svg>

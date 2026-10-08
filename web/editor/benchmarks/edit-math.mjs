@@ -11,7 +11,7 @@ const harness = `
     onLink() {},
     onOutline() {},
     onSelection() {},
-    styleNonce: document.querySelector('meta[name="notes-style-nonce"]').content,
+    styleNonce: document.querySelector('meta[name="folio-style-nonce"]').content,
   });
   const frames = () => new Promise((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -19,7 +19,7 @@ const harness = `
     await editor.load("Formula $x$ tail.\\n", "edit.md");
     await frames();
     const math = document.querySelector('[data-type="math_inline"]');
-    const output = math.querySelector(".notes-math-output");
+    const output = math.querySelector(".folio-math-output");
     output.dispatchEvent(new MouseEvent("mousedown", {
       bubbles: true, cancelable: true, button: 0,
     }));

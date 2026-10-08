@@ -6,10 +6,10 @@ async function tryReadOnlySocketWrite(page) {
   return page.evaluate(async () => {
     const share = new URL(location.href).searchParams.get("share");
     const session = await (await fetch("/api/public/session", {
-      method: "POST", headers: { "X-Notes-Share": share },
+      method: "POST", headers: { "X-Folio-Share": share },
     })).json();
     const response = await fetch("/api/public/collaboration/join", {
-      method: "POST", headers: { "Content-Type": "application/json", "X-Notes-Share": share },
+      method: "POST", headers: { "Content-Type": "application/json", "X-Folio-Share": share },
       body: JSON.stringify({ document: session.id }),
     });
     return { status: response.status, ...(await response.json()) };
@@ -43,7 +43,7 @@ test("public document links default to read-only, allow opt-in anonymous collabo
       await expect(page.locator(selector)).toBeHidden();
     }
     await expect(page.locator(".collaboration-avatar")).toHaveCount(0);
-    expect((await guest.cookies()).filter((cookie) => cookie.name.startsWith("notes_user_session"))).toHaveLength(0);
+    expect((await guest.cookies()).filter((cookie) => cookie.name.startsWith("folio_user_session"))).toHaveLength(0);
     expect((await guest.request.get(new URL("/api/projects", url).href)).status()).toBe(401);
     expect((await tryReadOnlySocketWrite(page)).status).toBe(403);
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).not.toContain("Rejected anonymous change");
@@ -68,8 +68,8 @@ test("public document links default to read-only, allow opt-in anonymous collabo
     expect(new Set(names.filter((name) => name.startsWith("Guest "))).size).toBe(2);
     await pasteImage(page, "#editor");
     await expect(page.locator("#editor")).toHaveValue(/!\[Image\]\(assets\/images\/image-/);
-    await expect(other.locator(".notes-inline-image img")).toHaveCount(1);
-    await expect.poll(() => other.locator(".notes-inline-image img").evaluate((image) => image.naturalWidth)).toBe(16);
+    await expect(other.locator(".folio-inline-image img")).toHaveCount(1);
+    await expect.poll(() => other.locator(".folio-inline-image img").evaluate((image) => image.naturalWidth)).toBe(16);
     await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     await page.screenshot({ path: path.join(buildRoot, "public-document-sharing.png") });
     await owner.locator("#sharing-public-edit").uncheck();

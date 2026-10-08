@@ -21,17 +21,17 @@
   --os-handle-interactive-area-offset: 4px;
 }
 
-.os-theme-notes.os-scrollbar { z-index: 5; }
+.os-theme-folio.os-scrollbar { z-index: 5; }
 
 /* Hide native gutters before initialization as well as while the controls update. */
-:is(.file-nav, #outline-scroll, .notes-live-scroll, textarea.editor, .preview-body,
-  .notes-metadata-source, .notes-code-block pre) {
+:is(.file-nav, #outline-scroll, .folio-live-scroll, textarea.editor, .preview-body,
+  .folio-metadata-source, .folio-code-block pre) {
   scrollbar-width: none;
   scrollbar-gutter: auto;
 }
 
-:is(.file-nav, #outline-scroll, .notes-live-scroll, textarea.editor, .preview-body,
-  .notes-metadata-source, .notes-code-block pre)::-webkit-scrollbar {
+:is(.file-nav, #outline-scroll, .folio-live-scroll, textarea.editor, .preview-body,
+  .folio-metadata-source, .folio-code-block pre)::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -40,10 +40,10 @@
 .scroll-frame { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .scroll-frame > [data-overlayscrollbars-viewport] { flex: 1; min-height: 0; min-width: 0; }
 #outline-scroll { overflow: auto; }
-.notes-metadata-scroll { position: relative; min-width: 0; margin-top: .4em; }
-.notes-metadata-scroll .notes-metadata-source { margin-top: 0; }
-.notes-code-scroll { position: relative; min-width: 0; overflow: hidden; }
-.notes-code-scroll > .os-scrollbar-horizontal {
+.folio-metadata-scroll { position: relative; min-width: 0; margin-top: .4em; }
+.folio-metadata-scroll .folio-metadata-source { margin-top: 0; }
+.folio-code-scroll { position: relative; min-width: 0; overflow: hidden; }
+.folio-code-scroll > .os-scrollbar-horizontal {
   --os-size: 8px;
   --os-padding-perpendicular: 2px;
   --os-handle-perpendicular-size-hover: 4px;

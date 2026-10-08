@@ -13,7 +13,7 @@ async function api(path, { method = "GET", body, signal, keepalive = false } = {
     });
   } catch (error) {
     if (aborted(error) || signal?.aborted) throw error;
-    throw new ApiError("The local Notes service could not be reached.", 0, true);
+    throw new ApiError("The local Folio service could not be reached.", 0, true);
   }
   let payload;
   try {
@@ -28,7 +28,7 @@ async function api(path, { method = "GET", body, signal, keepalive = false } = {
       response.status,
     );
   }
-  const permissions = response.headers.get("x-notes-document-permissions");
+  const permissions = response.headers.get("x-folio-document-permissions");
   if (permissions) {
     try { payload.permissions = validatedDocumentPermissions(JSON.parse(permissions)); }
     catch (error) { throw new ApiError(`Invalid document permissions: ${error.message}`, response.status); }

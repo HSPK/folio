@@ -12,8 +12,8 @@ function draftNonce() {
 }
 let draftTab = draftNonce();
 try {
-  draftTab = sessionStorage.getItem("notes.draft.tab") ?? draftTab;
-  sessionStorage.setItem("notes.draft.tab", draftTab);
+  draftTab = sessionStorage.getItem("folio.draft.tab") ?? draftTab;
+  sessionStorage.setItem("folio.draft.tab", draftTab);
 } catch (error) { console.warn("Draft tab identity cannot be retained.", error); }
 
 function localRecoveryAvailable() {
@@ -22,7 +22,7 @@ function localRecoveryAvailable() {
 
 function openDraftDatabase() {
   draftDatabase ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open("notes-private-drafts", 1);
+    const request = indexedDB.open("folio-private-drafts", 1);
     request.onupgradeneeded = () => {
       const store = request.result.createObjectStore("drafts", { keyPath: "key" });
       store.createIndex("document", "document");
@@ -30,7 +30,7 @@ function openDraftDatabase() {
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => { draftDatabase = null; reject(request.error); };
-    request.onblocked = () => documentNotice("Local recovery storage is blocked by another tab. Close old Notes tabs to finish upgrading.", "warning");
+    request.onblocked = () => documentNotice("Local recovery storage is blocked by another tab. Close old Folio tabs to finish upgrading.", "warning");
   });
   return draftDatabase;
 }
@@ -49,8 +49,8 @@ async function draftIdentity() {
     const derive = (purpose, algorithm, usages) => crypto.subtle.deriveKey({
       name: "HKDF", hash: "SHA-256", salt: draftEncoder.encode(scope), info: draftEncoder.encode(purpose),
     }, master, algorithm, false, usages);
-    const encryption = await derive("notes-draft-content", { name: "AES-GCM", length: 256 }, ["encrypt", "decrypt"]);
-    const naming = await derive("notes-draft-identifiers", { name: "HMAC", hash: "SHA-256", length: 256 }, ["sign"]);
+    const encryption = await derive("folio-draft-content", { name: "AES-GCM", length: 256 }, ["encrypt", "decrypt"]);
+    const naming = await derive("folio-draft-identifiers", { name: "HMAC", hash: "SHA-256", length: 256 }, ["sign"]);
     const identify = async (text) => [...new Uint8Array(await crypto.subtle.sign("HMAC", naming, draftEncoder.encode(text)))]
       .map((byte) => byte.toString(16).padStart(2, "0")).join("");
     return { encryption, identify, owner: await identify("owner") };

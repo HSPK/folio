@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const root = path.dirname(webRoot);
 const shared = path.join(root, "Shared", "Resources");
-const svg = await readFile(path.join(shared, "NotesIcon.svg"), "utf8");
+const svg = await readFile(path.join(shared, "FolioIcon.svg"), "utf8");
 const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256, 1024];
 const browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : undefined, headless: true });
 
@@ -59,9 +59,9 @@ try {
     assert.equal(frame.cornerAlpha, 0, `${frame.size}px must have transparent corners`);
     assert.equal(frame.centerAlpha, 255, `${frame.size}px must be opaque in the center`);
     assert.ok(frame.monochrome, `${frame.size}px must remain strictly monochrome`);
-    assert.ok(frame.contrast > 140, `${frame.size}px must retain distinct light and dark layers`);
+    assert.ok(frame.contrast > 140, `${frame.size}px must retain a legible F against the page`);
   }
-  await writeFile(path.join(shared, "NotesIcon.png"), Buffer.from(frames.at(-1).png, "base64"));
+  await writeFile(path.join(shared, "FolioIcon.png"), Buffer.from(frames.at(-1).png, "base64"));
   const icons = frames.filter((frame) => frame.size <= 256);
   const directory = Buffer.alloc(6 + 16 * icons.length);
   directory.writeUInt16LE(1, 2);
@@ -78,7 +78,7 @@ try {
     offset += png.length;
     return png;
   });
-  await writeFile(path.join(shared, "Notes.ico"), Buffer.concat([directory, ...images]));
+  await writeFile(path.join(shared, "Folio.ico"), Buffer.concat([directory, ...images]));
 
   const source = (size) => `data:image/png;base64,${frames.find((frame) => frame.size === size).png}`;
   const samples = () => [16, 24, 32, 48, 64].map((size) =>
@@ -100,15 +100,15 @@ try {
     .sample span { font-size: 10px; opacity: .6; }
     footer { padding: 23px 36px; font-size: 11px; color: #777; }
   </style></head><body>
-    <header><h1>Notes · Layered N</h1><p>Black and white. A single abstract mark, with quiet depth.</p></header>
-    <main><section><h2>LIGHT BACKGROUND</h2><img class="hero" src="${source(1024)}" alt="Notes icon"><div class="sizes">${samples()}</div></section>
-    <section class="dark"><h2>DARK BACKGROUND</h2><img class="hero" src="${source(1024)}" alt="Notes icon"><div class="sizes">${samples()}</div></section></main>
+    <header><h1>Folio · Folded F</h1><p>A page for your ideas. Two flat colors, no gradients or shadows.</p></header>
+    <main><section><h2>LIGHT BACKGROUND</h2><img class="hero" src="${source(1024)}" alt="Folio icon"><div class="sizes">${samples()}</div></section>
+    <section class="dark"><h2>DARK BACKGROUND</h2><img class="hero" src="${source(1024)}" alt="Folio icon"><div class="sizes">${samples()}</div></section></main>
     <footer>Original vector artwork · Transparent PNG · Nine Windows icon sizes · No Python dependency</footer>
   </body></html>`);
   await page.locator("img").evaluateAll(async (images) => Promise.all(images.map((image) => image.decode())));
   await mkdir(path.join(root, "build"), { recursive: true });
   await page.screenshot({ path: path.join(root, "build", "icon-preview.png") });
-  console.log(`Generated NotesIcon.png (1024px), Notes.ico (${icons.map((frame) => frame.size).join(", ")}px), and build\\icon-preview.png.`);
+  console.log(`Generated FolioIcon.png (1024px), Folio.ico (${icons.map((frame) => frame.size).join(", ")}px), and build\\icon-preview.png.`);
 } finally {
   await browser.close();
 }

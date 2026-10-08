@@ -8,9 +8,9 @@ import { fileURLToPath } from "node:url";
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repository = path.resolve(webRoot, "..");
-const executable = process.env.NOTES_TEST_EXE
-  ?? path.join(repository, "target", "debug", process.platform === "win32" ? "notes-core.exe" : "notes-core");
-const temporary = await mkdtemp(path.join(os.tmpdir(), "notes-outline-idle-benchmark-"));
+const executable = process.env.FOLIO_TEST_EXE
+  ?? path.join(repository, "target", "debug", process.platform === "win32" ? "folio-core.exe" : "folio-core");
+const temporary = await mkdtemp(path.join(os.tmpdir(), "folio-outline-idle-benchmark-"));
 const notes = path.join(temporary, "notes");
 const ready = path.join(temporary, "ready.json");
 const stop = path.join(temporary, "stop");
@@ -49,7 +49,7 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
-  if (!launchUrl) throw new Error(`Notes did not start: ${diagnostics}`);
+  if (!launchUrl) throw new Error(`Folio did not start: ${diagnostics}`);
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   page.setDefaultTimeout(120_000);
@@ -62,7 +62,7 @@ try {
   const virtual = page.locator(".virtual-source-editor .cm-content");
   const editor = await virtual.isVisible().catch(() => false) ? virtual : native;
   await editor.waitFor({ state: "visible" });
-  const wrapOff = process.env.NOTES_BENCH_WRAP_OFF === "1";
+  const wrapOff = process.env.FOLIO_BENCH_WRAP_OFF === "1";
   if (wrapOff && await native.isVisible()) {
     await native.evaluate((element) => element.setAttribute("wrap", "off"));
   }

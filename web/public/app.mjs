@@ -144,14 +144,14 @@ attachScrollbars(ui.editor.parentElement, ui.editor);
 attachScrollbars(ui.preview.parentElement, ui.preview);
 ui.editor = createSourceEditor({
   textarea: ui.editor,
-  nonce: document.querySelector('meta[name="notes-style-nonce"]').content,
+  nonce: document.querySelector('meta[name="folio-style-nonce"]').content,
 });
 
 const compactLayout = window.matchMedia("(max-width: 650px)");
-const SIDEBAR_WIDTH_KEY = "notes.layout.sidebarWidth";
-const PAGE_WIDTH_KEY = "notes.layout.pageWidth";
-const COMMAND_SHORTCUT_KEY = "notes.shortcuts.commandPanel";
-const HIDDEN_PATTERNS_KEY = "notes.library.hiddenPatterns";
+const SIDEBAR_WIDTH_KEY = "folio.layout.sidebarWidth";
+const PAGE_WIDTH_KEY = "folio.layout.pageWidth";
+const COMMAND_SHORTCUT_KEY = "folio.shortcuts.commandPanel";
+const HIDDEN_PATTERNS_KEY = "folio.library.hiddenPatterns";
 const SIDEBAR_MIN = 210;
 const SIDEBAR_MAX = 420;
 const SIDEBAR_DEFAULT = 260;
@@ -167,7 +167,7 @@ let sidebarBeforeFocus = true;
 let wordSource = null;
 let wordCount = 0;
 const wordCounter = createWordCounter();
-const TOKEN_KEY = "notes.connection.token";
+const TOKEN_KEY = "folio.connection.token";
 const launch = readLaunchUrl(window.location.href);
 let token = launch.token;
 let storageUnavailable = false;
@@ -235,7 +235,7 @@ const outlineExtractor = createOutlineExtractor();
 const inlineEditor = createInlineEditor({
   root: element("rich-editor"),
   outlineExtractor,
-  styleNonce: document.querySelector('meta[name="notes-style-nonce"]').content,
+  styleNonce: document.querySelector('meta[name="folio-style-nonce"]').content,
   transformUrl: (url, path) => projectUrl(url, path),
   onTag: (tag) => openWorkspaceSearch({ tags: [tag] }),
   onNotice: (message) => notice(element("metadata-message"), message, "warning"),
@@ -721,8 +721,8 @@ function draftNonce() {
 }
 let draftTab = draftNonce();
 try {
-  draftTab = sessionStorage.getItem("notes.draft.tab") ?? draftTab;
-  sessionStorage.setItem("notes.draft.tab", draftTab);
+  draftTab = sessionStorage.getItem("folio.draft.tab") ?? draftTab;
+  sessionStorage.setItem("folio.draft.tab", draftTab);
 } catch (error) { console.warn("Draft tab identity cannot be retained.", error); }
 
 function localRecoveryAvailable() {
@@ -731,7 +731,7 @@ function localRecoveryAvailable() {
 
 function openDraftDatabase() {
   draftDatabase ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open("notes-private-drafts", 1);
+    const request = indexedDB.open("folio-private-drafts", 1);
     request.onupgradeneeded = () => {
       const store = request.result.createObjectStore("drafts", { keyPath: "key" });
       store.createIndex("document", "document");
@@ -739,7 +739,7 @@ function openDraftDatabase() {
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => { draftDatabase = null; reject(request.error); };
-    request.onblocked = () => documentNotice("Local recovery storage is blocked by another tab. Close old Notes tabs to finish upgrading.", "warning");
+    request.onblocked = () => documentNotice("Local recovery storage is blocked by another tab. Close old Folio tabs to finish upgrading.", "warning");
   });
   return draftDatabase;
 }
@@ -758,8 +758,8 @@ async function draftIdentity() {
     const derive = (purpose, algorithm, usages) => crypto.subtle.deriveKey({
       name: "HKDF", hash: "SHA-256", salt: draftEncoder.encode(scope), info: draftEncoder.encode(purpose),
     }, master, algorithm, false, usages);
-    const encryption = await derive("notes-draft-content", { name: "AES-GCM", length: 256 }, ["encrypt", "decrypt"]);
-    const naming = await derive("notes-draft-identifiers", { name: "HMAC", hash: "SHA-256", length: 256 }, ["sign"]);
+    const encryption = await derive("folio-draft-content", { name: "AES-GCM", length: 256 }, ["encrypt", "decrypt"]);
+    const naming = await derive("folio-draft-identifiers", { name: "HMAC", hash: "SHA-256", length: 256 }, ["sign"]);
     const identify = async (text) => [...new Uint8Array(await crypto.subtle.sign("HMAC", naming, draftEncoder.encode(text)))]
       .map((byte) => byte.toString(16).padStart(2, "0")).join("");
     return { encryption, identify, owner: await identify("owner") };
@@ -1009,7 +1009,7 @@ let workspaceLoaded = false;
 let workspaceControlSignature = null;
 const workspaceDialog = element("workspace-dialog");
 const sameWorkspaceNote = (note, project, id) => note.project === project && note.id === id;
-function activeWorkspaceKey() { return `notes.workspace.active.${authUser?.scope ?? ""}.${authUser?.id ?? ""}`; }
+function activeWorkspaceKey() { return `folio.workspace.active.${authUser?.scope ?? ""}.${authUser?.id ?? ""}`; }
 
 function acceptWorkspace(result) {
   if (!Number.isSafeInteger(result?.revision) || !result.workspace
@@ -1157,7 +1157,7 @@ async function api(path, { method = "GET", body, signal, keepalive = false } = {
     });
   } catch (error) {
     if (aborted(error) || signal?.aborted) throw error;
-    throw new ApiError("The local Notes service could not be reached.", 0, true);
+    throw new ApiError("The local Folio service could not be reached.", 0, true);
   }
   let payload;
   try {
@@ -1172,7 +1172,7 @@ async function api(path, { method = "GET", body, signal, keepalive = false } = {
       response.status,
     );
   }
-  const permissions = response.headers.get("x-notes-document-permissions");
+  const permissions = response.headers.get("x-folio-document-permissions");
   if (permissions) {
     try { payload.permissions = validatedDocumentPermissions(JSON.parse(permissions)); }
     catch (error) { throw new ApiError(`Invalid document permissions: ${error.message}`, response.status); }
@@ -1201,13 +1201,13 @@ function connectionFailure(error, force = false) {
   }
   let message = "";
   if (error.status === 401 || error.status === 403) {
-    message = "This tab is no longer authorized, or was not opened from Notes. The service may have restarted. "
-      + "Your editor text is still here. Copy any unsaved changes, then reopen Notes using the desktop app or the current CLI launch URL.";
+    message = "This tab is no longer authorized, or was not opened from Folio. The service may have restarted. "
+      + "Your editor text is still here. Copy any unsaved changes, then reopen Folio using the desktop app or the current CLI launch URL.";
   } else if (error.network) {
-    message = "The local Notes service is unavailable. Your editor text is still here. "
-      + "Check that Notes is running, then choose Reconnect. If it restarted, copy your changes and reopen it using the desktop app or the current CLI launch URL.";
+    message = "The local Folio service is unavailable. Your editor text is still here. "
+      + "Check that Folio is running, then choose Reconnect. If it restarted, copy your changes and reopen it using the desktop app or the current CLI launch URL.";
   } else if (force) {
-    message = `Could not connect: ${error.message} Your editor text has been kept. Check the Notes app or CLI, then try Reconnect.`;
+    message = `Could not connect: ${error.message} Your editor text has been kept. Check the Folio app or CLI, then try Reconnect.`;
   }
   if (!message) return;
   connectionState = "error";
@@ -1224,10 +1224,10 @@ function showAuthentication(setup, message = "", registration = false) {
   document.body.dataset.auth = "open";
   ui.appShell.inert = true;
   ui.authScreen.hidden = false;
-  setText(ui.authTitle, setup ? "Create the administrator" : authInvitation ? "Create your account" : "Log in to Notes");
+  setText(ui.authTitle, setup ? "Create the administrator" : authInvitation ? "Create your account" : "Log in to Folio");
   setText(ui.authDescription, setup
-    ? "This is the first visit. Create the local administrator shared by every Notes host on this computer."
-    : authInvitation ? "Use the one-time invitation provided by your administrator." : "Enter your local Notes account.");
+    ? "This is the first visit. Create the local administrator shared by every Folio host on this computer."
+    : authInvitation ? "Use the one-time invitation provided by your administrator." : "Enter your local Folio account.");
   element("auth-invitation-field").hidden = !authInvitation;
   element("auth-invitation").required = authInvitation;
   element("auth-use-invitation").hidden = setup || authInvitation;
@@ -1286,7 +1286,7 @@ async function bootstrapAuthentication() {
       }
     } else if (!status.authenticated) {
       throw new ApiError(
-        "This tab has no valid Notes connection token. Reopen Notes using the desktop app or current CLI launch URL.",
+        "This tab has no valid Folio connection token. Reopen Folio using the desktop app or current CLI launch URL.",
         401,
       );
     }
@@ -2314,7 +2314,7 @@ let sharingTarget = null;
 const projectDialog = element("projects-dialog");
 const sharingDialog = element("sharing-dialog");
 
-function projectStorageKey() { return `notes.projects.${authUser?.username ?? "local"}`; }
+function projectStorageKey() { return `folio.projects.${authUser?.username ?? "local"}`; }
 function projectWritable(path = activeDocument?.path) {
   if (path === activeDocument?.path && documentPermissions) return documentPermissions.writable;
   if (publicView) return publicWritable;
@@ -2657,14 +2657,14 @@ function scopedApiPath(path, headers) {
     const name = url.pathname.replace(/^\/api\/(?:public\/)?/, "");
     if (!publicApiPaths.has(name)) throw new ApiError("This action is unavailable from a public document.", 403);
     url.pathname = `/api/public/${name}`;
-    headers["X-Notes-Share"] = publicToken ?? "";
+    headers["X-Folio-Share"] = publicToken ?? "";
     delete headers.Authorization;
     return url.pathname + url.search;
   }
   if (activeProject && !/^\/api\/(?:auth|admin|projects|preferences|appearance|resource)(?:\/|[?]|$)/.test(path)) {
-    headers["X-Notes-Project"] = activeProject.id;
+    headers["X-Folio-Project"] = activeProject.id;
   }
-  if (authMode === "users" && authUser?.id) headers["X-Notes-User"] = authUser.id;
+  if (authMode === "users" && authUser?.id) headers["X-Folio-User"] = authUser.id;
   return path;
 }
 
@@ -3023,7 +3023,7 @@ function renderTreeStatus(
   } else if (!message && treeLoaded && visible.length === 0) {
     message = "No notes match your filter.";
   } else if (!message && !treeLoaded) {
-    message = connectionState === "ready" ? "Refresh to list Markdown files." : "Open Notes using the app or CLI launch URL to connect.";
+    message = connectionState === "ready" ? "Refresh to list Markdown files." : "Open Folio using the app or CLI launch URL to connect.";
   }
   notice(ui.treeMessage, message, treeError && !treeLoading ? "error" : "");
   notice(ui.treeLimit, treeTruncated
@@ -4430,7 +4430,7 @@ async function drainCollaboration(current) {
 }
 
 const collaborativeTarget = (target) => target?.closest(
-  "#editor, .virtual-source-editor .cm-content, #rich-editor .ProseMirror, .notes-metadata-source",
+  "#editor, .virtual-source-editor .cm-content, #rich-editor .ProseMirror, .folio-metadata-source",
 );
 document.addEventListener("compositionstart", (event) => {
   if (collaboration && collaborativeTarget(event.target)) collaboration.composing = true;
@@ -4522,7 +4522,7 @@ async function insertImages(images) {
 }
 
 document.addEventListener("paste", (event) => {
-  if (!activeDocument || !collaborativeTarget(event.target) || event.target.closest(".notes-metadata-source")) return;
+  if (!activeDocument || !collaborativeTarget(event.target) || event.target.closest(".folio-metadata-source")) return;
   const images = [...(event.clipboardData?.items ?? [])].filter((item) => item.kind === "file" && item.type.startsWith("image/"));
   if (!images.length) return;
   event.preventDefault();
@@ -4539,7 +4539,7 @@ document.addEventListener("drop", (event) => {
   if (!event.dataTransfer?.files.length || !event.target.closest(".editor-pane, .rich-pane")) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  if (!activeDocument || !projectWritable() || event.target.closest(".notes-metadata")) {
+  if (!activeDocument || !projectWritable() || event.target.closest(".folio-metadata")) {
     documentNotice("Drop images into an editable document body.", "warning");
     return;
   }
@@ -4924,7 +4924,7 @@ async function navigateTo(path, hash = "", { mode = "push", url, reload = false 
     return true;
   }
   if (pendingSave || creating) {
-    documentNotice("Please wait for the current save or creation to finish before changing notes.");
+    documentNotice("Please wait for the current save or creation to finish before changing folio.");
     if (mode === "pop") restoreCommittedUrl();
     return false;
   }
@@ -4939,7 +4939,7 @@ async function navigateTo(path, hash = "", { mode = "push", url, reload = false 
     return true;
   }
   if (connectionState !== "ready") {
-    documentNotice("This tab is disconnected. Your current text has been kept. Reconnect or reopen Notes using the app or CLI launch URL.", "error");
+    documentNotice("This tab is disconnected. Your current text has been kept. Reconnect or reopen Folio using the app or CLI launch URL.", "error");
     if (mode === "pop") restoreCommittedUrl();
     return false;
   }
@@ -5095,7 +5095,7 @@ async function saveDocument(automatic = false) {
     if (error.status === 409) {
       conflict = true;
       notice(ui.conflictMessage, `This file changed on disk: ${error.message} Your editor text has been kept and was not saved. `
-        + "Copy your changes before choosing Reload from disk. Notes will not overwrite the external changes.", "warning");
+        + "Copy your changes before choosing Reload from disk. Folio will not overwrite the external changes.", "warning");
       documentNotice("");
     } else {
       documentNotice(`Could not save: ${error.message} Your editor text has been kept.`, "error");
@@ -5344,7 +5344,7 @@ async function moveLibraryEntry(entry, destination, updateLinks = true) {
       documentNotice(`Moved to “${destination}”.`, "success");
     }
     if (result.warning) documentNotice(result.warning, "warning");
-    else if (result.referencesUpdated) documentNotice(`Moved to “${destination}”; updated references in ${result.referencesUpdated} notes.`, "success");
+    else if (result.referencesUpdated) documentNotice(`Moved to “${destination}”; updated references in ${result.referencesUpdated} folio.`, "success");
     return true;
   } catch (error) {
     const message = `Could not move “${entry.path}”: ${error.message}`;
@@ -5450,7 +5450,7 @@ async function connect() {
     await refreshSharedPreferences();
     const tokenStorageUnavailable = authMode === "launchToken" && storageUnavailable;
     notice(ui.connectionMessage, tokenStorageUnavailable
-      ? "This browser could not store the connection token for this tab. Copy unsaved work before refreshing; you may need to reopen Notes using the app or CLI launch URL."
+      ? "This browser could not store the connection token for this tab. Copy unsaved work before refreshing; you may need to reopen Folio using the app or CLI launch URL."
       : "", tokenStorageUnavailable ? "warning" : "");
     refreshControls();
     void refreshAppearance(true);
@@ -5467,7 +5467,7 @@ async function connect() {
   } catch (error) {
     if (!connectionGate.isCurrent(ticket) || aborted(error)) return;
     connectionFailure(error, true);
-    previewStatus(activeDocument ? "Disconnected. Your editor text and last preview are kept." : "Open Notes using the app or CLI launch URL to connect", true);
+    previewStatus(activeDocument ? "Disconnected. Your editor text and last preview are kept." : "Open Folio using the app or CLI launch URL to connect", true);
     renderTreeStatus();
   } finally {
     if (connectionGate.isCurrent(ticket)) {

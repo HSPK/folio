@@ -24,7 +24,7 @@ test("unsaved title marker stays visible for long titles and clears on undo and 
   await page.keyboard.insertText("Unfinished");
   await expect(marker).toHaveText(" *");
   await expect(marker).toBeVisible();
-  await expect(page).toHaveTitle(`${title} * — Notes`);
+  await expect(page).toHaveTitle(`${title} * — Folio`);
   await expect(status).toBeHidden();
   await expect(status).toHaveText("");
   expect(await page.locator("#document-panes").boundingBox()).toEqual(panes);
@@ -35,7 +35,7 @@ test("unsaved title marker stays visible for long titles and clears on undo and 
   await page.screenshot({ path: path.join(buildRoot, "quiet-save-status-dirty.png") });
   await page.keyboard.press("Control+z");
   await expect(marker).toBeHidden();
-  await expect(page).toHaveTitle(`${title} — Notes`);
+  await expect(page).toHaveTitle(`${title} — Folio`);
   await page.keyboard.press("Control+Shift+z");
   await expect(marker).toBeVisible();
 
@@ -56,7 +56,7 @@ test("unsaved title marker stays visible for long titles and clears on undo and 
   await expect(status).toBeHidden();
   await expect(status).toHaveText("");
   await expect(marker).toBeHidden();
-  await expect(page).toHaveTitle(`${title} — Notes`);
+  await expect(page).toHaveTitle(`${title} — Folio`);
   expect(await fs.readFile(path.join(root, "Status.md"), "utf8")).toContain("Unfinished");
   await page.locator('[data-path="Second.md"]').click();
   await expect(page.locator("#document-title")).toHaveText("Second.md");
@@ -74,7 +74,7 @@ test("save failures keep the title marker and explicit error feedback", async ({
   await expect(page.locator("#document-message")).toContainText("Could not save:");
   await expect(page.locator("#document-message")).toBeVisible();
   await expect(page.locator("#document-title")).toHaveText("README.md *");
-  await expect(page).toHaveTitle("README.md * — Notes");
+  await expect(page).toHaveTitle("README.md * — Folio");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
   await expect(page.locator("#dirty-indicator")).toBeHidden();
   expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe(initialText);
@@ -90,7 +90,7 @@ test("collaborative title markers clear for all participants after saving", asyn
     await expect(bob.locator("#editor")).toHaveValue(/Shared unsaved text/);
     for (const page of library.pages) {
       await expect(page.locator("#document-title")).toHaveText("Shared *");
-      await expect(page).toHaveTitle("Shared * — Notes");
+      await expect(page).toHaveTitle("Shared * — Folio");
       await expect(page.locator("#dirty-indicator")).toBeHidden();
     }
     await alice.keyboard.press("Control+s");
@@ -99,7 +99,7 @@ test("collaborative title markers clear for all participants after saving", asyn
       await expect(page.locator("#dirty-indicator")).toBeHidden();
       await expect(page.locator("#document-title")).toHaveText("Shared");
       await expect(page.locator("#document-modified")).toBeHidden();
-      await expect(page).toHaveTitle("Shared — Notes");
+      await expect(page).toHaveTitle("Shared — Folio");
     }
   } finally { await library.close(); }
 });

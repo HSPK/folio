@@ -79,13 +79,13 @@ export function updateMetadataTags(source, values) {
 
 export function mountTagEditor(panel, textarea, { onTag, onError }) {
   const root = document.createElement("div");
-  root.className = "notes-tags";
+  root.className = "folio-tags";
   root.setAttribute("role", "group");
   root.setAttribute("aria-label", "Document tags");
   const tokens = document.createElement("div");
-  tokens.className = "notes-tag-list";
+  tokens.className = "folio-tag-list";
   const input = document.createElement("input");
-  input.className = "notes-tag-input";
+  input.className = "folio-tag-input";
   input.placeholder = "Add a tag";
   input.setAttribute("aria-label", "Add a metadata tag");
   input.maxLength = 80;
@@ -113,12 +113,12 @@ export function mountTagEditor(panel, textarea, { onTag, onError }) {
       current = tags;
       tokens.replaceChildren(...tags.map((tag) => {
         const chip = document.createElement("span");
-        chip.className = "notes-tag";
+        chip.className = "folio-tag";
         const label = document.createElement(onTag ? "button" : "span");
         label.textContent = tag;
         if (onTag) { label.type = "button"; label.title = `Find notes tagged ${tag}`; label.addEventListener("click", () => onTag(tag)); }
         const remove = document.createElement("button");
-        remove.className = "notes-tag-remove";
+        remove.className = "folio-tag-remove";
         remove.type = "button";
         remove.textContent = "×";
         remove.setAttribute("aria-label", `Remove tag ${tag}`);

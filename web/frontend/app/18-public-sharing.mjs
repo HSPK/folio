@@ -9,14 +9,14 @@ function scopedApiPath(path, headers) {
     const name = url.pathname.replace(/^\/api\/(?:public\/)?/, "");
     if (!publicApiPaths.has(name)) throw new ApiError("This action is unavailable from a public document.", 403);
     url.pathname = `/api/public/${name}`;
-    headers["X-Notes-Share"] = publicToken ?? "";
+    headers["X-Folio-Share"] = publicToken ?? "";
     delete headers.Authorization;
     return url.pathname + url.search;
   }
   if (activeProject && !/^\/api\/(?:auth|admin|projects|preferences|appearance|resource)(?:\/|[?]|$)/.test(path)) {
-    headers["X-Notes-Project"] = activeProject.id;
+    headers["X-Folio-Project"] = activeProject.id;
   }
-  if (authMode === "users" && authUser?.id) headers["X-Notes-User"] = authUser.id;
+  if (authMode === "users" && authUser?.id) headers["X-Folio-User"] = authUser.id;
   return path;
 }
 

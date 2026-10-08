@@ -3,19 +3,19 @@ import { collaborativeLibrary } from "./collaboration-cases.mjs";
 import { addPermissionOverrides, measureClickFrame, summarizeTimings } from "./performance-helpers.mjs";
 
 test("click latency benchmark separates UI feedback from document and workspace requests", async ({ browser }) => {
-  test.skip(!process.env.NOTES_BENCH_CLICKS, "Opt-in performance measurement with isolated notes.");
+  test.skip(!process.env.FOLIO_BENCH_CLICKS, "Opt-in performance measurement with isolated folio.");
   const library = await collaborativeLibrary(browser, { source: true });
   const timings = {};
   const record = (name, value) => (timings[name] ??= []).push(value);
   try {
     const [page] = library.pages;
-    const aclEntries = Number(process.env.NOTES_BENCH_ACL ?? 0);
+    const aclEntries = Number(process.env.FOLIO_BENCH_ACL ?? 0);
     await addPermissionOverrides(library, aclEntries);
     let joins = 0;
     let sockets = 0;
     page.on("request", (request) => { if (request.url().includes("/collaboration/join")) joins += 1; });
     page.on("websocket", () => { sockets += 1; });
-    const profiler = process.env.NOTES_BENCH_PROFILE ? await page.context().newCDPSession(page) : null;
+    const profiler = process.env.FOLIO_BENCH_PROFILE ? await page.context().newCDPSession(page) : null;
     if (profiler) { await profiler.send("Profiler.enable"); await profiler.send("Profiler.start"); }
     const paragraph = "## Measurement\n\nA paragraph with **formatted text**, [a local link](Other.md), and `inline code`.\n\n";
     const content = paragraph.repeat(2700);
@@ -31,7 +31,7 @@ test("click latency benchmark separates UI feedback from document and workspace 
       const cold = await page.evaluate(async (id) => {
         const started = performance.now();
         const response = await fetch("/api/workspace", {
-          method: "POST", headers: { "Content-Type": "application/json", "X-Notes-Project": "default" },
+          method: "POST", headers: { "Content-Type": "application/json", "X-Folio-Project": "default" },
           body: JSON.stringify({ action: "favorite", project: "default", id, value: true }),
         });
         if (!response.ok) throw new Error(await response.text());
@@ -58,10 +58,10 @@ test("click latency benchmark separates UI feedback from document and workspace 
     await fs.mkdir(path.join(buildRoot, "click-performance"), { recursive: true });
     if (profiler) {
       const { profile } = await profiler.send("Profiler.stop");
-      await fs.writeFile(path.join(buildRoot, "click-performance", `${process.env.NOTES_BENCH_CLICKS}.cpuprofile`), JSON.stringify(profile));
+      await fs.writeFile(path.join(buildRoot, "click-performance", `${process.env.FOLIO_BENCH_CLICKS}.cpuprofile`), JSON.stringify(profile));
       await profiler.detach();
     }
-    await fs.writeFile(path.join(buildRoot, "click-performance", `${process.env.NOTES_BENCH_CLICKS}.json`), JSON.stringify(report, null, 2));
+    await fs.writeFile(path.join(buildRoot, "click-performance", `${process.env.FOLIO_BENCH_CLICKS}.json`), JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ bytesPerNote: report.bytesPerNote, aclEntries, joins, sockets, ...summary }, null, 2));
   } finally { await library.close(); }
 });

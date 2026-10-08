@@ -171,9 +171,9 @@ body[data-resizing-sidebar="true"] { cursor: col-resize; user-select: none; }
 .rich-editor[aria-busy="true"]::before {
   content: ""; position: absolute; z-index: 3; top: 0; left: 0; width: 28%; height: 2px;
   background: var(--accent); opacity: 0; pointer-events: none;
-  animation: notes-busy 1.1s ease-in-out 180ms infinite;
+  animation: folio-busy 1.1s ease-in-out 180ms infinite;
 }
-@keyframes notes-busy { from { opacity: .75; transform: translateX(-100%); } to { opacity: .75; transform: translateX(360%); } }
+@keyframes folio-busy { from { opacity: .75; transform: translateX(-100%); } to { opacity: .75; transform: translateX(360%); } }
 :root[data-reduced-motion="true"] .rich-editor[aria-busy="true"]::before { animation: none; }
 .document-panes[data-view="rich"] .editor-pane,
 .document-panes:not([data-view="rich"]) .rich-pane,

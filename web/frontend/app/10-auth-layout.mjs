@@ -18,13 +18,13 @@ function connectionFailure(error, force = false) {
   }
   let message = "";
   if (error.status === 401 || error.status === 403) {
-    message = "This tab is no longer authorized, or was not opened from Notes. The service may have restarted. "
-      + "Your editor text is still here. Copy any unsaved changes, then reopen Notes using the desktop app or the current CLI launch URL.";
+    message = "This tab is no longer authorized, or was not opened from Folio. The service may have restarted. "
+      + "Your editor text is still here. Copy any unsaved changes, then reopen Folio using the desktop app or the current CLI launch URL.";
   } else if (error.network) {
-    message = "The local Notes service is unavailable. Your editor text is still here. "
-      + "Check that Notes is running, then choose Reconnect. If it restarted, copy your changes and reopen it using the desktop app or the current CLI launch URL.";
+    message = "The local Folio service is unavailable. Your editor text is still here. "
+      + "Check that Folio is running, then choose Reconnect. If it restarted, copy your changes and reopen it using the desktop app or the current CLI launch URL.";
   } else if (force) {
-    message = `Could not connect: ${error.message} Your editor text has been kept. Check the Notes app or CLI, then try Reconnect.`;
+    message = `Could not connect: ${error.message} Your editor text has been kept. Check the Folio app or CLI, then try Reconnect.`;
   }
   if (!message) return;
   connectionState = "error";
@@ -41,10 +41,10 @@ function showAuthentication(setup, message = "", registration = false) {
   document.body.dataset.auth = "open";
   ui.appShell.inert = true;
   ui.authScreen.hidden = false;
-  setText(ui.authTitle, setup ? "Create the administrator" : authInvitation ? "Create your account" : "Log in to Notes");
+  setText(ui.authTitle, setup ? "Create the administrator" : authInvitation ? "Create your account" : "Log in to Folio");
   setText(ui.authDescription, setup
-    ? "This is the first visit. Create the local administrator shared by every Notes host on this computer."
-    : authInvitation ? "Use the one-time invitation provided by your administrator." : "Enter your local Notes account.");
+    ? "This is the first visit. Create the local administrator shared by every Folio host on this computer."
+    : authInvitation ? "Use the one-time invitation provided by your administrator." : "Enter your local Folio account.");
   element("auth-invitation-field").hidden = !authInvitation;
   element("auth-invitation").required = authInvitation;
   element("auth-use-invitation").hidden = setup || authInvitation;
@@ -103,7 +103,7 @@ async function bootstrapAuthentication() {
       }
     } else if (!status.authenticated) {
       throw new ApiError(
-        "This tab has no valid Notes connection token. Reopen Notes using the desktop app or current CLI launch URL.",
+        "This tab has no valid Folio connection token. Reopen Folio using the desktop app or current CLI launch URL.",
         401,
       );
     }

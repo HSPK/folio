@@ -37,7 +37,7 @@ test("users create private projects and share a single page without exposing sib
     const id = new URL(alice.url()).searchParams.get("project");
     for (const [name, content] of [["Shared.md", "# Project-specific content\n"], ["Secret.md", "# Private sibling\n"]]) {
       const created = await alice.request.post(new URL("/api/document", library.url).href, {
-        headers: { "X-Notes-Project": id }, data: { path: name, content },
+        headers: { "X-Folio-Project": id }, data: { path: name, content },
       });
       expect(created.status(), await created.text()).toBe(201);
     }
@@ -99,7 +99,7 @@ test("clipboard images use the configured project directory in Live and Source, 
     await expect(bob.locator("#collaboration-join")).toHaveText("Sharing");
     await pasteImage(bob, ".ProseMirror");
     await expect(bob.locator("#document-message")).toHaveText("Image inserted.");
-    const image = alice.locator(".notes-inline-image img");
+    const image = alice.locator(".folio-inline-image img");
     await expect(image).toHaveCount(1);
     await expect.poll(() => image.evaluate((node) => node.naturalWidth)).toBe(16);
     await expect(alice.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
@@ -111,7 +111,7 @@ test("clipboard images use the configured project directory in Live and Source, 
     await chooseView(bob, "editor");
     await pasteImage(bob, "#editor");
     await expect(bob.locator("#editor")).toHaveValue(/!\[Image\][\s\S]*!\[Image\]/);
-    await expect(alice.locator(".notes-inline-image img")).toHaveCount(2);
+    await expect(alice.locator(".folio-inline-image img")).toHaveCount(2);
     await expect(alice.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     const saved = await fs.readFile(path.join(library.notes, "Shared.md"), "utf8");
     expect(saved).toContain("# Shared\n");

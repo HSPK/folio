@@ -234,7 +234,7 @@ async function moveLibraryEntry(entry, destination, updateLinks = true) {
       documentNotice(`Moved to “${destination}”.`, "success");
     }
     if (result.warning) documentNotice(result.warning, "warning");
-    else if (result.referencesUpdated) documentNotice(`Moved to “${destination}”; updated references in ${result.referencesUpdated} notes.`, "success");
+    else if (result.referencesUpdated) documentNotice(`Moved to “${destination}”; updated references in ${result.referencesUpdated} folio.`, "success");
     return true;
   } catch (error) {
     const message = `Could not move “${entry.path}”: ${error.message}`;

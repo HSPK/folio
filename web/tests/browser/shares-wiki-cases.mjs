@@ -4,16 +4,16 @@ import { collaborativeLibrary } from "./collaboration-cases.mjs";
 test("wiki links render and autocomplete without changing code literals or aliases", async ({ page }) => {
   const content = "# Wiki\n\n[[Second|Other note]]\n\n`[[Literal]]`\n\n";
   await openFixture(page, "Wiki.md", content);
-  await expect(page.locator(".ProseMirror .notes-wiki-link")).toHaveText("Other note");
+  await expect(page.locator(".ProseMirror .folio-wiki-link")).toHaveText("Other note");
   await expect(page.locator(".ProseMirror code")).toHaveText("[[Literal]]");
   await page.locator(".ProseMirror").focus();
   await page.keyboard.press("Control+End");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await page.keyboard.insertText("[[Sec");
-  await expect(page.locator("#notes-wiki-menu")).toBeVisible();
-  await page.locator("#notes-wiki-menu").getByRole("option", { name: /Second.md/ }).click();
-  await expect(page.locator(".ProseMirror .notes-wiki-link")).toHaveCount(2);
+  await expect(page.locator("#folio-wiki-menu")).toBeVisible();
+  await page.locator("#folio-wiki-menu").getByRole("option", { name: /Second.md/ }).click();
+  await expect(page.locator(".ProseMirror .folio-wiki-link")).toHaveCount(2);
   await page.keyboard.insertText(" linked");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   const saved = await fs.readFile(path.join(root, "Wiki.md"), "utf8");
@@ -23,7 +23,7 @@ test("wiki links render and autocomplete without changing code literals or alias
   await chooseView(page, "preview");
   await expect(page.locator('#preview a').filter({ hasText: "Other note" })).toHaveAttribute("href", /\/\?document=[a-f0-9-]+/);
   await chooseView(page, "rich");
-  await page.locator(".notes-wiki-link").first().click({ modifiers: ["Control"] });
+  await page.locator(".folio-wiki-link").first().click({ modifiers: ["Control"] });
   await expect(page.locator("#document-title")).toHaveText("Second.md");
 });
 

@@ -20,8 +20,8 @@ const commands = [
 
 export function createSlashMenu(active) {
   const menu = document.createElement("div");
-  menu.id = "notes-slash-menu";
-  menu.className = "notes-slash-menu";
+  menu.id = "folio-slash-menu";
+  menu.className = "folio-slash-menu";
   menu.hidden = true;
   menu.setAttribute("role", "listbox");
   menu.setAttribute("aria-label", "Insert block");
@@ -31,15 +31,15 @@ export function createSlashMenu(active) {
   const buttons = commands.map((item, index) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.id = `notes-slash-option-${index}`;
+    button.id = `folio-slash-option-${index}`;
     button.setAttribute("role", "option");
     button.setAttribute("aria-selected", "false");
     const glyph = document.createElement("span");
-    glyph.className = "notes-slash-glyph";
+    glyph.className = "folio-slash-glyph";
     glyph.textContent = item.glyph;
     glyph.setAttribute("aria-hidden", "true");
     const copy = document.createElement("span");
-    copy.className = "notes-slash-copy";
+    copy.className = "folio-slash-copy";
     const title = document.createElement("strong");
     title.textContent = item.title;
     const description = document.createElement("small");

@@ -2,6 +2,24 @@ import { spawn } from "node:child_process";
 
 import { test, expect, fs, path, buildRoot, executable, delay } from "./fixture.mjs";
 
+test("Folio branding appears in the workspace, login screen and shared icon", async ({ page }) => {
+  await expect(page.locator("#app-name")).toHaveText("Folio");
+  await expect(page).toHaveTitle("README.md — Folio");
+  const icon = await page.request.get(new URL("/icon.svg", page.url()).href);
+  expect(icon.ok()).toBe(true);
+  expect(await icon.text()).toContain("<title>Folio - Folded F</title>");
+
+  await page.route("**/api/auth/status", route => route.fulfill({
+    json: { mode: "users", authenticated: false, setupRequired: false },
+  }));
+  await page.reload();
+  await expect(page.locator("#auth-screen")).toBeVisible();
+  await expect(page.locator("#auth-title")).toHaveText("Log in to Folio");
+  await expect(page.locator("#auth-description")).toHaveText("Enter your local Folio account.");
+  await expect(page).toHaveTitle("Folio");
+  await expect.poll(() => page.locator("#auth-screen img").evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+});
+
 test("login survives refresh and service restart, while logout requires login again", async ({ browser }) => {
   const fixture = await fs.mkdtemp(path.join(buildRoot, "auth-browser-"));
   const notes = path.join(fixture, "notes");
@@ -23,7 +41,7 @@ test("login survives refresh and service restart, while logout requires login ag
   let service = launch();
   const readyUrl = async () => {
     for (let attempt = 0; attempt < 200; attempt += 1) {
-      if (service.exitCode !== null) throw new Error(`Authenticated Notes exited: ${output}`);
+      if (service.exitCode !== null) throw new Error(`Authenticated Folio exited: ${output}`);
       try {
         return JSON.parse(await fs.readFile(readyFile, "utf8")).url;
       } catch (error) {
@@ -31,7 +49,7 @@ test("login survives refresh and service restart, while logout requires login ag
       }
       await delay(100);
     }
-    throw new Error(`Authenticated Notes did not initialize: ${output}`);
+    throw new Error(`Authenticated Folio did not initialize: ${output}`);
   };
   const context = await browser.newContext();
   try {
@@ -52,7 +70,7 @@ test("login survives refresh and service restart, while logout requires login ag
     await expect(page.locator("#file-list")).toContainText("Shared.md");
 
     const cookies = (await context.cookies()).filter((cookie) =>
-      cookie.name.startsWith("notes_user_session_"));
+      cookie.name.startsWith("folio_user_session_"));
     expect(cookies).toHaveLength(1);
     expect(cookies[0].httpOnly).toBe(true);
     expect(cookies[0].sameSite).toBe("Strict");
@@ -71,7 +89,7 @@ test("login survives refresh and service restart, while logout requires login ag
     await page.locator("#logout").click();
     await loggedOut;
     await expect(page.locator("#auth-screen")).toBeVisible();
-    await expect(page.locator("#auth-title")).toHaveText("Log in to Notes");
+    await expect(page.locator("#auth-title")).toHaveText("Log in to Folio");
     await page.reload();
     await expect(page.locator("#auth-screen")).toBeVisible();
     await page.locator("#auth-username").fill("owner");

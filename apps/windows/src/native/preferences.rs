@@ -1,5 +1,5 @@
 use super::*;
-use notes_core::appearance::Theme;
+use folio_core::appearance::Theme;
 use std::collections::BTreeSet;
 use windows_sys::Win32::UI::Controls::EM_SETLIMITTEXT;
 use windows_sys::Win32::UI::HiDpi::{
@@ -9,7 +9,7 @@ use windows_sys::Win32::UI::HiDpi::{
 const STYLE: u32 = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
 const EX_STYLE: u32 = WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT;
 const CONTROLS: &[(&str, &str, i32, i32, i32, i32, i32, u32)] = &[
-    ("STATIC", "Notes folder", 401, 20, 18, 610, 23, 0),
+    ("STATIC", "Folio folder", 401, 20, 18, 610, 23, 0),
     (
         "EDIT",
         "",
@@ -233,7 +233,7 @@ pub(super) unsafe fn create(app: &mut App) {
         app.preferences = CreateWindowExW(
             EX_STYLE,
             wide(CLASS).as_ptr(),
-            wide("Notes settings").as_ptr(),
+            wide("Folio settings").as_ptr(),
             STYLE,
             CW_USEDEFAULT,
             CW_USEDEFAULT,

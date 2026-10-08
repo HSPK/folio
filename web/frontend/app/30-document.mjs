@@ -218,7 +218,7 @@ async function navigateTo(path, hash = "", { mode = "push", url, reload = false 
     return true;
   }
   if (pendingSave || creating) {
-    documentNotice("Please wait for the current save or creation to finish before changing notes.");
+    documentNotice("Please wait for the current save or creation to finish before changing folio.");
     if (mode === "pop") restoreCommittedUrl();
     return false;
   }
@@ -233,7 +233,7 @@ async function navigateTo(path, hash = "", { mode = "push", url, reload = false 
     return true;
   }
   if (connectionState !== "ready") {
-    documentNotice("This tab is disconnected. Your current text has been kept. Reconnect or reopen Notes using the app or CLI launch URL.", "error");
+    documentNotice("This tab is disconnected. Your current text has been kept. Reconnect or reopen Folio using the app or CLI launch URL.", "error");
     if (mode === "pop") restoreCommittedUrl();
     return false;
   }
@@ -389,7 +389,7 @@ async function saveDocument(automatic = false) {
     if (error.status === 409) {
       conflict = true;
       notice(ui.conflictMessage, `This file changed on disk: ${error.message} Your editor text has been kept and was not saved. `
-        + "Copy your changes before choosing Reload from disk. Notes will not overwrite the external changes.", "warning");
+        + "Copy your changes before choosing Reload from disk. Folio will not overwrite the external changes.", "warning");
       documentNotice("");
     } else {
       documentNotice(`Could not save: ${error.message} Your editor text has been kept.`, "error");

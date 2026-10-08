@@ -10,11 +10,11 @@ const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const repository = path.resolve(webRoot, "..");
 const root = path.resolve(process.env.INIT_CWD ?? process.cwd(), process.argv[2] ?? "");
 if (!process.argv[2]) {
-  throw new Error("Usage: npm run audit:library -- <notes-folder>");
+  throw new Error("Usage: npm run audit:library -- <folio-folder>");
 }
-const executable = process.env.NOTES_TEST_EXE
-  ?? path.join(repository, "target", "debug", process.platform === "win32" ? "notes-core.exe" : "notes-core");
-const temporary = await mkdtemp(path.join(os.tmpdir(), "notes-library-audit-"));
+const executable = process.env.FOLIO_TEST_EXE
+  ?? path.join(repository, "target", "debug", process.platform === "win32" ? "folio-core.exe" : "folio-core");
+const temporary = await mkdtemp(path.join(os.tmpdir(), "folio-library-audit-"));
 const ready = path.join(temporary, "ready.json");
 const stop = path.join(temporary, "stop");
 const service = spawn(executable, [
@@ -37,7 +37,7 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
-  if (!launchUrl) throw new Error(`Notes did not start: ${diagnostics}`);
+  if (!launchUrl) throw new Error(`Folio did not start: ${diagnostics}`);
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   await page.goto(launchUrl);

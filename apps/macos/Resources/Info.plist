@@ -3,23 +3,23 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Notes</string>
+	<string>Folio</string>
 	<key>CFBundleExecutable</key>
-	<string>Notes</string>
+	<string>Folio</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.hangxing.notes</string>
+	<string>io.github.hspk.folio</string>
 	<key>CFBundleIconFile</key>
-	<string>Notes</string>
+	<string>Folio</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Notes</string>
+	<string>Folio</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0.0</string>
+	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
-	<string>6</string>
+	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>LSUIElement</key>

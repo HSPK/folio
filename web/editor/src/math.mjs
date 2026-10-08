@@ -57,16 +57,16 @@ function mathNodeView(block, ctx, activate, deactivate, render, cacheable) {
   return (initialNode, editorView, getPos) => {
     let node = initialNode;
     const dom = document.createElement(block ? "div" : "span");
-    dom.className = `notes-math-node notes-math-${block ? "block" : "inline"}`;
+    dom.className = `folio-math-node folio-math-${block ? "block" : "inline"}`;
     dom.dataset.type = block ? "math_block" : "math_inline";
     const output = document.createElement(block ? "div" : "span");
-    output.className = "notes-math-output";
+    output.className = "folio-math-output";
     output.contentEditable = "false";
     output.tabIndex = 0;
     output.setAttribute("role", "button");
     output.title = "Click or press Enter to edit this formula";
     const source = document.createElement(block ? "code" : "span");
-    source.className = "notes-math-source";
+    source.className = "folio-math-source";
     source.dataset.mathSource = "";
     source.setAttribute("aria-label", `${block ? "Display" : "Inline"} TeX source`);
     dom.append(output, source);
@@ -227,7 +227,7 @@ export const mathInlineSchema = $nodeSchema("math_inline", (ctx) => {
       dom.dataset.type = "math_inline";
       dom.dataset.value = node.textContent;
       const output = document.createElement("span");
-      output.className = "notes-math-output";
+      output.className = "folio-math-output";
       const contentDOM = document.createElement("span");
       contentDOM.dataset.mathSource = "";
       render(node.textContent, output, ctx.get(katexOptionsCtx.key));
@@ -268,7 +268,7 @@ export const mathBlockSchema = $nodeSchema("math_block", (ctx) => {
       dom.dataset.type = "math_block";
       dom.dataset.value = node.textContent;
       const output = document.createElement("div");
-      output.className = "notes-math-output";
+      output.className = "folio-math-output";
       const contentDOM = document.createElement("code");
       contentDOM.dataset.mathSource = "";
       render(node.textContent, output, ctx.get(katexOptionsCtx.key));

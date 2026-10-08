@@ -6,10 +6,10 @@ import { fileURLToPath } from "node:url";
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 export const buildRoot = path.resolve(webRoot, "..", "build");
-export const executable = process.env.NOTES_TEST_EXE
-  ?? path.join(buildRoot, "rust", "debug", process.platform === "win32" ? "notes-core.exe" : "notes-core");
+export const executable = process.env.FOLIO_TEST_EXE
+  ?? path.join(buildRoot, "rust", "debug", process.platform === "win32" ? "folio-core.exe" : "folio-core");
 export const initialText = "# Welcome\n\nA **local** notebook.\n\n"
-  + "- [ ] A task\n\n| Name | Value |\n| --- | --- |\n| Notes | Local |\n\n"
+  + "- [ ] A task\n\n| Name | Value |\n| --- | --- |\n| Folio | Local |\n\n"
   + "```rust\nfn main() {}\n```\n\n![Pixel](images/pixel.png)\n\n[Second](Second.md)\n";
 const defaultPreferences = {
   appearance: { theme: "system", latinFont: "sans-serif", cjkFont: "sans-serif" },
@@ -76,7 +76,7 @@ async function fixtureDocumentUrl(path) {
 
 export async function userResourceId(context, base, path, kind = "document", project = "default") {
   const response = await context.request.post(new URL("/api/resources/resolve", base).href, {
-    headers: { "X-Notes-Project": project }, data: { path, kind },
+    headers: { "X-Folio-Project": project }, data: { path, kind },
   });
   expect(response.ok(), await response.text()).toBe(true);
   return (await response.json()).id;
@@ -118,7 +118,7 @@ test.beforeAll(async () => {
   child.stderr.on("data", (data) => { diagnostics += data; });
   for (let attempt = 0; attempt < 200; attempt += 1) {
     if (launchError) throw launchError;
-    if (child.exitCode !== null) throw new Error(`Notes exited: ${diagnostics}`);
+    if (child.exitCode !== null) throw new Error(`Folio exited: ${diagnostics}`);
     try {
       launchUrl = JSON.parse(await fs.readFile(ready, "utf8")).url;
       break;

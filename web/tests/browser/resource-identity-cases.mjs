@@ -49,7 +49,7 @@ test("hydrating resource URL attributes does not rewrite portable Markdown or su
 test("document UUID navigation, save and local asset URLs contain no mutable path queries", async ({ page }) => {
   const id = new URL(page.url()).searchParams.get("document");
   expect(id).toMatch(uuid);
-  await expect(page.locator(".notes-inline-image img")).toHaveAttribute("src", /\/assets\?id=[a-f0-9-]+&document=[a-f0-9-]+/);
+  await expect(page.locator(".folio-inline-image img")).toHaveAttribute("src", /\/assets\?id=[a-f0-9-]+&document=[a-f0-9-]+/);
   const link = page.locator(".ProseMirror a").filter({hasText:"Second"});
   const destination = await link.getAttribute("href");
   expect(new URL(destination, page.url()).searchParams.get("document")).toMatch(uuid);

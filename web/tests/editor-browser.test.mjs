@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
-const browser = process.env.NOTES_TEST_BROWSER ?? (process.platform === "win32"
+const browser = process.env.FOLIO_TEST_BROWSER ?? (process.platform === "win32"
   ? "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe" : chromium.executablePath());
 
 test("formatted editing preserves YAML independently of body editing, selection, and history", {
@@ -28,7 +28,7 @@ test("formatted editing preserves YAML independently of body editing, selection,
       document.body.append(frame);
       const source = createSourceEditor({
         textarea,
-        nonce: document.querySelector('meta[name="notes-style-nonce"]').content,
+        nonce: document.querySelector('meta[name="folio-style-nonce"]').content,
       });
       textarea.value = "a".repeat(700 * 1024);
       textarea.dispatchEvent(new Event("input"));
@@ -49,16 +49,16 @@ test("formatted editing preserves YAML independently of body editing, selection,
       onChange: text => changes.push(text), onFallback: text => fallbacks.push(text),
       onLink: href => links.push(href), onOutline: items => outlines.push(items),
       onSelection: value => selections.push(value),
-      styleNonce: document.querySelector('meta[name="notes-style-nonce"]').content,
+      styleNonce: document.querySelector('meta[name="folio-style-nonce"]').content,
     });
     window.loaded = true;
   `;
   const server = createServer(async (request, response) => {
-    response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-notes-editor-test'; style-src-attr 'unsafe-inline'; img-src 'self'");
+    response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-folio-editor-test'; style-src-attr 'unsafe-inline'; img-src 'self'");
     try {
       if (request.url === "/") {
         response.setHeader("Content-Type", "text/html");
-        response.end('<!doctype html><meta name="notes-style-nonce" content="notes-editor-test"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/editor.bundle.css"><link rel="stylesheet" href="/test.css"><div class="test-sidebar"><div class="search-field"><input id="file-filter" aria-label="Search files"></div><button class="file-button">A note</button></div><button id="outside">Outside editor</button><section id="test-layout" class="rich-pane"><div id="root" class="rich-editor"></div></section><script type="module" src="/test.mjs"></script>');
+        response.end('<!doctype html><meta name="folio-style-nonce" content="folio-editor-test"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/editor.bundle.css"><link rel="stylesheet" href="/test.css"><div class="test-sidebar"><div class="search-field"><input id="file-filter" aria-label="Search files"></div><button class="file-button">A note</button></div><button id="outside">Outside editor</button><section id="test-layout" class="rich-pane"><div id="root" class="rich-editor"></div></section><script type="module" src="/test.mjs"></script>');
       } else if (request.url === "/test.css") {
         response.setHeader("Content-Type", "text/css");
         response.end("#test-layout { height: calc(100vh - 80px); } .test-sidebar { position: absolute; top: 0; left: 0; width: 180px; }");
@@ -144,24 +144,24 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.equal(await evaluate("document.querySelector('.ProseMirror h1').textContent"), "Heading world");
     assert.equal(await evaluate("document.querySelectorAll('.ProseMirror h2,.ProseMirror hr').length"), 0);
     assert.doesNotMatch(await evaluate("document.querySelector('.ProseMirror').textContent"), /title:|Folded description|unknown:/);
-    assert.equal(await evaluate("document.querySelector('.notes-metadata details').open"), false);
-    assert.equal(await evaluate("document.querySelector('.notes-metadata summary').textContent.trim()"), "Metadata");
-    assert.equal(await evaluate("document.querySelectorAll('.notes-metadata-summary,.notes-metadata-description,.notes-metadata-tag,.notes-metadata-hint,.notes-metadata-editor-heading').length"), 0);
-    assert.equal(await evaluate("document.querySelector('.notes-metadata-warning').hidden"), true);
+    assert.equal(await evaluate("document.querySelector('.folio-metadata details').open"), false);
+    assert.equal(await evaluate("document.querySelector('.folio-metadata summary').textContent.trim()"), "Metadata");
+    assert.equal(await evaluate("document.querySelectorAll('.folio-metadata-summary,.folio-metadata-description,.folio-metadata-tag,.folio-metadata-hint,.folio-metadata-editor-heading').length"), 0);
+    assert.equal(await evaluate("document.querySelector('.folio-metadata-warning').hidden"), true);
     assert.equal(await evaluate("editor.getSource()"), source);
     assert.deepEqual(await evaluate("changes"), []);
     assert.deepEqual(await evaluate("outlines.at(-1)"), [{ text: "Heading world", level: 1, from: prefix.length, id: "heading-world" }]);
     assert.deepEqual(await evaluate(`extractOutline(${JSON.stringify(source)})`), await evaluate("outlines.at(-1)"));
     assert.equal(await evaluate("document.querySelector('.ProseMirror a').getAttribute('href')"), "/next.md#hello");
     assert.equal(await evaluate("document.querySelector('.ProseMirror img[src]').getAttribute('src')"), "/images/a.png");
-    assert.equal(await evaluate("document.querySelectorAll('.notes-code-gutter span').length"), 3);
-    assert.ok(await evaluate("document.querySelectorAll('.notes-code-keyword').length") > 0);
+    assert.equal(await evaluate("document.querySelectorAll('.folio-code-gutter span').length"), 3);
+    assert.ok(await evaluate("document.querySelectorAll('.folio-code-keyword').length") > 0);
     const layout = await evaluate(`(() => {
       const root = document.querySelector('#root').getBoundingClientRect();
-      const scroll = document.querySelector('.notes-live-scroll').getBoundingClientRect();
-      const page = document.querySelector('.notes-live-page');
+      const scroll = document.querySelector('.folio-live-scroll').getBoundingClientRect();
+      const page = document.querySelector('.folio-live-page');
       const rect = page.getBoundingClientRect();
-      const task = document.querySelector('.notes-task-item');
+      const task = document.querySelector('.folio-task-item');
       const check = task.querySelector('input').getBoundingClientRect();
       const range = document.createRange(); range.selectNodeContents(task.querySelector('p'));
       const label = range.getBoundingClientRect();
@@ -213,12 +213,12 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.equal(await evaluate("document.querySelectorAll('.ProseMirror table').length"), 1);
 
     await evaluate(`(() => {
-      document.querySelector('.notes-metadata details').open = true;
-      const input = document.querySelector('.notes-metadata-source');
+      document.querySelector('.folio-metadata details').open = true;
+      const input = document.querySelector('.folio-metadata-source');
       input.focus(); const from = input.value.indexOf('Guide'); input.setSelectionRange(from, from + 5);
     })()`);
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('.notes-metadata-scroll')).borderLeftWidth"), "1px");
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('.notes-metadata-source')).borderLeftWidth"), "0px");
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.folio-metadata-scroll')).borderLeftWidth"), "1px");
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.folio-metadata-source')).borderLeftWidth"), "0px");
     await type("Updated");
     const metadataChanged = await evaluate("editor.getSource()");
     assert.equal(metadataChanged, source.replace("Guide", "Updated"));
@@ -230,26 +230,26 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.ok((await evaluate("changes.at(-1)")).startsWith(changedPrefix));
     await undo();
     assert.equal(await evaluate("editor.getSource()"), changedPrefix + body);
-    assert.match(await evaluate("document.querySelector('.notes-metadata-source').value"), /Updated/);
+    assert.match(await evaluate("document.querySelector('.folio-metadata-source').value"), /Updated/);
     await evaluate(`window.beforeAppearance = {
       editor: document.querySelector('.ProseMirror'),
-      metadata: document.querySelector('.notes-metadata-source'),
+      metadata: document.querySelector('.folio-metadata-source'),
       anchor: getSelection().anchorNode, offset: getSelection().anchorOffset,
       source: editor.getSource(), changes: changes.length,
     }; void 0`);
     await command("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
     await evaluate("applyAppearance({theme:'light',latinFont:'Georgia',cjkFont:'Microsoft YaHei'})");
     assert.equal(await evaluate("getComputedStyle(document.body).backgroundColor"), "rgb(255, 255, 255)");
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('.notes-code-keyword')).color"), "rgb(152, 81, 153)");
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.folio-code-keyword')).color"), "rgb(152, 81, 153)");
     assert.equal(await evaluate("document.documentElement.dataset.theme"), "light");
     assert.equal(await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--font-latin').trim()"), '"Georgia"');
-    assert.match(await evaluate("getComputedStyle(document.querySelector('.notes-live-page')).fontFamily"), /Notes Local CJK.*Georgia/);
-    assert.doesNotMatch(await evaluate("getComputedStyle(document.querySelector('.notes-prose code')).fontFamily"), /Georgia/);
-    assert.ok(await evaluate("[...document.fonts].some(face => face.family.includes('Notes Local CJK') && face.unicodeRange.includes('U+4E00-9FFF'))"));
+    assert.match(await evaluate("getComputedStyle(document.querySelector('.folio-live-page')).fontFamily"), /Folio Local CJK.*Georgia/);
+    assert.doesNotMatch(await evaluate("getComputedStyle(document.querySelector('.folio-prose code')).fontFamily"), /Georgia/);
+    assert.ok(await evaluate("[...document.fonts].some(face => face.family.includes('Folio Local CJK') && face.unicodeRange.includes('U+4E00-9FFF'))"));
     await command("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
     await evaluate("applyAppearance({theme:'dark',latinFont:'Georgia',cjkFont:'Microsoft YaHei'})");
     assert.equal(await evaluate("getComputedStyle(document.body).backgroundColor"), "rgb(39, 39, 39)");
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('.notes-code-keyword')).color"), "rgb(200, 148, 208)");
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.folio-code-keyword')).color"), "rgb(200, 148, 208)");
     assert.equal((await evaluate("applyAppearance({theme:'dark',latinFont:'Georgia',cjkFont:'Microsoft YaHei'})")).changed, false);
     await evaluate("applyAppearance({theme:'system',latinFont:'Georgia',cjkFont:'Microsoft YaHei'})");
     assert.equal(await evaluate("getComputedStyle(document.body).backgroundColor"), "rgb(255, 255, 255)");
@@ -259,7 +259,7 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.equal(await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--surface').trim()"), "Canvas");
     await command("Emulation.setEmulatedMedia", { features: [] });
     assert.equal(await evaluate("document.querySelector('.ProseMirror') === beforeAppearance.editor"), true);
-    assert.equal(await evaluate("document.querySelector('.notes-metadata-source') === beforeAppearance.metadata"), true);
+    assert.equal(await evaluate("document.querySelector('.folio-metadata-source') === beforeAppearance.metadata"), true);
     assert.equal(await evaluate("getSelection().anchorNode === beforeAppearance.anchor && getSelection().anchorOffset === beforeAppearance.offset"), true);
     assert.equal(await evaluate("editor.getSource() === beforeAppearance.source && changes.length === beforeAppearance.changes"), true);
     assert.equal(await evaluate("(() => {try {applyAppearance({theme:'invalid',latinFont:'Arial',cjkFont:'宋体'});return false;} catch {return true;}})()"), true);
@@ -268,15 +268,15 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.doesNotMatch(await evaluate("document.documentElement.style.getPropertyValue('--code-font')"), /sans-serif/);
     assert.equal(await evaluate("editor.getSource() === beforeAppearance.source"), true);
     await evaluate("applyAppearance({theme:'system',latinFont:'Segoe UI',cjkFont:'Microsoft YaHei'})");
-    if (process.env.NOTES_EDITOR_SCREENSHOT === "1") {
+    if (process.env.FOLIO_EDITOR_SCREENSHOT === "1") {
       const clip = await evaluate(`(() => {
-        const rect = document.querySelector('.notes-metadata').getBoundingClientRect();
+        const rect = document.querySelector('.folio-metadata').getBoundingClientRect();
         return { x: rect.left - 16, y: rect.top - 12, width: rect.width + 32, height: rect.height + 24, scale: 1 };
       })()`);
       const image = await command("Page.captureScreenshot", { format: "png", clip });
       await writeFile(path.join(webRoot, "..", "build", "editor-metadata-polish-check.png"), Buffer.from(image.data, "base64"));
     }
-    await evaluate("document.querySelector('.notes-task-item input').click()");
+    await evaluate("document.querySelector('.folio-task-item input').click()");
     assert.match(await evaluate("changes.at(-1)"), /[-*] \[x\] A task/);
     assert.ok((await evaluate("changes.at(-1)")).startsWith(changedPrefix));
     assert.match(await evaluate("changes.at(-1)"), /!\[Local\]\(\.\.\/images\/a\.png\)/);
@@ -296,17 +296,17 @@ test("formatted editing preserves YAML independently of body editing, selection,
 
     const invalid = "---\ntitle: [broken\n---\n\n# Body\n";
     await evaluate(`editor.load(${JSON.stringify(invalid)}, "invalid.md")`);
-    assert.equal(await evaluate("document.querySelector('.notes-metadata-warning').hidden"), false);
-    assert.match(await evaluate("document.querySelector('.notes-metadata-warning').textContent"), /Invalid YAML/);
+    assert.equal(await evaluate("document.querySelector('.folio-metadata-warning').hidden"), false);
+    assert.match(await evaluate("document.querySelector('.folio-metadata-warning').textContent"), /Invalid YAML/);
     assert.equal(await evaluate("document.querySelector('.ProseMirror h1').textContent"), "Body");
     assert.equal(await evaluate("editor.getSource()"), invalid);
     await evaluate("editor.load('---\\n- a\\n- b\\n...\\n\\n# Body\\n', 'sequence.md')");
-    assert.match(await evaluate("document.querySelector('.notes-metadata-warning').textContent"), /mapping/);
+    assert.match(await evaluate("document.querySelector('.folio-metadata-warning').textContent"), /mapping/);
     assert.equal(await evaluate("document.querySelector('.ProseMirror h1').textContent"), "Body");
     assert.deepEqual(await evaluate("fallbacks"), []);
     await evaluate(`(async () => {
       const loading = editor.load(${JSON.stringify(source)}, 'pending.md');
-      const input = document.querySelector('.notes-metadata-source');
+      const input = document.querySelector('.folio-metadata-source');
       input.value = input.value.replace('Guide', 'Pending');
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await loading;
@@ -314,7 +314,7 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.equal(await evaluate("editor.getSource()"), source.replace("Guide", "Pending"));
     await evaluate("Promise.all([editor.load('# Stale', 'stale.md'), editor.load('# Latest', 'latest.md')])");
     assert.equal(await evaluate("document.querySelector('.ProseMirror h1').textContent"), "Latest");
-    assert.equal(await evaluate("document.querySelectorAll('.notes-metadata').length"), 0);
+    assert.equal(await evaluate("document.querySelectorAll('.folio-metadata').length"), 0);
     await evaluate("editor.load('', 'shortcut.md');");
     await evaluate("editor.focus()");
     await type("# ");

@@ -38,7 +38,7 @@ function renderTreeStatus(
   } else if (!message && treeLoaded && visible.length === 0) {
     message = "No notes match your filter.";
   } else if (!message && !treeLoaded) {
-    message = connectionState === "ready" ? "Refresh to list Markdown files." : "Open Notes using the app or CLI launch URL to connect.";
+    message = connectionState === "ready" ? "Refresh to list Markdown files." : "Open Folio using the app or CLI launch URL to connect.";
   }
   notice(ui.treeMessage, message, treeError && !treeLoading ? "error" : "");
   notice(ui.treeLimit, treeTruncated

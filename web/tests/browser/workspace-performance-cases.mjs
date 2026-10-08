@@ -4,7 +4,7 @@ import { addPermissionOverrides, measureClickFrame, summarizeTimings } from "./p
 import { createHash } from "node:crypto";
 
 test("workspace write benchmark distinguishes unchanged actions from real recent-note changes", async ({ browser }) => {
-  test.skip(!process.env.NOTES_BENCH_WORKSPACE_WRITES, "Opt-in workspace write measurement.");
+  test.skip(!process.env.FOLIO_BENCH_WORKSPACE_WRITES, "Opt-in workspace write measurement.");
   const library = await collaborativeLibrary(browser, { participants: 1, source: true, sharing: "private" });
   const timings = {};
   const changes = {};
@@ -40,18 +40,18 @@ test("workspace write benchmark distinguishes unchanged actions from real recent
     expect(changes.changedVisit.states).toBe(80);
     const report = { summary: summarizeTimings(timings), changes, timings };
     await fs.mkdir(path.join(buildRoot, "workspace-write-performance"), { recursive: true });
-    await fs.writeFile(path.join(buildRoot, "workspace-write-performance", `${process.env.NOTES_BENCH_WORKSPACE_WRITES}.json`), JSON.stringify(report, null, 2));
+    await fs.writeFile(path.join(buildRoot, "workspace-write-performance", `${process.env.FOLIO_BENCH_WORKSPACE_WRITES}.json`), JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ summary: report.summary, changes }, null, 2));
   } finally { await library.close(); }
 });
 
 test("workspace interaction benchmark measures project navigation and search result latency", async ({ browser }) => {
-  test.skip(!process.env.NOTES_BENCH_WORKSPACE, "Opt-in workspace performance measurement.");
+  test.skip(!process.env.FOLIO_BENCH_WORKSPACE, "Opt-in workspace performance measurement.");
   const library = await collaborativeLibrary(browser, { participants: 1, source: true, sharing: "private" });
   const timings = {};
   const record = (name, value) => (timings[name] ??= []).push(value);
-  const publicReads = process.env.NOTES_BENCH_PUBLIC_READS === "1";
-  const historyReads = process.env.NOTES_BENCH_HISTORY_READS === "1";
+  const publicReads = process.env.FOLIO_BENCH_PUBLIC_READS === "1";
+  const historyReads = process.env.FOLIO_BENCH_HISTORY_READS === "1";
   let guest = null;
   try {
     const [page] = library.pages;
@@ -67,11 +67,11 @@ test("workspace interaction benchmark measures project navigation and search res
     expect(created.ok()).toBe(true);
     const secondary = (await created.json()).id;
     const note = await page.request.post(new URL("/api/document", library.url).href, {
-      headers: { "X-Notes-Project": secondary },
+      headers: { "X-Folio-Project": secondary },
       data: { path: "Scratch.md", content: "# Scratch\n" },
     });
     expect(note.ok()).toBe(true);
-    const aclEntries = Number(process.env.NOTES_BENCH_ACL ?? 0);
+    const aclEntries = Number(process.env.FOLIO_BENCH_ACL ?? 0);
     await addPermissionOverrides(library, aclEntries);
     let publicToken = null;
     if (publicReads) {
@@ -83,7 +83,7 @@ test("workspace interaction benchmark measures project navigation and search res
       publicToken = (await shared.json()).publicLinks["Shared.md"].token;
       guest = await browser.newContext();
       const session = await guest.request.post(new URL("/api/public/session", library.url).href, {
-        headers: { "X-Notes-Share": publicToken },
+        headers: { "X-Folio-Share": publicToken },
         data: { password: "protected performance fixture password" },
       });
       expect(session.ok()).toBe(true);
@@ -123,7 +123,7 @@ test("workspace interaction benchmark measures project navigation and search res
     let probeFailure;
     const probes = [];
     if (publicReads) probes.push({ request: guest.request, path: `/api/public/document?id=${document}`,
-      headers: { "X-Notes-Share": publicToken }, metric: "indexingProtectedPublicReadMs" });
+      headers: { "X-Folio-Share": publicToken }, metric: "indexingProtectedPublicReadMs" });
     if (historyReads) probes.push({ request: page.request, path: `/api/history/content?document=${document}&revision=${historyId}`,
       metric: "indexingHistoryContentMs" });
     if (!probes.length) probes.push({ request: page.request, path: "/api/workspace", metric: "indexingWorkspaceRequestMs" });
@@ -167,7 +167,7 @@ test("workspace interaction benchmark measures project navigation and search res
     const summary = summarizeTimings(timings);
     const report = { files: 512, aclEntries, publicReads, historyReads, bodyBytes: Buffer.byteLength(body), summary, timings };
     await fs.mkdir(path.join(buildRoot, "workspace-performance"), { recursive: true });
-    await fs.writeFile(path.join(buildRoot, "workspace-performance", `${process.env.NOTES_BENCH_WORKSPACE}.json`), JSON.stringify(report, null, 2));
+    await fs.writeFile(path.join(buildRoot, "workspace-performance", `${process.env.FOLIO_BENCH_WORKSPACE}.json`), JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ files: report.files, aclEntries, publicReads, historyReads, bodyBytes: report.bodyBytes, ...summary }, null, 2));
   } finally { await guest?.close(); await library.close(); }
 });

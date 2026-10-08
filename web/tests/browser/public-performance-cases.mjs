@@ -3,7 +3,7 @@ import { collaborativeLibrary } from "./collaboration-cases.mjs";
 import { summarizeTimings } from "./performance-helpers.mjs";
 
 test("public document benchmark separates session validation, retrieval and rendered readiness", async ({ browser }) => {
-  test.skip(!process.env.NOTES_BENCH_PUBLIC, "Opt-in public-document startup measurement.");
+  test.skip(!process.env.FOLIO_BENCH_PUBLIC, "Opt-in public-document startup measurement.");
   const library = await collaborativeLibrary(browser, { participants: 1, source: true, sharing: "private" });
   const guest = await browser.newContext();
   const timings = {};
@@ -25,10 +25,10 @@ test("public document benchmark separates session validation, retrieval and rend
     });
     const [owner] = library.pages;
     const paragraph = "## Reference\n\nA paragraph with **formatted text**, [a related note](Other.md), and `inline code`.\n\n";
-    const canonical = process.env.NOTES_BENCH_CANONICAL === "1";
+    const canonical = process.env.FOLIO_BENCH_CANONICAL === "1";
     const body = canonical ? paragraph.repeat(2700).trimEnd() + "\n" : paragraph.repeat(2700);
     const links = [];
-    const runs = process.env.NOTES_BENCH_PROFILE ? 1 : 12;
+    const runs = process.env.FOLIO_BENCH_PROFILE ? 1 : 12;
     for (let index = 0; index < runs; index += 1) {
       const name = `Public${index}.md`;
       await fs.writeFile(path.join(library.notes, name), `---\ntitle: Published ${index}\n---\n\n# Published ${index}\n\n${body}`);
@@ -41,7 +41,7 @@ test("public document benchmark separates session validation, retrieval and rend
       links.push(new URL(`/share?share=${token}`, library.url).href);
     }
     const page = await guest.newPage();
-    const profiler = process.env.NOTES_BENCH_PROFILE ? await guest.newCDPSession(page) : null;
+    const profiler = process.env.FOLIO_BENCH_PROFILE ? await guest.newCDPSession(page) : null;
     if (profiler) { await profiler.send("Profiler.enable"); await profiler.send("Profiler.start"); }
     let joins = 0;
     let sockets = 0;
@@ -73,10 +73,10 @@ test("public document benchmark separates session validation, retrieval and rend
     await fs.mkdir(path.join(buildRoot, "public-performance"), { recursive: true });
     if (profiler) {
       const { profile } = await profiler.send("Profiler.stop");
-      await fs.writeFile(path.join(buildRoot, "public-performance", `${process.env.NOTES_BENCH_PUBLIC}.cpuprofile`), JSON.stringify(profile));
+      await fs.writeFile(path.join(buildRoot, "public-performance", `${process.env.FOLIO_BENCH_PUBLIC}.cpuprofile`), JSON.stringify(profile));
       await profiler.detach();
     }
-    await fs.writeFile(path.join(buildRoot, "public-performance", `${process.env.NOTES_BENCH_PUBLIC}.json`), JSON.stringify(report, null, 2));
+    await fs.writeFile(path.join(buildRoot, "public-performance", `${process.env.FOLIO_BENCH_PUBLIC}.json`), JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ bytesPerBody: report.bytesPerBody, canonical, joins, sockets, ...summary }, null, 2));
   } finally { await guest.close(); await library.close(); }
 });

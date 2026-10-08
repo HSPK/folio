@@ -2,7 +2,7 @@ import { OverlayScrollbars } from "overlayscrollbars";
 import "./scrollbars.css";
 
 export function attachScrollbars(host, viewport, { nonce, horizontal = true } = {}) {
-  OverlayScrollbars.nonce(nonce ?? document.querySelector('meta[name="notes-style-nonce"]')?.content);
+  OverlayScrollbars.nonce(nonce ?? document.querySelector('meta[name="folio-style-nonce"]')?.content);
   const contrast = window.matchMedia("(forced-colors: active)");
   const instance = OverlayScrollbars({
     target: host,

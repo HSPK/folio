@@ -7,19 +7,19 @@ import { fileURLToPath } from "node:url";
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repository = path.resolve(webRoot, "..");
-const executable = process.env.NOTES_TEST_EXE
-  ?? path.join(repository, "target", "debug", process.platform === "win32" ? "notes-core.exe" : "notes-core");
-const noteKib = Number(process.env.NOTES_BENCH_NOTE_KIB ?? 0);
+const executable = process.env.FOLIO_TEST_EXE
+  ?? path.join(repository, "target", "debug", process.platform === "win32" ? "folio-core.exe" : "folio-core");
+const noteKib = Number(process.env.FOLIO_BENCH_NOTE_KIB ?? 0);
 if (!Number.isInteger(noteKib) || noteKib < 0 || noteKib > 1024) {
-  throw new Error("NOTES_BENCH_NOTE_KIB must be an integer from 0 through 1024.");
+  throw new Error("FOLIO_BENCH_NOTE_KIB must be an integer from 0 through 1024.");
 }
-const temporary = await mkdtemp(path.join(os.tmpdir(), "notes-tree-benchmark-"));
+const temporary = await mkdtemp(path.join(os.tmpdir(), "folio-tree-benchmark-"));
 const notes = path.join(temporary, "notes");
 const ready = path.join(temporary, "ready.json");
 const stop = path.join(temporary, "stop");
 const fileCount = 1000;
 const runCount = 8;
-const hiddenPatternCount = process.env.NOTES_BENCH_HIDDEN === "1" ? 100 : 0;
+const hiddenPatternCount = process.env.FOLIO_BENCH_HIDDEN === "1" ? 100 : 0;
 const filler = noteKib ? "performance benchmark content ".repeat(Math.ceil(noteKib * 1024 / 30)).slice(0, noteKib * 1024)
   : "performance benchmark content ".repeat(280);
 const noteContent = (index, title = `Benchmark note ${index}`) =>
@@ -80,7 +80,7 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
-  if (!launchUrl) throw new Error(`Notes did not start: ${diagnostics}`);
+  if (!launchUrl) throw new Error(`Folio did not start: ${diagnostics}`);
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   if (hiddenPatternCount) {
@@ -89,7 +89,7 @@ try {
       ...Array.from({ length: 90 }, (_, index) => `missing-${index}/**`),
     ].join("\n");
     await page.addInitScript((value) => {
-      window.localStorage.setItem("notes.library.hiddenPatterns", value);
+      window.localStorage.setItem("folio.library.hiddenPatterns", value);
     }, patterns);
   }
   const firstTree = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/tree");

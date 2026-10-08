@@ -13,9 +13,9 @@ export function normalizeNotePath(path) {
 }
 
 export function browserDocumentTitle(document, modified = false) {
-  if (!document) return "Notes";
+  if (!document) return "Folio";
   const title = document.title?.trim() || normalizeNotePath(document.path).split("/").at(-1);
-  return `${title}${modified ? " *" : ""} — Notes`;
+  return `${title}${modified ? " *" : ""} — Folio`;
 }
 
 export function createDocumentModel(document) {

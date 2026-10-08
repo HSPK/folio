@@ -36,7 +36,7 @@ test("opens a rendered editable page without changing the Markdown", async ({ pa
   expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe(initialText);
   expect(page.url()).not.toContain("token=");
   expect(errors).toEqual([]);
-  await page.screenshot({ path: path.join(buildRoot, "notes-editor.png"), fullPage: true });
+  await page.screenshot({ path: path.join(buildRoot, "folio-editor.png"), fullPage: true });
 });
 
 test("inline edits save to disk and survive reopening in source mode", async ({ page }) => {
@@ -273,7 +273,7 @@ test("creating a note never overwrites an existing file", async ({ page }) => {
   await page.locator("#new-note-title").fill("New note");
   await page.locator("#create-note").click();
   await expect(page.locator("#document-title")).toHaveText("New note");
-  await expect(page).toHaveTitle("New note — Notes");
+  await expect(page).toHaveTitle("New note — Folio");
   await expect(page.locator(".ProseMirror[contenteditable=true]")).toBeVisible();
   expect(await fs.readFile(path.join(root, "New note.md"), "utf8")).toMatch(
     /^---\ntitle: "New note"\ncreated: "\d{4}-\d{2}-\d{2}T[\d:.]+Z"\n---\n\n$/,
@@ -304,7 +304,7 @@ test("metadata titles and folder actions support rename and drag moves", async (
   await expect(page.locator("#new-note-hint")).toHaveText("File: Guides/Draft.md");
   await page.locator("#create-note").click();
   await expect(page.locator("#document-title")).toHaveText("Draft");
-  await expect(page).toHaveTitle("Draft — Notes");
+  await expect(page).toHaveTitle("Draft — Folio");
 
   const draft = page.locator('button[data-path="Guides/Draft.md"]');
   await draft.click({ button: "right" });
@@ -327,7 +327,7 @@ test("metadata titles and folder actions support rename and drag moves", async (
 
   await page.locator('button[data-path="Guides/intro.md"]').click();
   await expect(page.locator("#document-title")).toHaveText("Getting started");
-  await expect(page).toHaveTitle("Getting started — Notes");
+  await expect(page).toHaveTitle("Getting started — Folio");
 });
 
 test("live typing retains heading and emphasis formatting instead of expanding Markdown", async ({ page }) => {
@@ -392,8 +392,8 @@ test("MkDocs metadata is separate from the formatted body and remains exact afte
   await expect(live).not.toContainText("Metadata title");
   await expect(live.locator("hr")).toHaveCount(0);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-  await expect(page.locator(".notes-metadata summary")).toHaveText("Metadata");
-  await expect(page.locator(".notes-metadata-summary,.notes-metadata-description,.notes-metadata-hint,.notes-metadata-editor-heading")).toHaveCount(0);
+  await expect(page.locator(".folio-metadata summary")).toHaveText("Metadata");
+  await expect(page.locator(".folio-metadata-summary,.folio-metadata-description,.folio-metadata-hint,.folio-metadata-editor-heading")).toHaveCount(0);
   await page.locator("#outline-tab").click();
   await expect(page.locator("#outline-list")).toHaveText("Real heading");
   await page.screenshot({ path: path.join(buildRoot, "metadata-frontmatter.png") });
@@ -420,7 +420,7 @@ test("editing YAML alone preserves the complete body's original spelling and new
   const field = await metadataField(page);
   await field.fill((await field.inputValue()).replace("Metadata title", "Renamed title"));
   await expect(page.locator("#document-title")).toHaveText("Renamed title *");
-  await expect(page).toHaveTitle("Renamed title * — Notes");
+  await expect(page).toHaveTitle("Renamed title * — Folio");
   await expect(page.locator(".ProseMirror h1")).toHaveText("Real heading");
   await page.keyboard.press("Control+s");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
@@ -477,7 +477,7 @@ test("math, empty table cells and list headings open safely in Live mode", async
   await expect(editor.locator('[data-type="math_inline"]')).toHaveCount(2);
   await expect(editor.locator('[data-type="math_inline"] .katex')).toHaveCount(2);
   const inlineMath = editor.locator('[data-type="math_inline"]').first();
-  await inlineMath.locator(".notes-math-output").click();
+  await inlineMath.locator(".folio-math-output").click();
   const inlineSource = inlineMath.getByLabel("Inline TeX source");
   await expect(inlineSource).toBeVisible();
   await inlineSource.fill("x^3 + y");
@@ -490,7 +490,7 @@ test("math, empty table cells and list headings open safely in Live mode", async
   await expect(inlineMath).toHaveAttribute("data-value", "x^3 + y");
   await expect(inlineMath.locator("annotation")).toHaveText("x^3 + y");
   const blockMath = editor.locator('[data-type="math_block"]').first();
-  await blockMath.locator(".notes-math-output").click();
+  await blockMath.locator(".folio-math-output").click();
   const blockSource = blockMath.getByLabel("Display TeX source");
   await expect(blockSource).toBeVisible();
   await blockSource.fill("L(x)=x^3");
@@ -511,7 +511,7 @@ test("empty and marked formulas support direct editing and composition", async (
   const editor = page.locator(".ProseMirror[contenteditable=true]");
   await expect(editor.locator("strong [data-type=math_inline]")).toHaveCount(1);
   const inlineMath = editor.locator('[data-type="math_inline"]').nth(1);
-  await inlineMath.locator(".notes-math-output").click();
+  await inlineMath.locator(".folio-math-output").click();
   await inlineMath.getByLabel("Inline TeX source").fill("y");
   await expect(inlineMath.locator("annotation")).toHaveText("y");
   await editor.locator("h1").click();
@@ -519,7 +519,7 @@ test("empty and marked formulas support direct editing and composition", async (
   await expect(inlineMath.getByLabel("Inline TeX source")).toBeHidden();
 
   const blockMath = editor.locator('[data-type="math_block"]');
-  await blockMath.locator(".notes-math-output").click();
+  await blockMath.locator(".folio-math-output").click();
   const blockSource = blockMath.getByLabel("Display TeX source");
   await blockSource.fill("变量");
   const cdp = await page.context().newCDPSession(page);
@@ -544,7 +544,7 @@ test("list and table edits retain their rendered structures", async ({ page }) =
   await live.locator("td").first().click();
   await page.keyboard.press("End");
   await page.keyboard.insertText(" edited");
-  await expect(live.locator("td").first()).toHaveText("Notes edited");
+  await expect(live.locator("td").first()).toHaveText("Folio edited");
   await expect(live.locator("table")).toBeVisible();
   await expect(page.locator("#editor")).toBeHidden();
   await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "rich");

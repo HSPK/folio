@@ -9,16 +9,16 @@ fn main() {
                 windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS,
             );
         }
-        if let Err(error) = notes_cli::run(&args) {
+        if let Err(error) = folio_cli::run(&args) {
             eprintln!("{error}");
             std::process::exit(1);
         }
     } else {
         #[cfg(windows)]
-        notes_app_windows::native::run();
+        folio_windows::native::run();
         #[cfg(not(windows))]
         {
-            eprintln!("Use the notes-core CLI on this platform.");
+            eprintln!("Use the folio-core CLI on this platform.");
             std::process::exit(1);
         }
     }

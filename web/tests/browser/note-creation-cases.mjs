@@ -12,7 +12,7 @@ test("title-only creation keeps metadata exact and creation time stable through 
   await page.locator("#create-note").click();
   await expect(page.locator("#new-note-dialog")).toBeHidden();
   await expect(page.locator("#document-title")).toHaveText(title);
-  await expect(page).toHaveTitle(`${title} — Notes`);
+  await expect(page).toHaveTitle(`${title} — Folio`);
   await expect(page.locator("#document-modified")).toBeHidden();
   const createdSource = await fs.readFile(path.join(root, filename), "utf8");
   expect(createdSource).toContain(`title: ${JSON.stringify(title)}\n`);
@@ -24,18 +24,18 @@ test("title-only creation keeps metadata exact and creation time stable through 
   const metadata = await metadataField(page);
   const renamed = "Displayed document title";
   await metadata.fill((await metadata.inputValue()).replace(JSON.stringify(title), JSON.stringify(renamed)));
-  await expect(page).toHaveTitle(`${renamed} * — Notes`);
+  await expect(page).toHaveTitle(`${renamed} * — Folio`);
   await page.keyboard.press("Control+s");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-  await expect(page).toHaveTitle(`${renamed} — Notes`);
+  await expect(page).toHaveTitle(`${renamed} — Folio`);
   await chooseView(page, "editor");
   await page.locator("#editor").fill((await page.locator("#editor").inputValue())
     .replace(JSON.stringify(renamed), '"Source title"') + "# Body added later\n");
   await page.keyboard.press("Control+s");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-  await expect(page).toHaveTitle("Source title — Notes");
+  await expect(page).toHaveTitle("Source title — Folio");
   await page.reload();
-  await expect(page).toHaveTitle("Source title — Notes");
+  await expect(page).toHaveTitle("Source title — Folio");
   const saved = await fs.readFile(path.join(root, filename), "utf8");
   expect(saved).toContain(`created: "${created}"`);
   expect(saved).toContain("# Body added later");
@@ -53,7 +53,7 @@ test("template selection preserves a custom title and every template creates met
     await expect(page.locator("#new-note-title")).toHaveValue(title);
     await page.locator("#create-note").click();
     await expect(page.locator("#document-title")).toHaveText(title);
-    await expect(page).toHaveTitle(`${title} — Notes`);
+    await expect(page).toHaveTitle(`${title} — Folio`);
     await expect(page.locator(".ProseMirror")).toContainText(body);
     const content = await fs.readFile(path.join(root, `${title}.md`), "utf8");
     expect(content).toContain(`title: "${title}"`);

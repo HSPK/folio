@@ -2,8 +2,8 @@ import { wikiSchema } from "./wiki.mjs";
 
 export function createWikiMenu(active, documents) {
   const menu = document.createElement("div");
-  menu.id = "notes-wiki-menu";
-  menu.className = "notes-slash-menu";
+  menu.id = "folio-wiki-menu";
+  menu.className = "folio-slash-menu";
   menu.setAttribute("role", "listbox");
   menu.setAttribute("aria-label", "Link to a note");
   menu.hidden = true;
@@ -64,13 +64,13 @@ export function createWikiMenu(active, documents) {
         menu.replaceChildren(...candidates.map((file, index) => {
           const button = document.createElement("button");
           button.type = "button";
-          button.id = `notes-wiki-option-${index}`;
+          button.id = `folio-wiki-option-${index}`;
           button.setAttribute("role", "option");
           const glyph = document.createElement("span");
-          glyph.className = "notes-slash-glyph";
+          glyph.className = "folio-slash-glyph";
           glyph.textContent = "[[]]";
           const copy = document.createElement("span");
-          copy.className = "notes-slash-copy";
+          copy.className = "folio-slash-copy";
           const title = document.createElement("strong");
           title.textContent = file.title ?? file.name;
           const location = document.createElement("small");

@@ -21,7 +21,7 @@ if (-not $Runtime) {
 }
 
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-    throw "A Rust toolchain is required to build Notes. Install Rust from https://rustup.rs (MSVC + Windows SDK, or the GNU toolchain + MinGW-w64). Python and .NET are not used."
+    throw "A Rust toolchain is required to build Folio. Install Rust from https://rustup.rs (MSVC + Windows SDK, or the GNU toolchain + MinGW-w64). Python and .NET are not used."
 }
 
 if (-not $Toolchain) {
@@ -47,13 +47,13 @@ try {
         & cargo test --locked --workspace --manifest-path $manifest --target $target --target-dir $targetDirectory
         if ($LASTEXITCODE -ne 0) { throw "The Rust tests failed." }
     }
-    & cargo build --locked --release -p notes-app-windows --manifest-path $manifest --target $target --target-dir $targetDirectory
+    & cargo build --locked --release -p folio-windows --manifest-path $manifest --target $target --target-dir $targetDirectory
     if ($LASTEXITCODE -ne 0) { throw "The Windows build failed." }
 } finally {
     Pop-Location
 }
 
-$executable = Join-Path $targetDirectory "$target\release\notes.exe"
+$executable = Join-Path $targetDirectory "$target\release\folio.exe"
 if (-not (Test-Path -LiteralPath $executable)) {
     throw "The build did not produce the native executable."
 }
@@ -61,6 +61,6 @@ if (Test-Path -LiteralPath $output) {
     Remove-Item -LiteralPath $output -Recurse -Force
 }
 New-Item -ItemType Directory -Path $output -Force | Out-Null
-Copy-Item -LiteralPath $executable -Destination (Join-Path $output "Notes.exe")
-$result = Get-Item -LiteralPath (Join-Path $output "Notes.exe")
+Copy-Item -LiteralPath $executable -Destination (Join-Path $output "Folio.exe")
+$result = Get-Item -LiteralPath (Join-Path $output "Folio.exe")
 Write-Host ("Built {0} ({1:N2} MB)" -f $result.FullName, ($result.Length / 1MB))
