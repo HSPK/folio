@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <title>Folio - Write freely. Keep your files.</title>
+  <desc>Folio is a local-first Markdown workspace for Windows, macOS and Linux.</desc>
+  <rect width="1280" height="640" rx="24" fill="#f5f5f0"/>
+  <g transform="translate(80 60) scale(.55)" fill="#292929">
+    <path d="M32 12H78L108 42V104A12 12 0 0 1 96 116H32A12 12 0 0 1 20 104V24A12 12 0 0 1 32 12Z"/>
+    <path fill="#fff" d="M40 38H76V52H54V64H76V78H54V96H40ZM82 20L100 38H82Z"/>
+  </g>
+  <g fill="#292929" font-family="Arial, Helvetica, sans-serif">
+    <text x="158" y="111" font-size="43" font-weight="700" letter-spacing="-1.5">Folio</text>
+    <text x="82" y="250" font-size="73" font-weight="700" letter-spacing="-3">Write freely.</text>
+    <text x="82" y="336" font-size="73" font-weight="700" letter-spacing="-3">Keep your files.</text>
+    <text x="86" y="407" font-size="26" fill="#62645e">A local-first Markdown workspace.</text>
+    <text x="86" y="515" font-size="20" fill="#62645e">WINDOWS / macOS / LINUX</text>
+    <text x="86" y="559" font-size="20">github.com/HSPK/folio</text>
+  </g>
+  <g transform="translate(934 188) scale(1.65)">
+    <path fill="#292929" d="M32 12H78L108 42V104A12 12 0 0 1 96 116H32A12 12 0 0 1 20 104V24A12 12 0 0 1 32 12Z"/>
+    <path fill="#fff" d="M40 38H76V52H54V64H76V78H54V96H40ZM82 20L100 38H82Z"/>
+  </g>
+  <path d="M900 498h280" stroke="#d8dad1" stroke-width="1"/>
+  <text x="902" y="532" fill="#62645e" font-family="Arial, Helvetica, sans-serif" font-size="18">Plain files. Live editing.</text>
+  <text x="902" y="558" fill="#62645e" font-family="Arial, Helvetica, sans-serif" font-size="18">Your workspace.</text>
+</svg>

@@ -69,7 +69,8 @@ jobs:
           test "$(build/rust/release/folio-core --version)" = "Folio 0.1.0"
           mkdir -p build/release build/package
           cp build/rust/release/folio-core build/package/folio
-          tar -czf "build/release/folio-linux-$ARCH.tar.gz" -C build/package folio
+          cp LICENSE web/public/THIRD-PARTY-LICENSES.txt build/package/
+          tar -czf "build/release/folio-linux-$ARCH.tar.gz" -C build/package folio LICENSE THIRD-PARTY-LICENSES.txt
       - name: Package macOS application
         if: matrix.platform == 'macos'
         shell: bash
@@ -94,8 +95,9 @@ jobs:
           $exe = Get-Item "build/windows/win-$env:ARCH/Folio.exe"
           if ($exe.VersionInfo.ProductVersion -ne "0.1.0") { throw "Unexpected application version." }
           ./scripts/installers.test.ps1 -Executable $exe.FullName
+          Copy-Item LICENSE, web/public/THIRD-PARTY-LICENSES.txt -Destination $exe.DirectoryName
           New-Item -ItemType Directory -Path build/release -Force | Out-Null
-          Compress-Archive -Path $exe.FullName -DestinationPath "build/release/folio-windows-$env:ARCH.zip"
+          Compress-Archive -Path $exe.FullName, "$($exe.DirectoryName)/LICENSE", "$($exe.DirectoryName)/THIRD-PARTY-LICENSES.txt" -DestinationPath "build/release/folio-windows-$env:ARCH.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: folio-${{ matrix.platform }}-${{ matrix.arch }}

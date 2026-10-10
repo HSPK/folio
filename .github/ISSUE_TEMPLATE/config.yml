@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation and downloads / 安装与下载
+    url: https://github.com/HSPK/folio/releases
+    about: Get the latest release and installation scripts / 获取最新版本与安装脚本
+  - name: Detailed guide / 完整指南
+    url: https://github.com/HSPK/folio/blob/main/docs/guide.zh-CN.md
+    about: Configuration, networking, migration and development / 配置、网络、迁移与开发

@@ -2,6 +2,7 @@
   "name": "folio",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "workspaces": ["editor"],
   "scripts": {
@@ -32,6 +33,7 @@
     "build": "node frontend/build.mjs",
     "check:lines": "node ../scripts/check-source-lines.mjs",
     "icons": "node scripts/build-icon.mjs",
+    "capture:product": "node scripts/capture-product.mjs",
     "test": "node --test tests/web.test.mjs tests/workspace-model.test.mjs && npm --workspace @folio/editor test",
     "test:browser": "node --test tests/editor-browser.test.mjs",
     "test:installers": "node --test ../scripts/installers.test.mjs"

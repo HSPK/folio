@@ -70,6 +70,8 @@ xcrun swiftc \
   -o "${macos_dir}/Folio"
 
 cp "${resource_source_dir}/Info.plist" "${contents_dir}/Info.plist"
+cp "${project_root}/LICENSE" "${resources_dir}/LICENSE"
+cp "${project_root}/web/public/THIRD-PARTY-LICENSES.txt" "${resources_dir}/THIRD-PARTY-LICENSES.txt"
 
 for size in 16 32 128 256 512; do
   sips -z "${size}" "${size}" "${icon_source}" \

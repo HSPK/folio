@@ -1,0 +1,50 @@
+name: Deploy Folio website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/site/**"
+      - "docs/assets/**"
+      - "Shared/Resources/FolioIcon.svg"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assemble static bilingual site
+        run: |
+          mkdir -p build/site/assets
+          cp docs/site/* build/site/
+          cp docs/assets/live-light.png docs/assets/compare-dark.png docs/assets/social-preview.png build/site/assets/
+          cp Shared/Resources/FolioIcon.svg build/site/assets/icon.svg
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

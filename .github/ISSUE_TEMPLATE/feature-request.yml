@@ -1,0 +1,21 @@
+name: Feature request / 功能建议
+description: Describe a workflow Folio could improve / 描述需要改善的工作流
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The workflow or problem / 工作流与问题
+      description: Describe what you are trying to do, not just a proposed button.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested improvement / 建议的改进
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and context / 替代方案与补充背景

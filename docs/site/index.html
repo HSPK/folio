@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Folio is an open-source, local-first Markdown workspace. Live editing, plain files, search, collaboration and optional Git sync for Windows, macOS and Linux.">
+  <meta name="theme-color" content="#f5f5f0">
+  <title>Folio — Write freely. Keep your files.</title>
+  <link rel="canonical" href="https://hspk.github.io/folio/">
+  <link rel="alternate" hreflang="en" href="https://hspk.github.io/folio/">
+  <link rel="alternate" hreflang="zh-CN" href="https://hspk.github.io/folio/zh.html">
+  <link rel="alternate" hreflang="x-default" href="https://hspk.github.io/folio/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Folio">
+  <meta property="og:title" content="Folio — Write freely. Keep your files.">
+  <meta property="og:description" content="A local-first Markdown workspace. Plain files, Live editing and a workspace you control. MIT licensed.">
+  <meta property="og:url" content="https://hspk.github.io/folio/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:image" content="https://hspk.github.io/folio/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Folio — Write freely. Keep your files.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Folio — Write freely. Keep your files.">
+  <meta name="twitter:description" content="A local-first Markdown workspace for Windows, macOS and Linux.">
+  <meta name="twitter:image" content="https://hspk.github.io/folio/assets/social-preview.png">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Folio",
+      "url": "https://hspk.github.io/folio/",
+      "description": "An open-source, local-first Markdown workspace using your existing browser.",
+      "applicationCategory": "ProductivityApplication",
+      "operatingSystem": "Windows, macOS, Linux",
+      "softwareVersion": "0.1.0",
+      "downloadUrl": "https://github.com/HSPK/folio/releases",
+      "license": "https://github.com/HSPK/folio/blob/main/LICENSE",
+      "author": { "@type": "Organization", "name": "HSPK", "url": "https://github.com/HSPK" }
+    }
+  </script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="navigation">
+    <a class="brand" href="./"><img src="assets/icon.svg" alt="" width="38" height="38"><span>Folio</span></a>
+    <nav aria-label="Main navigation">
+      <a href="https://github.com/HSPK/folio">GitHub</a>
+      <a href="zh.html" lang="zh-CN" hreflang="zh-CN">简体中文</a>
+    </nav>
+  </header>
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <p class="eyebrow">LOCAL-FIRST MARKDOWN · MIT LICENSED</p>
+      <h1 id="hero-title">Write freely.<br>Keep your files.</h1>
+      <p class="intro">A quiet workspace for writing, research and your next idea.
+        Edit a formatted page, switch to Markdown source, and keep your notes as ordinary files.</p>
+      <div class="actions">
+        <a class="button primary" href="#install">Install Folio</a>
+        <a class="button" href="https://github.com/HSPK/folio">Explore the source</a>
+      </div>
+      <p class="availability">Windows / macOS / Linux · x64 / ARM64 · 0.1.0</p>
+    </section>
+    <figure class="product">
+      <img src="assets/live-light.png" alt="Folio Live editor with a sample workspace, Markdown task list and table" width="1440" height="960" fetchpriority="high">
+      <figcaption>Actual Folio interface with synthetic example notes. No private notebook to export.</figcaption>
+    </figure>
+    <section class="features" aria-label="What Folio offers">
+      <article><h2>A page, not a syntax fight</h2><p>Live editing, an outline, light/dark themes, tables, math and image paste. Source, Compare and Read are one menu away.</p></article>
+      <article><h2>Ideas that connect</h2><p>Full-text search, YAML tags, wiki links, backlinks, templates and favorites help a folder grow into a knowledge base.</p></article>
+      <article><h2>Share when you choose</h2><p>Projects, page permissions, public links and real-time collaboration. Private work does not automatically become shared work.</p></article>
+      <article><h2>Your files, your workflow</h2><p>Plain Markdown, version history and Git diffs, staging and commits. Scheduled commit-and-push is optional, not a hosted sync requirement.</p></article>
+    </section>
+    <section class="comparison" aria-labelledby="compare-title">
+      <div>
+        <p class="eyebrow">THE SAME FILE, TWO PERSPECTIVES</p>
+        <h2 id="compare-title">Need the raw Markdown?<br>It is right there.</h2>
+        <p>Compare brings source and preview together. Use Source when you need precise syntax control; Live edits can normalize Markdown spelling.</p>
+      </div>
+      <img src="assets/compare-dark.png" alt="Folio Compare view with Markdown source and formatted preview in dark mode" width="1440" height="960" loading="lazy">
+    </section>
+    <section id="install" class="installation" aria-labelledby="install-title">
+      <p class="eyebrow">START WITH A FOLDER</p>
+      <h2 id="install-title">One command. Your workspace.</h2>
+      <p>The installer selects your architecture, checks the release archive's SHA-256 and installs for the current user. No administrator privileges required.</p>
+      <h3>Linux / macOS</h3>
+      <pre><code>curl -fsSL https://github.com/HSPK/folio/releases/latest/download/install.sh | sh</code></pre>
+      <h3>Windows PowerShell</h3>
+      <pre><code>irm https://github.com/HSPK/folio/releases/latest/download/install.ps1 | iex</code></pre>
+      <p class="fine-print">Prefer to inspect scripts first? Read <a href="https://github.com/HSPK/folio/blob/main/install.sh">install.sh</a> or
+        <a href="https://github.com/HSPK/folio/blob/main/install.ps1">install.ps1</a>, or <a href="https://github.com/HSPK/folio/releases">download manually</a>.
+        Checksums detect mismatched downloads; they are not a separate publisher signature.</p>
+      <ol class="steps">
+        <li><strong>Choose a folder.</strong> Open Folio on Windows/macOS. On Linux: <code>folio --serve /path/to/markdown</code>.</li>
+        <li><strong>Create your local administrator.</strong> Set up a username and password on the first browser visit. No cloud signup.</li>
+        <li><strong>Write.</strong> Open a note or create one. Search with Ctrl/Cmd+P and save with Ctrl/Cmd+S.</li>
+      </ol>
+      <aside class="notice">
+        <strong>A few honest boundaries</strong>
+        <p>Folio 0.1.0 is early-stage: back up important notes. The app uses your existing browser, and the service is local by default.
+          Sharing needs explicit permissions and a reachable server; Folio does not configure public hosting or TLS.
+          Accounts, history and indexes are separate from the Markdown files.</p>
+        <p>macOS builds are ad-hoc signed, not notarized. First launch may need approval in Privacy &amp; Security.
+          Linux users may need to add <code>~/.local/bin</code> to PATH. The app interface is currently English.</p>
+      </aside>
+    </section>
+    <section class="closing" aria-labelledby="community-title">
+      <h2 id="community-title">Make room for the next idea.</h2>
+      <p>Try Folio, tell us what gets in your way, or help make the writing workflow better.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/HSPK/folio/releases">Download 0.1.0</a>
+        <a class="button" href="https://github.com/HSPK/folio/issues/new/choose">Share feedback</a>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <p>Folio · Created by <a href="https://github.com/HSPK">HSPK</a> · <a href="https://github.com/HSPK/folio/blob/main/LICENSE">MIT</a></p>
+    <nav aria-label="More information">
+      <a href="https://github.com/HSPK/folio/blob/main/README.md">Documentation</a>
+      <a href="https://github.com/HSPK/folio/blob/main/CONTRIBUTING.md">Contribute</a>
+      <a href="https://github.com/HSPK/folio/blob/main/docs/press-kit.md">Press kit</a>
+    </nav>
+    <p class="fine-print">This page has no analytics or tracking scripts.</p>
+  </footer>
+</body>
+</html>
