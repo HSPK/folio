@@ -1,6 +1,55 @@
 use super::*;
 
 #[test]
+fn source_reads_defer_html_preserve_format_and_recheck_changed_files() {
+    let workspace = Workspace::new();
+    let content = "\u{feff}---\r\ntitle: Source title\r\n---\r\n# Original\r\n";
+    workspace.write("source.md", content);
+    let server = start(&workspace.root, 0).unwrap();
+    let client = Client::new(&server);
+    let id = client.resource_id("source.md", "document");
+    let endpoint = format!("/api/document?id={id}&render=source");
+    let reply = client.api("GET", &endpoint, None);
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    let source = reply.json();
+    assert!(source["html"].is_null());
+    assert_eq!(source["id"], id);
+    assert_eq!(source["path"], "source.md");
+    assert_eq!(source["content"], content.trim_start_matches('\u{feff}'));
+    assert_eq!(source["bom"], true);
+    assert_eq!(source["title"], "Source title");
+    let rendered = client.get_document("source.md").json();
+    assert_eq!(rendered["version"], source["version"]);
+    assert!(rendered["html"].as_str().unwrap().contains("<h1"));
+    let changed = content.replace("Original", "Changed outside Folio");
+    workspace.write("source.md", &changed);
+    let current = client.api("GET", &endpoint, None).json();
+    assert_ne!(current["version"], source["version"]);
+    assert_eq!(current["content"], changed.trim_start_matches('\u{feff}'));
+    assert!(current["html"].is_null());
+    let preview = client.api(
+        "POST",
+        "/api/preview",
+        Some(json!({"id":id, "content":changed})),
+    );
+    assert_eq!(preview.status, 200, "{}", preview.text());
+    assert!(
+        preview.json()["html"]
+            .as_str()
+            .unwrap()
+            .contains("Changed outside Folio")
+    );
+    client
+        .api(
+            "GET",
+            &format!("/api/document?id={id}&render=invalid"),
+            None,
+        )
+        .error(400);
+    client.request("GET", &endpoint, &[], b"").error(401);
+}
+
+#[test]
 fn tree_and_documents_work_without_a_mkdocs_project() {
     let workspace = Workspace::new();
     workspace.write("README.md", "# Welcome\n");
@@ -284,7 +333,8 @@ fn app_icons_are_embedded_with_crisp_native_sizes() {
     );
     let page = client.request("GET", "/", &[], b"");
     assert!(page.text().contains("<title>Folio</title>"));
-    assert!(page.text().contains("Log in to Folio"));
+    assert!(page.text().contains("id=\"folio-root\""));
+    assert!(page.text().contains("src=\"/app.mjs\""));
     assert!(page.text().contains("href=\"/favicon.ico\""));
     assert!(page.text().contains("href=\"/icon.svg\""));
     let png = include_bytes!("../../../../Shared/Resources/FolioIcon.png");

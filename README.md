@@ -22,7 +22,7 @@
 
 Folio is an open-source, local-first Markdown workspace for writing, research and personal knowledge.
 Open a folder, edit directly in a formatted page, and keep your notes as ordinary `.md` files.
-Use them with Git, a text editor or your own backup tools — no proprietary notebook to export.
+Use them with any text editor or your own backup tools — no proprietary notebook to export.
 
 A small Rust service and native Windows/macOS launchers open the editor in **your existing browser**.
 Linux uses a CLI. No bundled browser engine, mandatory hosted account or subscription service.
@@ -38,7 +38,6 @@ Linux uses a CLI. No bundled browser engine, mandatory hosted account or subscri
 | A connected knowledge base | Full-text search, YAML tags, wiki links, backlinks and favorites. |
 | Fewer lost drafts | Version history, a recycle bin, local recovery and external-change conflict checks. |
 | A shared workspace when you want one | Projects, page permissions, public links and real-time collaboration. |
-| Notes that work with Git | Review diffs, stage and commit; optional scheduled commit-and-push. |
 
 Tables, task lists, code blocks, editable LaTeX math, note templates and image paste/drop are built in.
 You can keep writing alone, or explicitly share a project or page; collaboration is not forced on every document.
@@ -102,9 +101,9 @@ Save your work and exit the old application before updating.
 
 ## Your first minute
 
-1. **Open a Markdown folder.** Launch Folio on Windows/macOS and choose your directory, or run the Linux command above.
+1. **Launch Folio.** Open the app on Windows/macOS, or run the Linux command above.
 2. **Create your local administrator.** The first browser visit sets up a username and password on your own service — not a Folio cloud account.
-3. **Write.** Open an existing note or create one; Live edits the formatted page and saves automatically. Switch to Source whenever you need the raw Markdown.
+3. **Open a project and write.** Use Projects to create a project or add an existing folder, then open a note or create one. Live saves automatically; switch to Source whenever you need the raw Markdown.
 
 Try **Ctrl/Cmd+P** for search, type `/` in an empty Live paragraph for blocks, and use **Ctrl/Cmd+S** to save immediately.
 
@@ -112,10 +111,10 @@ Try **Ctrl/Cmd+P** for search, type `/` in an empty Live paragraph for blocks, a
 
 - **The notes are files.** Markdown and attachments live in folders. Accounts, indexes, history and collaboration state use separate local storage; include it in your backups if you want those features preserved.
 - **Private by default.** The service binds to `127.0.0.1`. Sharing requires explicit permissions and an address the recipient can actually reach.
-- **Not a hosted sync service.** Folio does not set up public hosting, TLS or cross-device connectivity. Git sync is opt-in and needs your own repository and credentials.
+- **Not a hosted sync service.** Folio does not set up public hosting, TLS or cross-device connectivity.
 - **Source stays available.** Merely opening a document does not rewrite it. Live edits can normalize Markdown syntax; use Source for byte-level control.
 
-Folio is **early-stage software**. Back up important notes and review changes before enabling automatic Git pushes.
+Folio is **early-stage software**. Back up important notes with your own backup tools.
 Single notes currently have a 4 MiB limit; file listings have a 5,000-note limit.
 See the [detailed Chinese guide](docs/guide.zh-CN.md) for behavior, limits, networking and migration from the previous application name.
 
@@ -130,7 +129,7 @@ cargo build --locked --release -p folio-cli --target-dir build/rust
 ./build/rust/release/folio-core --serve /path/to/markdown
 ```
 
-For frontend changes, use Node.js 22+:
+For frontend changes, use Node.js 22.12+:
 
 ```sh
 npm --prefix web ci

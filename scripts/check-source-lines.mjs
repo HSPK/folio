@@ -13,12 +13,15 @@ const sourceRoots = [
   "web/public",
   "web/tests",
 ];
-const extensions = new Set([".rs", ".swift", ".mjs", ".js", ".css", ".html"]);
+const extensions = new Set([".rs", ".swift", ".mjs", ".js", ".ts", ".tsx", ".mts", ".css", ".html"]);
 const generated = new Set([
   "web/public/app.mjs",
   "web/public/styles.css",
   "web/public/editor.bundle.mjs",
   "web/public/editor.bundle.css",
+  "web/public/model.mjs",
+  "web/public/workspace-model.mjs",
+  "web/public/input-latency.mjs",
 ]);
 const ignoredDirectories = new Set([
   ".git", "build", "dist", "node_modules", "target", "test-results",

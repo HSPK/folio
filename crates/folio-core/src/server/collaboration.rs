@@ -406,7 +406,18 @@ async fn connected(mut socket: WebSocket, state: Arc<AppState>, ticket: Ticket) 
     };
     let result = run_socket(&mut socket, &state, &ticket, &id).await;
     if let Err(message) = result {
-        let _ = json(&mut socket, &Outgoing::Error { message }).await;
+        let changed = state
+            .access
+            .as_ref()
+            .map(|access| access.directory_changed());
+        let response = match changed.transpose() {
+            Ok(Some(true)) => Outgoing::Reset { message },
+            Ok(_) => Outgoing::Error { message },
+            Err(error) => Outgoing::Error {
+                message: error.message,
+            },
+        };
+        let _ = json(&mut socket, &response).await;
     }
     let flush = match ticket.room.lock() {
         Ok(mut room) => {

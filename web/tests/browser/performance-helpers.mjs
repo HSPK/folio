@@ -42,7 +42,7 @@ export function measureClickFrame(page, selector, readySelector, observe = "body
         feedbackMs: performance.now() - started,
         requests: performance.getEntriesByType("resource")
           .filter((entry) => new URL(entry.name).pathname.startsWith("/api/"))
-          .map((entry) => ({ path: new URL(entry.name).pathname, ms: entry.duration })),
+          .map((entry) => ({ path: new URL(entry.name).pathname, ms: entry.duration, decodedBytes: entry.decodedBodySize })),
       }), 0));
     };
     const observer = new MutationObserver(finish);

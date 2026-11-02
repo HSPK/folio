@@ -1,4 +1,4 @@
-import { test, expect, fs, path, buildRoot, chooseView, userDocumentUrl } from "./fixture.mjs";
+import { test, expect, fs, path, buildRoot, chooseView, userDocumentUrl, confirmDialog } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 import { pasteImage } from "./project-cases.mjs";
 
@@ -52,7 +52,7 @@ test("public document links default to read-only, allow opt-in anonymous collabo
     await owner.locator("#sharing-public-edit").check();
     await owner.locator("#sharing-save").click();
     await expect(owner.locator("#sharing-public-url")).toHaveValue(url);
-    await expect(page.locator("#collaboration-join")).toHaveText("Sharing");
+    await expect(page.locator("#collaboration-join")).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#editor")).toHaveJSProperty("readOnly", false);
     await page.locator("#editor").focus();
     await page.keyboard.press("Control+End");
@@ -61,7 +61,7 @@ test("public document links default to read-only, allow opt-in anonymous collabo
     await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     const other = await secondGuest.newPage();
     await other.goto(url);
-    await expect(other.locator("#collaboration-join")).toHaveText("Sharing");
+    await expect(other.locator("#collaboration-join")).toHaveAttribute("aria-pressed", "true");
     await expect(other.getByRole("img", { name: /^Guest [a-f0-9]+ \(you\)$/ })).toBeVisible();
     await expect(owner.locator(".collaboration-avatar")).toHaveCount(4);
     const names = await owner.locator(".collaboration-avatar").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
@@ -76,8 +76,8 @@ test("public document links default to read-only, allow opt-in anonymous collabo
     await owner.locator("#sharing-save").click();
     await expect(page.locator("#editor")).toHaveJSProperty("readOnly", true);
     await expect(other.locator(".ProseMirror")).toHaveAttribute("contenteditable", "false");
-    owner.once("dialog", (dialog) => dialog.accept());
     await owner.locator("#sharing-reset-link").click();
+    await confirmDialog(owner);
     await expect(owner.locator("#sharing-public-url")).not.toHaveValue(url);
     const replacement = await owner.locator("#sharing-public-url").inputValue();
     await expect(page.locator("#collaboration-message")).toContainText("revoked");
@@ -119,7 +119,7 @@ test("a document can be private or read-only inside an editable shared project",
     await member.goto(await userDocumentUrl(member.context(), library.url, "Other.md"));
     await expect(member.locator(".ProseMirror")).toContainText("Other");
     await expect(member.locator('[data-path="Shared.md"]')).toHaveCount(0);
-    await expect(member.locator("#git-tab")).toBeHidden();
+    await expect(member.locator("#git-tab")).toHaveCount(0);
     await owner.locator("#more-menu > summary").click();
     await owner.locator("#share-page").click();
     await owner.locator("#sharing-level").selectOption("inherit");
@@ -127,6 +127,6 @@ test("a document can be private or read-only inside an editable shared project",
     await expect(owner.locator("#sharing-dialog")).toBeHidden();
     await member.goto(await userDocumentUrl(member.context(), library.url, "Shared.md"));
     await expect(member.locator(".ProseMirror")).toHaveAttribute("contenteditable", "true");
-    await expect(member.locator("#git-tab")).toBeVisible();
+    await expect(member.locator("#git-tab")).toHaveCount(0);
   } finally { await library.close(); }
 });

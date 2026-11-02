@@ -49,7 +49,7 @@ try {
     }
   }
   if (!launchUrl) throw new Error(`Folio did not start: ${diagnostics}`);
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, channel: process.env.FOLIO_BROWSER_CHANNEL });
   const page = await browser.newPage();
   const url = new URL(launchUrl);
   url.searchParams.set("document", await fixtureResourceId(launchUrl, "large.md"));

@@ -94,8 +94,9 @@ impl Client {
         stream
             .set_write_timeout(Some(Duration::from_secs(5)))
             .unwrap();
+        let mut request = Vec::new();
         write!(
-            stream,
+            request,
             "{method} {target} HTTP/1.1\r\nConnection: close\r\n"
         )
         .unwrap();
@@ -103,19 +104,20 @@ impl Client {
             .iter()
             .any(|(name, _)| name.eq_ignore_ascii_case("host"))
         {
-            write!(stream, "Host: 127.0.0.1:{}\r\n", self.port).unwrap();
+            write!(request, "Host: 127.0.0.1:{}\r\n", self.port).unwrap();
         }
         if !headers
             .iter()
             .any(|(name, _)| name.eq_ignore_ascii_case("content-length"))
         {
-            write!(stream, "Content-Length: {}\r\n", body.len()).unwrap();
+            write!(request, "Content-Length: {}\r\n", body.len()).unwrap();
         }
         for (name, value) in headers {
-            write!(stream, "{name}: {value}\r\n").unwrap();
+            write!(request, "{name}: {value}\r\n").unwrap();
         }
-        stream.write_all(b"\r\n").unwrap();
-        stream.write_all(body).unwrap();
+        request.extend_from_slice(b"\r\n");
+        request.extend_from_slice(body);
+        stream.write_all(&request).unwrap();
         stream.flush().unwrap();
         let mut bytes = Vec::new();
         stream.read_to_end(&mut bytes).unwrap();
@@ -285,14 +287,12 @@ mod binding;
 mod collaboration;
 #[path = "server/documents.rs"]
 mod documents;
-#[path = "server/git.rs"]
-mod git;
-#[path = "server/git_sync.rs"]
-mod git_sync;
 #[path = "server/history.rs"]
 mod history;
 #[path = "server/identities.rs"]
 mod identities;
+#[path = "server/project_directories.rs"]
+mod project_directories;
 #[path = "server/projects.rs"]
 mod projects;
 #[path = "server/public_expiry.rs"]

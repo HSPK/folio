@@ -449,15 +449,11 @@ pub(in crate::server) async fn session(
                     None,
                 ));
             };
-            let valid = if input.password.len() <= 1024 {
-                crate::auth::verify_password(
-                    link.password_hash.as_deref().ok_or_else(invalid_link)?,
-                    &input.password,
-                )
-                .map_err(ApiError::internal)
-            } else {
-                Ok(false)
-            };
+            let valid = crate::auth::verify_password(
+                link.password_hash.as_deref().ok_or_else(invalid_link)?,
+                &input.password,
+            )
+            .map_err(ApiError::internal);
             input.password.zeroize();
             if !valid? {
                 return Err(ApiError::new(

@@ -12,8 +12,6 @@ mod collaboration;
 mod files;
 #[path = "server/frontmatter.rs"]
 mod frontmatter;
-#[path = "server/git.rs"]
-mod git;
 #[path = "server/history.rs"]
 mod history;
 #[path = "server/images.rs"]
@@ -343,11 +341,6 @@ fn serve(
         .enable_all()
         .build()
         .map_err(|error| format!("Could not create the HTTP runtime: {error}"))?;
-    let git_sync = state
-        .projects
-        .as_ref()
-        .map(|registry| projects::sync::start(registry.clone(), health.clone()))
-        .transpose()?;
     let result = runtime.block_on(async {
         let listener = tokio::net::TcpListener::from_std(listener)
             .map_err(|error| format!("Could not initialize the HTTP listener: {error}"))?;
@@ -385,11 +378,6 @@ fn serve(
     });
     health.running.store(false, Ordering::Release);
     health.stopping.store(true, Ordering::Release);
-    if let Some(worker) = git_sync {
-        if worker.join().is_err() {
-            return Err("Automatic Git sync worker failed.".into());
-        }
-    }
     runtime.shutdown_timeout(RUNTIME_TIMEOUT);
     if state.workers.available_permits() != 2 {
         Err(
@@ -404,7 +392,6 @@ fn serve(
 struct Library {
     collaboration: collaboration::Hub,
     root: Arc<files::Root>,
-    git: git::Service,
     saves: Mutex<()>,
     preview_cache: Mutex<previews::Cache>,
     store: Option<state_store::ProjectStore>,
@@ -415,7 +402,6 @@ struct Library {
 impl Library {
     fn new(root: Arc<files::Root>) -> Self {
         Self {
-            git: git::Service::new(root.path().to_owned()),
             root,
             collaboration: collaboration::Hub::default(),
             saves: Mutex::new(()),

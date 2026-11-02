@@ -29,9 +29,7 @@ fn cookie(reply: &Reply) -> String {
 fn invitation_signup_is_single_use_and_admin_actions_revoke_sessions() {
     let workspace = Workspace::new();
     let store = UserStore::new(workspace.base.join("users.json"));
-    store
-        .initialize_admin("owner", "owner test password long enough")
-        .unwrap();
+    store.initialize_admin("owner", "o").unwrap();
     let server = start_with_users(&workspace.root, 0, store.clone()).unwrap();
     let client = Client::new(&server);
     let owner = cookie(&request(
@@ -40,7 +38,7 @@ fn invitation_signup_is_single_use_and_admin_actions_revoke_sessions() {
         "POST",
         "/api/auth/login",
         Some(json!({
-            "username": "owner", "password": "owner test password long enough"
+            "username": "owner", "password": "o"
         })),
     ));
     request(&client, "", "GET", "/api/admin/accounts", None).error(401);
@@ -58,13 +56,21 @@ fn invitation_signup_is_single_use_and_admin_actions_revoke_sessions() {
     let stored = fs::read_to_string(store.path()).unwrap();
     assert!(!stored.contains(&code));
     assert!(!stored.contains(code.split_once('.').unwrap().1));
+    request(
+        &client,
+        "",
+        "POST",
+        "/api/auth/register",
+        Some(json!({"username": "guest", "password": "", "invitation": code})),
+    )
+    .error(400);
     let guest = cookie(&request(
         &client,
         "",
         "POST",
         "/api/auth/register",
         Some(json!({
-            "username": "guest", "password": "guest test password long enough", "invitation": code
+            "username": "guest", "password": "g", "invitation": code
         })),
     ));
     request(&client, "", "POST", "/api/auth/register", Some(json!({
@@ -89,17 +95,33 @@ fn invitation_signup_is_single_use_and_admin_actions_revoke_sessions() {
     ] {
         request(&client, &owner, "POST", "/api/admin/accounts", Some(action)).error(400);
     }
+    request(
+        &client,
+        &owner,
+        "POST",
+        "/api/admin/accounts",
+        Some(json!({"action": "password", "username": "guest", "password": ""})),
+    )
+    .error(400);
+    let replacement = "x".repeat(4096);
     let reset = request(
         &client,
         &owner,
         "POST",
         "/api/admin/accounts",
         Some(json!({
-            "action":"password","username":"guest","password":"replacement test password long enough"
+            "action":"password","username":"guest","password":replacement
         })),
     );
     assert_eq!(reset.status, 200, "{}", reset.text());
     request(&client, &guest, "GET", "/api/tree", None).error(401);
+    cookie(&request(
+        &client,
+        "",
+        "POST",
+        "/api/auth/login",
+        Some(json!({"username": "guest", "password": replacement})),
+    ));
     let promoted = request(
         &client,
         &owner,

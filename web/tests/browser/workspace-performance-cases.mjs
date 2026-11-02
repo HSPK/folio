@@ -148,7 +148,9 @@ test("workspace interaction benchmark measures project navigation and search res
       await probe;
       if (probeFailure) throw probeFailure;
     }
-    await expect(page.locator("#search-results button")).toHaveCount(100);
+    await expect(page.locator("#search-results")).toHaveAttribute("data-virtualized", "true");
+    await expect(page.locator("#search-results > li").first()).toHaveAttribute("aria-setsize", "100");
+    expect(await page.locator("#search-results button").count()).toBeLessThan(100);
     await expect(page.locator("#search-tags")).toContainText("research · 512");
     await page.locator("#search-close").click();
     for (let run = 0; run < 20; run += 1) {

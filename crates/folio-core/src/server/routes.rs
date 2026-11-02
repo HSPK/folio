@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::appearance::Appearance;
 
 use super::{
-    ApiError, AppState, MAX_JSON_BYTES, Work, accounts, authentication, collaboration, files, git,
+    ApiError, AppState, MAX_JSON_BYTES, Work, accounts, authentication, collaboration, files,
     preferences, previews, security,
 };
 
@@ -27,6 +27,7 @@ pub(super) fn router(state: Arc<AppState>) -> Router {
         .route("/favicon.ico", get(app_icon))
         .route("/icon.svg", get(vector_icon))
         .route("/app.mjs", get(app_script))
+        .route("/input-latency.mjs", get(input_latency_script))
         .route("/model.mjs", get(model_script))
         .route("/workspace-model.mjs", get(workspace_model))
         .route("/styles.css", get(styles))
@@ -104,12 +105,6 @@ pub(super) fn router(state: Arc<AppState>) -> Router {
         .route("/api/history/restore", post(super::history::restore))
         .route("/api/trash", get(super::history::trash_list))
         .route("/api/trash/restore", post(super::history::restore_trash))
-        .route("/api/git", get(git::status).post(git::action))
-        .route("/api/git/diff", get(git::diff))
-        .route(
-            "/api/git/sync",
-            get(super::projects::sync::get).put(super::projects::sync::update),
-        )
         .route(
             "/api/document",
             get(super::permissions::document)
@@ -134,10 +129,6 @@ pub(super) fn router(state: Arc<AppState>) -> Router {
 
 async fn index(State(state): State<Arc<AppState>>) -> Response {
     let page = include_str!("../../../../web/public/index.html")
-        .replace(
-            "__WORKSPACE_PANELS__",
-            include_str!("../../../../web/public/workspace.html"),
-        )
         .replace("__STYLE_NONCE__", &state.style_nonce);
     ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], page).into_response()
 }
@@ -160,6 +151,13 @@ async fn app_script() -> Response {
     embedded(
         "text/javascript; charset=utf-8",
         include_bytes!("../../../../web/public/app.mjs"),
+    )
+}
+
+async fn input_latency_script() -> Response {
+    embedded(
+        "text/javascript; charset=utf-8",
+        include_bytes!("../../../../web/public/input-latency.mjs"),
     )
 }
 

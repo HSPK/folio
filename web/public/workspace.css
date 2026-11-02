@@ -11,10 +11,22 @@
 .search-dialog { overflow: hidden; }
 .search-dialog[open] { display: flex; flex-direction: column; }
 .search-dialog > header, .search-dialog > form { flex: none; }
-.search-layout { display: grid; flex: 0 1 auto; grid-template-columns: minmax(130px, 190px) minmax(0, 1fr); gap: 20px; max-height: 58dvh; min-height: 0; overflow: hidden; }
+.search-layout { display: grid; flex: 0 1 auto; grid-template-columns: minmax(0, 1fr); max-height: 58dvh; min-height: 0; overflow: hidden; }
 .search-layout > * { min-width: 0; overflow: auto; }
 .search-layout h3 { margin: 8px 0; color: var(--muted); font-size: 12px; font-weight: 500; }
 #search-query, #tags-input { width: 100%; }
+.search-filters { margin-top: 10px; }
+.search-filters > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 0; color: var(--muted); font-size: 12px; list-style: none; }
+.search-filters > summary::-webkit-details-marker { display: none; }
+.search-filters > summary span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-filters > summary svg { width: 12px; height: 12px; flex: none; }
+.search-filters[open] > summary svg { transform: rotate(180deg); }
+.search-tags-label { color: var(--muted); font-size: 11px; }
+#search-tag-filters { display: flex; align-items: baseline; gap: 12px; max-height: 100px; overflow: auto; }
+.search-status { margin: 8px 0 0; padding: 7px 10px; border-radius: 6px; font-size: 12px; }
+.search-match-field { color: var(--muted); font-size: 10px; }
+.workspace-results[aria-busy="true"] { opacity: .55; }
+.workspace-results[aria-busy="true"] button:disabled { opacity: 1; }
 .workspace-results { list-style: none; margin: 0; padding: 0; }
 .workspace-results button { display: grid; gap: 5px; width: 100%; padding: 11px 12px; text-align: left; }
 .workspace-results strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
@@ -40,7 +52,7 @@
   .workspace-filter label { width: 62px; }
   .workspace-filter select { flex: 1; min-width: 0; max-width: none; }
   .search-layout, .history-layout { grid-template-columns: minmax(0, 1fr); height: auto; max-height: 60vh; overflow: auto; }
-  .search-layout { grid-template-rows: auto minmax(0, 1fr); gap: 8px; overflow: hidden; }
+  .search-layout { grid-template-rows: minmax(0, 1fr); overflow: hidden; }
   .search-layout > aside { max-height: 110px; }
   #history-list { max-height: 140px; }
 }

@@ -58,9 +58,9 @@ pub enum DefaultView {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SidebarTab {
+    #[serde(alias = "git")]
     Files,
     Outline,
-    Git,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -68,13 +68,6 @@ pub enum SidebarTab {
 pub enum InterfaceDensity {
     Compact,
     Comfortable,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum GitDiffMode {
-    Working,
-    Staged,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -103,9 +96,6 @@ pub struct WebPreferences {
     pub sidebar_open: bool,
     pub hidden_patterns: Vec<String>,
     pub tree_refresh_seconds: u64,
-    pub git_refresh_seconds: u64,
-    pub git_show_untracked: bool,
-    pub git_default_diff: GitDiffMode,
     pub large_document_threshold_kib: u32,
     pub preview_delay_ms: u64,
     pub outline_delay_ms: u64,
@@ -132,9 +122,6 @@ impl Default for WebPreferences {
             sidebar_open: true,
             hidden_patterns: Vec::new(),
             tree_refresh_seconds: 0,
-            git_refresh_seconds: 15,
-            git_show_untracked: true,
-            git_default_diff: GitDiffMode::Working,
             large_document_threshold_kib: 768,
             preview_delay_ms: 300,
             outline_delay_ms: 75,
@@ -189,9 +176,6 @@ impl WebPreferences {
                 "Library refresh interval",
             )?;
         }
-        if self.git_refresh_seconds != 0 {
-            ranged(self.git_refresh_seconds, 3, 3600, "Git refresh interval")?;
-        }
         ranged(
             self.large_document_threshold_kib as u64,
             256,
@@ -216,6 +200,23 @@ impl WebPreferences {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn retired_git_preferences_migrate_to_file_navigation() {
+        let settings: Settings = serde_json::from_str(
+            r#"{"WebPreferences":{"defaultSidebar":"git","gitRefreshSeconds":5,"gitShowUntracked":false,"gitDefaultDiff":"staged","fontSizePx":19}}"#,
+        )
+        .unwrap();
+        assert_eq!(settings.web.default_sidebar, SidebarTab::Files);
+        assert_eq!(settings.web.font_size_px, 19);
+        settings.validate().unwrap();
+        let saved = serde_json::to_value(&settings).unwrap();
+        let web = &saved["WebPreferences"];
+        assert_eq!(web["defaultSidebar"], "files");
+        for field in ["gitRefreshSeconds", "gitShowUntracked", "gitDefaultDiff"] {
+            assert!(web.get(field).is_none());
+        }
+    }
 
     #[test]
     fn editor_appearance_migration_and_validation() {

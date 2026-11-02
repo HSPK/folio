@@ -1,5 +1,6 @@
-import { test, expect, fs, path, root } from "./fixture.mjs";
+import { test, expect, fs, path, root, confirmDialog, openFixture, primaryModifier, openSettingsDialog, openMoreAction, selectSettingsSection } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
+import { writeClipboardImage } from "./project-cases.mjs";
 
 test("daily templates create tagged notes and dropped images respect compression settings", async ({ page }) => {
   await page.locator("#new-note").click();
@@ -10,8 +11,8 @@ test("daily templates create tagged notes and dropped images respect compression
   await page.locator("#create-note").click();
   await expect(page.locator(".ProseMirror")).toContainText("Priorities");
   expect(await fs.readFile(path.join(root, name), "utf8")).toContain("tags: [journal]");
-  await page.locator("#settings-open").click();
-  await page.locator('[data-settings-tab="library"]').click();
+  await openSettingsDialog(page);
+  await selectSettingsSection(page, "library");
   await page.locator("#settings-image-compression").selectOption("jpeg");
   await page.locator("#settings-image-max-edge").selectOption("1024");
   await page.locator("#settings-save").click();
@@ -36,7 +37,64 @@ test("daily templates create tagged notes and dropped images respect compression
   expect(asset.headers()["content-type"]).toMatch(/^image\/jpeg/);
   await expect.poll(() => image.evaluate((node) => [node.naturalWidth, node.naturalHeight])).toEqual([1024, 512]);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-  expect(await fs.readFile(path.join(root, name), "utf8")).toContain(".jpg)");
+  expect(await fs.readFile(path.join(root, name), "utf8")).toMatch(/\.jpg(?:\)|")/);
+});
+
+test("pasting an image after an image, ArrowRight and Enter stays in Live without HTML placeholders", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Native clipboard setup requires Chromium clipboard permissions.");
+  await openFixture(page, "Image-enter-paste.md", "![First](images/pixel.png)\n\nTail paragraph.\n");
+  await writeClipboardImage(page);
+  const first = page.locator(".folio-inline-image").first();
+  await first.click();
+  await expect(first).toHaveClass(/ProseMirror-selectednode/);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".ProseMirror")).toBeFocused();
+  await expect(page.locator("#editor")).not.toHaveValue(/<br\b/i);
+  await page.keyboard.press(`${primaryModifier}+v`);
+  await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "rich");
+  await expect(page.locator(".folio-inline-image img")).toHaveCount(2);
+  await expect(page.locator(".ProseMirror > .folio-block-image img")).toHaveCount(1);
+  await expect(page.locator("#editor")).not.toHaveValue(/<br\b/i);
+  await expect(page.locator(".ProseMirror")).toContainText("Tail paragraph.");
+  await page.keyboard.press(`${primaryModifier}+s`);
+  await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
+  const saved = await fs.readFile(path.join(root, "Image-enter-paste.md"), "utf8");
+  expect(saved).not.toMatch(/<br\b/i);
+  expect(saved.match(/!\[|<img\b/g)).toHaveLength(2);
+  await page.keyboard.press(`${primaryModifier}+z`);
+  await expect(page.locator(".folio-inline-image img")).toHaveCount(1);
+  await page.keyboard.press(`${primaryModifier}+Shift+z`);
+  await expect(page.locator(".folio-inline-image img")).toHaveCount(2);
+  await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "rich");
+  if (browserName !== "webkit") await page.screenshot({ path: test.info().outputPath("live-image-enter-paste.png"), animations: "disabled" });
+});
+
+test("shared image paste keeps the new paragraph and preserves literal br inside code", async ({ browser, browserName }) => {
+  test.skip(browserName !== "chromium", "Native clipboard setup requires Chromium clipboard permissions.");
+  const content = "![First](first.png)\n\nTail paragraph.\n\n```html\n<br />\n```\n";
+  const library = await collaborativeLibrary(browser, { content });
+  try {
+    const [owner, peer] = library.pages;
+    await fs.writeFile(path.join(library.notes, "first.png"), await fs.readFile(path.join(root, "images/pixel.png")));
+    await writeClipboardImage(owner);
+    const first = owner.locator(".folio-inline-image").first();
+    await first.click();
+    await expect(first).toHaveClass(/ProseMirror-selectednode/);
+    await owner.keyboard.press("ArrowRight");
+    await owner.keyboard.press("Enter");
+    await owner.keyboard.press(`${primaryModifier}+v`);
+    for (const page of [owner, peer]) {
+      await expect(page.locator(".folio-inline-image img")).toHaveCount(2);
+      await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "rich");
+      await expect(page.locator("#editor")).toHaveValue(/```html\n<br \/>\n```/);
+    }
+    await owner.keyboard.press(`${primaryModifier}+s`);
+    await expect(owner.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
+    const saved = await fs.readFile(path.join(library.notes, "Shared.md"), "utf8");
+    expect(saved.match(/!\[|<img\b/g)).toHaveLength(2);
+    expect(saved.match(/<br\b/gi)).toHaveLength(1);
+  } finally { await library.close(); }
 });
 
 test("attachment cleanup only recycles confirmed unreferenced files and can restore them", async ({ browser }) => {
@@ -60,14 +118,13 @@ test("attachment cleanup only recycles confirmed unreferenced files and can rest
     await expect(owner.locator("#attachments-list")).toContainText("orphan.png");
     await expect(owner.locator("#attachments-list")).not.toContainText("used.png");
     await owner.getByRole("checkbox", { name: "Select orphan.png", exact: true }).check();
-    owner.once("dialog", (dialog) => dialog.accept());
     await owner.locator("#attachments-recycle").click();
+    await confirmDialog(owner);
     await expect(owner.locator("#attachments-list")).not.toContainText("orphan.png");
     expect(await fs.stat(path.join(library.notes, "orphan.png")).then(() => true, () => false)).toBe(false);
     expect(await fs.stat(path.join(library.notes, "used.png")).then(() => true, () => false)).toBe(true);
     await owner.locator("#attachments-close").click();
-    await owner.locator("#more-menu > summary").click();
-    await owner.locator("#trash-open").click();
+    await openMoreAction(owner, "trash-open");
     await owner.getByRole("button", { name: "Restore orphan.png", exact: true }).click();
     await expect(owner.locator("#trash-list")).not.toContainText("orphan.png");
     expect(await fs.readFile(path.join(library.notes, "orphan.png"))).toEqual(Buffer.from(base64, "base64"));

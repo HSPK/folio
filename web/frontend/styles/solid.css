@@ -1,0 +1,32 @@
+#folio-root { height: 100%; min-height: 0; }
+#status-notices { max-width: calc(100vw - 28px); }
+.menu-panel-host { display: contents; }
+.menu-panel-host > div { z-index: 30; }
+.menu-panel-host .popup-panel { inset: auto; }
+.menu-panel-host .popup-panel {
+  max-width: min(calc(100vw - 24px), var(--kb-popper-content-available-width, 100vw));
+  max-height: min(680px, var(--kb-popper-content-available-height, calc(100dvh - 88px)));
+}
+.startup-failure {
+  display: grid; align-content: center; gap: 14px;
+  width: min(100% - 40px, 520px); min-height: 100dvh; margin-inline: auto;
+}
+.search-results-viewport {
+  min-height: 0;
+  max-height: min(58dvh, 560px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.search-layout > section { overflow: hidden; }
+.workspace-results li { min-width: 0; }
+.workspace-results button[aria-selected="true"] {
+  background: var(--selection);
+  box-shadow: inset 2px 0 var(--accent);
+}
+.settings-content { overscroll-behavior: contain; }
+@media (max-width: 650px) {
+  .search-results-viewport { max-height: min(52dvh, 420px); }
+  .document-header { padding-inline: 10px; gap: 8px; }
+  .settings-header, .settings-actions { padding-inline: 16px; }
+}

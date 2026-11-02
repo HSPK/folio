@@ -1,7 +1,9 @@
 # @folio/editor
 
 Independent browser editor package used by Folio, published within this workspace
-as `@folio/editor`.
+as `@folio/editor`. All handwritten implementation, build, model tests, and
+browser benchmarks are strict TypeScript. Package exports point to the checked
+implementation rather than separately maintained API declarations.
 
 ## Public API
 
@@ -26,6 +28,18 @@ Collaborative hosts can call `getSelection`, `cursorRect`, `setReadOnly`, and
 `replaceSource` on the Live adapter. The Source adapter exposes `getSelection`,
 `cursorRect`, `setReadOnly`, and `viewportRect` for both textarea and virtual editing.
 Transport, authenticated presence and disk persistence remain host responsibilities.
+
+Use the Source adapter's `applyEdit(text)` for an undoable user-requested replacement,
+including recovered drafts. It records one edit in native or virtual Source history.
+Use `reset(text)` when opening a different document; assigning `value` remains a
+projection update rather than an undoable user action.
+
+The Live adapter's `clear()` unloads the current document while retaining reusable
+tools. Call the idempotent, terminal `destroy()` when removing its host: it releases
+the editor session, global listeners, observers, timers, and floating UI, including
+resources created before initialization fails. Loading after destruction is an
+error; create a new adapter to mount again. Late initialization cannot reactivate
+a destroyed instance or call its host's URL resolver.
 
 Live heading IDs come from the shared `assignHeadingIds` helper through node
 decorations. The commonmark `syncHeadingIdPlugin` is intentionally excluded:
@@ -78,6 +92,7 @@ focus ring rather than a bottom highlight bar.
 
 ```bash
 npm install
+npm run check:types
 npm run build
 npm test
 npm run benchmark:math-cache
@@ -86,5 +101,11 @@ npm run benchmark:math-edit
 npm run benchmark:source-prepare
 ```
 
-The build writes self-contained assets and third-party notices to `dist/`.
-Folio copies these assets into `web/public/` during its aggregate build.
+Use Node.js 22.12 or later. Build and test scripts use `tsx`; `tsc` checks the
+implementation, fixtures, and both Node and browser benchmark code. The host
+application imports the same source types.
+
+The build writes self-contained JavaScript (`.mjs`), CSS, and third-party notices
+to `dist/`. These are browser assets, not handwritten source. Folio copies them
+into `web/public/` during its aggregate build; keep their generated filenames and
+resource URLs stable.

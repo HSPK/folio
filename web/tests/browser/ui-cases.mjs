@@ -1,15 +1,21 @@
 import {
-  test, expect, fs, path, root, buildRoot, initialText, chooseView, openFixture, metadataField,
+  test, expect, fs, path, root, buildRoot, initialText, chooseView, openFixture, metadataField, primaryModifier, openSettingsDialog, selectSettingsSection,
 } from "./fixture.mjs";
 
-test("slash commands insert blocks without a permanent formatting toolbar", async ({ page }) => {
+test("slash commands insert blocks without a permanent formatting toolbar", async ({ page, browserName }) => {
   await openFixture(page, "Slash.md", "");
   const editor = page.locator(".ProseMirror[contenteditable=true]");
   await editor.focus();
   await editor.press("/");
   const menu = page.locator("#folio-slash-menu");
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("option")).toHaveCount(10);
+  await expect(editor).toHaveText("/");
+  await expect(menu.getByRole("option")).toHaveCount(13);
+  await expect(menu.locator("small")).toHaveCount(0);
+  await editor.pressSequentially("heading 2");
+  await expect(editor).toHaveText("/heading 2");
+  await expect(menu.getByRole("option")).toHaveCount(1);
+  if (browserName !== "webkit") await page.screenshot({ path: test.info().outputPath("unified-slash-icons.png"), animations: "disabled" });
   await menu.getByRole("option", { name: /Heading 2/ }).click();
   await editor.pressSequentially("Slash heading");
   await expect(editor.getByRole("heading", { level: 2, name: "Slash heading" })).toBeVisible();
@@ -60,7 +66,7 @@ test("global command panel filters and runs document commands", async ({ page })
 });
 
 test("expanded browser and shared settings apply and persist across reloads", async ({ page }) => {
-  await page.locator("#settings-open").click();
+  await openSettingsDialog(page);
   const settingsBounds = await page.locator("#settings-dialog").boundingBox();
   expect(settingsBounds.width).toBeGreaterThanOrEqual(700);
   const tabsBounds = await page.locator(".settings-tabs").boundingBox();
@@ -68,41 +74,37 @@ test("expanded browser and shared settings apply and persist across reloads", as
   expect(tabsBounds.x + tabsBounds.width).toBeLessThanOrEqual(contentBounds.x + 1);
   await page.screenshot({ path: path.join(buildRoot, "settings-redesign.png") });
   await page.locator("#settings-search").fill("shortcut");
-  await expect(page.getByRole("tab", { name: "Library" })).toBeHidden();
+  await expect(page.locator('[data-settings-tab="library"]')).toBeHidden();
   await page.locator("#settings-search").fill("");
-  await page.getByRole("tab", { name: "Editor" }).click();
+  await selectSettingsSection(page, "editor");
   await page.locator("#settings-auto-save").selectOption("2000");
   await page.locator("#settings-default-view").selectOption("source");
   await page.locator("#settings-line-wrap").uncheck();
   await page.locator("#settings-spellcheck").uncheck();
-  await page.getByRole("tab", { name: "Appearance" }).click();
+  await selectSettingsSection(page, "appearance");
   await page.locator("#settings-theme").selectOption("dark");
   await page.locator("#settings-latin-font").fill("Arial");
   await page.locator("#settings-cjk-font").fill("SimSun");
   await page.locator("#settings-font-size").fill("19");
   await page.locator("#settings-line-height").fill("190");
   await page.locator("#settings-density").selectOption("compact");
-  await page.getByRole("tab", { name: "Library" }).click();
+  await selectSettingsSection(page, "library");
   await page.locator("#hidden-patterns").fill("Second.md");
   await page.locator("#settings-tree-refresh").selectOption("30");
-  await page.getByRole("tab", { name: "Layout" }).click();
+  await selectSettingsSection(page, "layout");
   await page.locator("#settings-page-width").selectOption("wide");
   await page.locator("#settings-sidebar-width").fill("320");
-  await page.locator("#settings-default-sidebar").selectOption("git");
+  await page.locator("#settings-default-sidebar").selectOption("outline");
   await page.locator("#settings-sidebar-open").check();
-  await page.locator("#settings-dialog").getByRole("tab", { name: "Git" }).click();
-  await page.locator("#settings-git-refresh").selectOption("5");
-  await page.locator("#settings-git-untracked").uncheck();
-  await page.locator("#settings-git-diff").selectOption("staged");
-  await page.getByRole("tab", { name: "Performance" }).click();
+  await selectSettingsSection(page, "performance");
   await page.locator("#settings-large-threshold").selectOption("1024");
   await page.locator("#settings-preview-delay").selectOption("500");
   await page.locator("#settings-outline-delay").selectOption("150");
-  await page.getByRole("tab", { name: "Accessibility" }).click();
+  await selectSettingsSection(page, "accessibility");
   await page.locator("#settings-reduced-motion").check();
   await page.locator("#settings-high-contrast").check();
   await page.locator("#settings-strong-focus").uncheck();
-  await page.getByRole("tab", { name: "Shortcuts" }).click();
+  await selectSettingsSection(page, "shortcuts");
   await page.locator("#settings-command-shortcut").selectOption("primary-shift-p");
   await page.locator("#settings-dialog button[type=submit]").click();
 
@@ -126,7 +128,7 @@ test("expanded browser and shared settings apply and persist across reloads", as
   await expect(page.locator("html")).toHaveAttribute("data-page-width", "wide");
   await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "editor");
   await expect(page.locator("#view-label")).toHaveText("Source");
-  await expect(page.locator("#git-tab")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#outline-tab")).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Control+Shift+p");
   await expect(page.locator("#command-dialog")).toBeVisible();
 });
@@ -134,7 +136,7 @@ test("expanded browser and shared settings apply and persist across reloads", as
 test("recursive index hide rules apply immediately and survive refresh without hiding other notes", async ({ page }) => {
   const entries = ["index.md", "Glob-docs/index.md", "Glob-docs/topic/index.md", "Glob-docs/topic/keep.md"];
   const setRule = async (rule) => {
-    await page.locator("#settings-open").click();
+    await openSettingsDialog(page);
     await page.locator('[data-settings-tab="library"]').click();
     await page.locator("#hidden-patterns").fill(rule);
     await page.locator("#settings-save").click();
@@ -156,7 +158,7 @@ test("recursive index hide rules apply immediately and survive refresh without h
     await expect(page.locator("#document-title")).toHaveText("README.md");
     await expect(page.locator('button[data-path="Glob-docs/topic/keep.md"]')).toHaveCount(1);
     for (const name of entries.slice(0, 3)) await expect(page.locator(`button[data-path="${name}"]`)).toHaveCount(0);
-    await page.locator("#settings-open").click();
+    await openSettingsDialog(page);
     await page.locator('[data-settings-tab="library"]').click();
     await expect(page.locator("#hidden-patterns")).toHaveValue("**/index.md");
     await page.locator("#settings-cancel").click();
@@ -265,7 +267,38 @@ test("body scrollbars overlay content without changing the writing width or sour
   expect(await fs.readFile(path.join(root, "Scrolling.md"), "utf8")).toBe(short);
 });
 
-test("unchanged and title-only library refreshes retain existing rows", async ({ page }) => {
+test("saving a title retains tree rows and sorting while filters stay current", async ({ page }) => {
+  const original = await page.locator('#file-list button[data-path="README.md"]').elementHandle();
+  const paths = () => page.locator("#file-list .file-button").evaluateAll(
+    nodes => nodes.map(node => node.dataset.path),
+  );
+  const saveTitle = async title => {
+    await page.locator("#editor").fill(`---\ntitle: ${title}\n---\n\n${initialText}`);
+    await page.keyboard.press(`${primaryModifier}+s`);
+    await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
+  };
+  await chooseView(page, "editor");
+  for (const title of ["Zulu saved title", "Aardvark saved title"]) {
+    await saveTitle(title);
+    await expect(page.locator('[data-path="README.md"] .file-name')).toHaveText(title);
+    expect(await page.evaluate(
+      node => document.querySelector('#file-list button[data-path="README.md"]') === node,
+      original,
+    )).toBe(true);
+    const order = await paths();
+    expect(order.indexOf("README.md") < order.indexOf("Second.md")).toBe(title.startsWith("Aardvark"));
+    await expect(page.locator('#file-list [aria-current="page"]')).toHaveCount(1);
+  }
+  await page.locator("#file-filter").fill("Aardvark");
+  await expect(page.locator("#file-list .file-button")).toHaveCount(1);
+  await saveTitle("Changed title");
+  await expect(page.locator("#file-list .file-button")).toHaveCount(0);
+  await expect(page.locator("#tree-message")).toHaveText("No notes match your filter.");
+  await page.locator("#file-filter").fill("Changed title");
+  await expect(page.locator('#file-list [aria-current="page"] .file-name')).toHaveText("Changed title");
+});
+
+test("keyed library refreshes retain unaffected rows across title and structural changes", async ({ page }) => {
   const refresh = async () => {
     const response = page.waitForResponse((item) => item.url().includes("/api/tree"));
     await page.locator("#refresh-files").click();
@@ -299,9 +332,10 @@ test("unchanged and title-only library refreshes retain existing rows", async ({
   expect(await page.evaluate(
     (node) => document.querySelector('[data-path="README.md"]') === node,
     original,
-  )).toBe(false);
+  )).toBe(true);
   await fs.rm(path.join(root, "Structural-change.md"));
   await refresh();
+  await expect(page.locator('[data-path="Structural-change.md"]')).toHaveCount(0);
 });
 
 test("file selection stays singular across navigation and filtering", async ({ page }) => {
@@ -397,6 +431,18 @@ test("hidden outline analysis refreshes when the Outline tab opens", async ({ pa
   await page.locator("#editor").fill("# Deferred outline\n\nBody.\n");
   await page.locator("#outline-tab").click();
   await expect(page.locator("#outline-list button").first()).toHaveText("Deferred outline");
+});
+
+test("hidden Live outline reflects edits when opened again", async ({ page }) => {
+  await page.locator("#outline-tab").click();
+  await expect(page.locator("#outline-list button").first()).toHaveText("Welcome");
+  await page.locator("#files-tab").click();
+  await page.locator(".ProseMirror h1").click();
+  await page.keyboard.press("End");
+  await page.keyboard.insertText(" deferred");
+  await page.locator("#outline-tab").click();
+  await expect(page.locator("#outline-list button").first()).toHaveText("Welcome deferred");
+  await expect(page.locator('#outline-list [aria-current="location"]')).toHaveText("Welcome deferred");
 });
 
 test("source and metadata scrollbars do not change textarea width or consume a gutter", async ({ page }) => {
@@ -504,24 +550,24 @@ test("appearance retrieval errors retain the last theme and the current draft", 
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
 });
 
-test("file search uses a rounded focus surface without bars and filenames have no square icons", async ({ page }) => {
+test("file search uses a rounded focus surface without bars and filenames have no square icons", async ({ page, browserName }) => {
   const input = page.locator("#file-filter");
   const box = await input.boundingBox();
   await input.click();
   expect(await input.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("none");
   expect(await input.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("none");
-  expect(await page.locator(".search-field").evaluate(element => ({
+  expect(await page.locator(".sidebar-search").evaluate(element => ({
     before: getComputedStyle(element, "::before").content,
     radius: getComputedStyle(element).borderRadius,
     background: getComputedStyle(element).backgroundColor,
-  }))).toMatchObject({ before: "none", radius: "6px" });
+  }))).toMatchObject({ before: "none", radius: "9px" });
   expect(await input.boundingBox()).toEqual(box);
   const file = page.locator("#file-list").getByRole("button", { name: "README.md", exact: true });
   expect(await file.evaluate((element) => getComputedStyle(element, "::before").content)).toBe("none");
   expect(await file.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderRadius))).toBeGreaterThanOrEqual(5);
   const resting = await file.evaluate((element) => getComputedStyle(element).backgroundColor);
   await file.hover();
-  expect(await file.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(resting);
+  expect(await file.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(resting);
   await input.evaluate((element) => {
     for (const value of ["R", "RE", "REA", "READ", "README"]) {
       element.value = value;
@@ -530,5 +576,5 @@ test("file search uses a rounded focus surface without bars and filenames have n
   });
   await expect(file).toBeVisible();
   await expect(page.locator("#file-list .file-button")).toHaveCount(1);
-  await page.screenshot({ path: path.join(buildRoot, "sidebar-search-focus.png") });
+  if (browserName !== "webkit") await page.screenshot({ path: test.info().outputPath("sidebar-search-focus.png") });
 });

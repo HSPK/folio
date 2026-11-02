@@ -9,7 +9,12 @@ const root = path.dirname(webRoot);
 const shared = path.join(root, "Shared", "Resources");
 const svg = await readFile(path.join(shared, "FolioIcon.svg"), "utf8");
 const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256, 1024];
-const browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : undefined, headless: true });
+const args = process.argv.slice(2);
+if (args.length > 1 || args[0] && !/^--channel=(chrome|msedge)$/.test(args[0])) {
+  throw new Error("Usage: npm run icons -- [--channel=chrome|msedge]");
+}
+const channel = args[0]?.slice("--channel=".length) ?? (process.platform === "win32" ? "msedge" : undefined);
+const browser = await chromium.launch({ channel, headless: true });
 
 try {
   const page = await browser.newPage({ viewport: { width: 1000, height: 560 }, deviceScaleFactor: 1 });

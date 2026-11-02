@@ -1,6 +1,6 @@
 use super::{ApiError, Project, Registry, Sharing, Summary};
 use crate::server::state_store::resources::{ResourceKind, validate_id};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl Project {
     pub(super) fn summary(&self, id: &str, user: &str) -> Summary {
@@ -11,10 +11,6 @@ impl Project {
             owner: self.owner.clone(),
             owned,
             root: owned.then(|| self.root.clone()),
-            repository: self
-                .git_available(user)
-                .then(|| self.repository.clone())
-                .flatten(),
             shared: self.shared,
             access: self.permission(user, None),
             pages: self
@@ -25,7 +21,6 @@ impl Project {
                 .collect(),
             document_ids: BTreeMap::new(),
             image_directory: self.image_directory.clone(),
-            git_available: self.git_available(user),
             public_links: if owned {
                 self.public_links
                     .iter()
@@ -46,11 +41,16 @@ impl Registry {
         user: &str,
     ) -> Result<Summary, ApiError> {
         let mut summary = project.summary(id, user);
+        let documents = summary
+            .pages
+            .keys()
+            .chain(summary.public_links.keys())
+            .cloned()
+            .collect::<BTreeSet<_>>();
         let resources = self.storage()?.project(id).identify_many(
-            &summary
-                .pages
-                .keys()
-                .map(|path| (path.clone(), ResourceKind::Document))
+            &documents
+                .into_iter()
+                .map(|path| (path, ResourceKind::Document))
                 .collect::<Vec<_>>(),
         )?;
         summary.document_ids = resources

@@ -4,7 +4,9 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "workspaces": ["editor"],
+  "workspaces": [
+    "editor"
+  ],
   "scripts": {
     "audit:library": "node scripts/audit-library.mjs",
     "benchmark:assets": "node scripts/benchmark-assets.mjs",
@@ -30,15 +32,33 @@
     "benchmark:tree-model": "node scripts/benchmark-tree-model.mjs",
     "benchmark:visibility": "node scripts/benchmark-visibility.mjs",
     "benchmark:views": "node scripts/benchmark-views.mjs",
-    "build": "node frontend/build.mjs",
+    "build": "npm run check:types && npm run check:architecture && tsx frontend/build.ts",
+    "check:architecture": "tsx scripts/check-architecture.ts",
     "check:lines": "node ../scripts/check-source-lines.mjs",
     "icons": "node scripts/build-icon.mjs",
     "capture:product": "node scripts/capture-product.mjs",
-    "test": "node --test tests/web.test.mjs tests/workspace-model.test.mjs && npm --workspace @folio/editor test",
+    "test": "tsx --test tests/*.test.ts && npm --workspace @folio/editor test",
     "test:browser": "node --test tests/editor-browser.test.mjs",
-    "test:installers": "node --test ../scripts/installers.test.mjs"
+    "test:installers": "node --test ../scripts/installers.test.mjs",
+    "check:types": "tsc --noEmit && npm --workspace @folio/editor run check:types",
+    "format:check": "prettier --check \"frontend/**/*.{ts,tsx}\" \"editor/**/*.ts\" \"shared/**/*.ts\" \"tests/**/*.{ts,tsx}\" \"scripts/**/*.ts\" vite.config.ts tsconfig.json editor/tsconfig.json editor/package.json"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0"
+    "tsx": "4.23.15",
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "vite": "8.3.5",
+    "vite-plugin-solid": "2.11.14"
+  },
+  "dependencies": {
+    "@kobalte/core": "0.13.14",
+    "@tanstack/solid-virtual": "3.13.49",
+    "solid-js": "1.9.17"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

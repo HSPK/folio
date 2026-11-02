@@ -5,20 +5,21 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./src/index.mjs",
-    "./helpers": "./src/editor-helpers.mjs",
-    "./markdown": "./src/markdown.mjs",
-    "./math": "./src/math.mjs",
-    "./roundtrip": "./src/roundtrip.mjs",
-    "./source": "./src/source-editor.mjs"
+    ".": "./src/index.ts",
+    "./helpers": "./src/editor-helpers.ts",
+    "./markdown": "./src/markdown.ts",
+    "./math": "./src/math.ts",
+    "./roundtrip": "./src/roundtrip.ts",
+    "./source": "./src/source-editor.ts"
   },
   "scripts": {
-    "benchmark:math-cache": "node benchmarks/cache-math.mjs",
-    "benchmark:math-edit": "npm run build --silent && node benchmarks/edit-math.mjs",
-    "benchmark:math": "npm run build --silent && node benchmarks/live-math.mjs",
-    "benchmark:source-prepare": "npm run build --silent && node benchmarks/source-prepare.mjs",
-    "build": "node build.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "benchmark:math-cache": "npm run build --silent && tsx benchmarks/cache-math.ts",
+    "benchmark:math-edit": "npm run build --silent && tsx benchmarks/edit-math.ts",
+    "benchmark:math": "npm run build --silent && tsx benchmarks/live-math.ts",
+    "benchmark:source-prepare": "npm run build --silent && tsx benchmarks/source-prepare.ts",
+    "build": "npm run check:types && tsx build.ts",
+    "check:types": "tsc --project tsconfig.json --noEmit",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.1",
@@ -31,10 +32,12 @@
     "@lezer/markdown": "1.7.2",
     "@lezer/rust": "1.0.2",
     "@milkdown/core": "7.22.1",
+    "@milkdown/ctx": "7.22.1",
     "@milkdown/plugin-history": "7.22.1",
     "@milkdown/preset-commonmark": "7.22.1",
     "@milkdown/preset-gfm": "7.22.1",
     "@milkdown/prose": "7.22.1",
+    "@milkdown/transformer": "7.22.1",
     "@milkdown/utils": "7.22.1",
     "entities": "8.1.0",
     "diff": "9.0.0",
@@ -49,7 +52,14 @@
     "yjs": "13.6.32"
   },
   "devDependencies": {
+    "@types/katex": "0.16.8",
+    "@types/mdast": "4.0.4",
+    "@types/node": "22.20.5",
+    "@types/unist": "3.0.3",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
     "@playwright/test": "1.63.0",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "vfile": "6.0.3"
   }
 }

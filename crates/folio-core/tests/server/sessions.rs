@@ -61,7 +61,36 @@ fn restored_sessions_reject_changed_credentials_and_other_roots() {
 }
 
 #[test]
-fn expired_persistent_sessions_are_rejected_and_corrupt_files_are_preserved() {
+fn persistent_login_cookies_are_renewed_and_logout_still_revokes_access() {
+    let workspace = Workspace::new();
+    let users = UserStore::new(workspace.base.join("users.json"));
+    users
+        .initialize_admin("owner", "owner test password long enough")
+        .unwrap();
+    let server = start_with_users(&workspace.root, 0, users).unwrap();
+    let client = Client::new(&server);
+    let cookie = login(&client, "owner", "owner test password long enough");
+    let response = client.request("GET", "/api/auth/status", &[("Cookie", &cookie)], b"");
+    assert_eq!(response.json()["authenticated"], true);
+    let renewed = &response.headers["set-cookie"];
+    assert!(renewed.starts_with(&cookie));
+    assert!(renewed.contains("HttpOnly; SameSite=Strict"));
+    let max_age: u64 = renewed
+        .split(';')
+        .find_map(|part| part.trim().strip_prefix("Max-Age="))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(max_age > 365 * 24 * 60 * 60);
+    let logout = client.request("POST", "/api/auth/logout", &[("Cookie", &cookie)], b"");
+    assert_eq!(logout.status, 200, "{}", logout.text());
+    assert_logged_out(&client, &cookie);
+    let status = client.request("GET", "/api/auth/status", &[("Cookie", &cookie)], b"");
+    assert!(!status.headers.contains_key("set-cookie"));
+}
+
+#[test]
+fn expired_legacy_sessions_are_rejected_and_corrupt_files_are_preserved() {
     let workspace = Workspace::new();
     let users = UserStore::new(workspace.base.join("users.json"));
     users
@@ -86,6 +115,7 @@ fn expired_persistent_sessions_are_rejected_and_corrupt_files_are_preserved() {
         })
         .unwrap();
     let mut stored: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    stored["version"] = json!(1);
     for session in stored["sessions"].as_object_mut().unwrap().values_mut() {
         session["expires_at"] = json!(1);
     }

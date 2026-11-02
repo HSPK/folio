@@ -1,7 +1,6 @@
 use folio_core::{FolioCore, settings::Settings};
 use std::{
     mem::{size_of, zeroed},
-    path::PathBuf,
     ptr::{null, null_mut},
 };
 use windows_sys::Win32::{
@@ -19,7 +18,6 @@ mod preferences;
 mod tests;
 const TRAY: u32 = WM_APP + 1;
 const OPEN: usize = 101;
-const BROWSE: usize = 203;
 const SETTINGS: usize = 103;
 const FOLDER: usize = 104;
 const TOGGLE: usize = 105;
@@ -29,7 +27,7 @@ const CANCEL: usize = 202;
 const PORT: i32 = 301;
 const AUTO: i32 = 302;
 const BROWSER: i32 = 303;
-const DIRECTORY: i32 = 304;
+const SETTINGS_PATH: i32 = 304;
 const THEME: i32 = 305;
 const LATIN_FONT: i32 = 306;
 const CJK_FONT: i32 = 307;
@@ -148,10 +146,6 @@ impl App {
     }
     unsafe fn open(&mut self) {
         unsafe {
-            if !self.core.status().has_folder {
-                self.settings();
-                return;
-            }
             match self.core.open_url() {
                 Ok(url) => self.launch(&wide(&url)),
                 Err(error) => message(self.hwnd, &error),
@@ -162,43 +156,16 @@ impl App {
     }
     unsafe fn start(&mut self) {
         unsafe {
-            if !self.core.status().has_folder {
-                self.settings();
-                return;
-            }
             if let Err(e) = self.core.start() {
                 message(
                     self.hwnd,
                     &format!(
-                        "Could not start notes: {e}\nChoose another folder or change the port in Settings. No existing service was attached."
+                        "Could not start notes: {e}\nCheck the settings file or change the port in Settings. No existing service was attached."
                     ),
                 );
             }
             self.last_running = self.core.status().running;
             self.tray(false);
-        }
-    }
-    unsafe fn pick_folder(&self) -> Option<PathBuf> {
-        unsafe {
-            let title = wide("Choose the folder containing your Markdown notes");
-            let mut info: BROWSEINFOW = zeroed();
-            info.hwndOwner = self.preferences;
-            info.lpszTitle = title.as_ptr();
-            info.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-            let item = SHBrowseForFolderW(&info);
-            if item.is_null() {
-                return None;
-            }
-            let mut buffer = [0u16; 260];
-            let valid = SHGetPathFromIDListW(item, buffer.as_mut_ptr()) != 0;
-            CoTaskMemFree(item.cast());
-            if !valid {
-                message(self.hwnd, "Please select a filesystem folder.");
-                return None;
-            }
-            use std::os::windows::ffi::OsStringExt;
-            let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
-            Some(PathBuf::from(std::ffi::OsString::from_wide(&buffer[..len])))
         }
     }
     unsafe fn apply(&mut self, next: Settings) -> bool {
@@ -221,11 +188,6 @@ impl App {
         unsafe {
             match command {
                 OPEN => self.open(),
-                BROWSE if hwnd == self.preferences => {
-                    if let Some(directory) = self.pick_folder() {
-                        SetDlgItemTextW(hwnd, DIRECTORY, path_wide(&directory).as_ptr());
-                    }
-                }
                 SETTINGS => self.settings(),
                 FOLDER => {
                     if self.core.status().has_folder {
@@ -544,15 +506,11 @@ unsafe fn run_inner() {
         AppendMenuW(bar, MF_POPUP, menu(false) as usize, wide("Folio").as_ptr());
         SetMenu(hwnd, bar);
         app.tray(true);
-        if app.core.is_first_run() || !app.core.status().has_folder {
-            app.settings();
-        } else {
-            if app.core.settings().auto_start {
-                app.start();
-            }
-            if app.core.settings().auto_open_browser && app.core.status().running {
-                app.open();
-            }
+        if app.core.settings().auto_start {
+            app.start();
+        }
+        if app.core.settings().auto_open_browser && app.core.status().running {
+            app.open();
         }
         SetTimer(hwnd, 1, 2000, None);
         let mut msg: MSG = zeroed();

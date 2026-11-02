@@ -1,5 +1,5 @@
 import { networkInterfaces } from "node:os";
-import { test, expect, fs, path } from "./fixture.mjs";
+import { test, expect, fs, path, openMoreAction } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
 test("network HTTP binding supports login and online editing without plaintext recovery", async ({ browser }) => {
@@ -31,8 +31,7 @@ test("network HTTP binding supports login and online editing without plaintext r
     await expect(page.locator("#document-title")).toHaveText("Other.md");
     await expect(page.locator("#document-message")).toBeHidden();
     expect(await page.evaluate(async () => (await indexedDB.databases()).some(db => db.name === "folio-private-drafts"))).toBe(false);
-    await page.locator("#more-menu > summary").click();
-    await page.locator("#drafts-open").click();
+    await openMoreAction(page, "drafts-open");
     await expect(page.locator("#document-message")).toContainText("Local recovery is unavailable:");
     await expect(page.locator("#document-message")).toHaveClass(/is-error/);
     expect(errors).toEqual([]);
@@ -63,7 +62,7 @@ test("configured DNS hostname supports login, session refresh and collaborative 
       await page.locator("#auth-submit").click();
       await expect(page.locator("#editor")).toBeEnabled();
     }
-    for (const page of pages) await expect(page.locator("#collaboration-join")).toHaveText("Sharing");
+    for (const page of pages) await expect(page.locator("#collaboration-join")).toHaveAttribute("aria-pressed", "true");
     const [alice, bob] = pages;
     await alice.locator("#editor").fill("# DNS collaborative edit\n");
     await expect(bob.locator("#editor")).toHaveValue("# DNS collaborative edit\n");
@@ -71,7 +70,7 @@ test("configured DNS hostname supports login, session refresh and collaborative 
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe("# DNS collaborative edit\n");
     await alice.reload();
     await expect(alice.locator("#auth-screen")).toBeHidden();
-    await expect(alice.locator("#collaboration-join")).toHaveText("Sharing");
+    await expect(alice.locator("#collaboration-join")).toHaveAttribute("aria-pressed", "true");
     await expect(alice.locator("#editor")).toHaveValue("# DNS collaborative edit\n");
     expect(errors).toEqual([]);
   } finally { await dnsBrowser.close(); await library.close(); }

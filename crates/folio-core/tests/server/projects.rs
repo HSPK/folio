@@ -41,6 +41,37 @@ pub(super) fn request(
     )
 }
 
+#[test]
+fn retired_repository_sources_and_credentials_are_rejected() {
+    let workspace = Workspace::new();
+    workspace.write("note.md", "# Kept\n");
+    let server = start_with_users(&workspace.root, 0, users(&workspace)).unwrap();
+    let client = Client::new(&server);
+    let owner = login(&client, "alice");
+    for action in [
+        json!({"action":"create","kind":"github","name":"Retired source","source":"owner/repository"}),
+        json!({"action":"credential","id":"default","token":"retired-test-credential"}),
+    ] {
+        request(
+            &client,
+            &owner,
+            "default",
+            "POST",
+            "/api/projects",
+            Some(action),
+        )
+        .error(400);
+    }
+    let projects = request(&client, &owner, "default", "GET", "/api/projects", None).json();
+    assert_eq!(projects.as_array().unwrap().len(), 1);
+    assert!(projects[0].get("repository").is_none());
+    assert!(projects[0].get("gitAvailable").is_none());
+    assert_eq!(
+        fs::read_to_string(workspace.root.join("note.md")).unwrap(),
+        "# Kept\n"
+    );
+}
+
 pub(super) fn users(workspace: &Workspace) -> UserStore {
     let users = UserStore::new(workspace.base.join("config/users.json"));
     users
@@ -87,9 +118,8 @@ fn projects_are_private_by_default_and_shared_permissions_cover_every_endpoint()
     for path in [
         "/api/tree".to_owned(),
         format!("/api/document?id={private}"),
+        format!("/api/document?id={private}&render=source"),
         format!("/api/entry?id={private}"),
-        "/api/git".into(),
-        format!("/api/git/diff?id={private}"),
         format!("/assets?id={private}"),
     ] {
         request(&client, &bob, "default", "GET", &path, None).error(403);
@@ -200,15 +230,6 @@ fn projects_are_private_by_default_and_shared_permissions_cover_every_endpoint()
     .error(403);
     request(
         &client,
-        &alice,
-        &id,
-        "POST",
-        "/api/git",
-        Some(json!({"action":"stage","ids":[note_id]})),
-    )
-    .error(403);
-    request(
-        &client,
         &bob,
         &id,
         "POST",
@@ -251,7 +272,7 @@ fn projects_are_private_by_default_and_shared_permissions_cover_every_endpoint()
 }
 
 #[test]
-fn independently_shared_pages_hide_siblings_git_and_unshared_attachments() {
+fn independently_shared_pages_hide_siblings_and_unshared_attachments() {
     let workspace = Workspace::new();
     workspace.write(
         "folder/shared.md",
@@ -290,8 +311,6 @@ fn independently_shared_pages_hide_siblings_git_and_unshared_attachments() {
     for path in [
         format!("/api/document?id={secret_id}"),
         format!("/api/entry?id={secret_id}"),
-        "/api/git".into(),
-        format!("/api/git/diff?id={secret_id}"),
         format!("/assets?id={secret_asset}&document={shared_id}"),
     ] {
         request(&client, &bob, "default", "GET", &path, None).error(403);
@@ -442,56 +461,6 @@ fn resetting_a_password_preserves_project_ownership_but_recreating_a_username_do
     assert_eq!(
         request(&client, &recreated, "default", "GET", "/api/projects", None).json(),
         json!([])
-    );
-}
-
-#[test]
-#[ignore = "requires network access to a public GitHub fixture"]
-fn github_project_clones_a_public_repository_and_can_commit_without_host_identity() {
-    let workspace = Workspace::new();
-    let server = start_with_users(&workspace.root, 0, users(&workspace)).unwrap();
-    let client = Client::new(&server);
-    let bob = login(&client, "bob");
-    let created = request(
-        &client,
-        &bob,
-        "default",
-        "POST",
-        "/api/projects",
-        Some(json!({
-            "action":"create","kind":"github","name":"GitHub fixture","source":"octocat/Hello-World"
-        })),
-    );
-    assert_eq!(created.status, 200, "{}", created.text());
-    let project = created.json();
-    assert!(project.get("token").is_none());
-    let id = project["id"].as_str().unwrap();
-    let root = PathBuf::from(project["root"].as_str().unwrap());
-    assert!(root.join("README").exists());
-    assert_eq!(
-        request(
-            &client,
-            &bob,
-            id,
-            "POST",
-            "/api/document",
-            Some(json!({"path":"test.md","content":"# Local test\n"}))
-        )
-        .status,
-        201
-    );
-    let document = resource_id(&client, &bob, id, "test.md", "document");
-    for action in [
-        json!({"action":"stage","ids":[document]}),
-        json!({"action":"commit","message":"Local fixture commit"}),
-    ] {
-        let response = request(&client, &bob, id, "POST", "/api/git", Some(action));
-        assert_eq!(response.status, 200, "{}", response.text());
-    }
-    assert!(
-        fs::read_to_string(root.join(".git/config"))
-            .unwrap()
-            .contains("bob@folio.invalid")
     );
 }
 

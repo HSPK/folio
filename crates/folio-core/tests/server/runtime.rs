@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn retired_git_endpoints_are_not_available() {
+    let workspace = Workspace::new();
+    workspace.write("note.md", "# Kept\n");
+    workspace.write(".git/config", "fixture repository data");
+    let server = start(&workspace.root, 0).unwrap();
+    let client = Client::new(&server);
+    for (method, path) in [
+        ("GET", "/api/git"),
+        ("POST", "/api/git"),
+        ("GET", "/api/git/diff"),
+        ("GET", "/api/git/sync"),
+        ("PUT", "/api/git/sync"),
+    ] {
+        client.api(method, path, None).error(404);
+    }
+    assert_eq!(client.get_document("note.md").json()["content"], "# Kept\n");
+    assert_eq!(
+        fs::read_to_string(workspace.root.join(".git/config")).unwrap(),
+        "fixture repository data"
+    );
+}
+
+#[test]
 fn traversal_and_reserved_paths_cannot_access_or_create_outside_root() {
     let workspace = Workspace::new();
     fs::write(workspace.outside.join("secret.md"), "secret outside").unwrap();
@@ -337,13 +360,10 @@ fn web_preferences_validate_apply_and_persist_for_authenticated_servers() {
             "fontSizePx": 19,
             "lineHeightPercent": 190,
             "density": "compact",
-            "defaultSidebar": "git",
+            "defaultSidebar": "outline",
             "sidebarOpen": false,
             "hiddenPatterns": ["drafts/**"],
             "treeRefreshSeconds": 30,
-            "gitRefreshSeconds": 5,
-            "gitShowUntracked": false,
-            "gitDefaultDiff": "staged",
             "largeDocumentThresholdKib": 1024,
             "previewDelayMs": 500,
             "outlineDelayMs": 100,
@@ -372,7 +392,8 @@ fn web_preferences_validate_apply_and_persist_for_authenticated_servers() {
         .error(400);
     drop(server);
 
-    let users = UserStore::new(workspace.base.join("users.json"));
+    let settings_path = workspace.base.join("preferences.json");
+    let users = UserStore::alongside_settings(&settings_path);
     users
         .initialize_admin("owner", "correct horse battery staple")
         .unwrap();
@@ -403,12 +424,10 @@ fn web_preferences_validate_apply_and_persist_for_authenticated_servers() {
         &body,
     );
     assert_eq!(saved.status, 200, "{}", saved.text());
-    let stored = SettingsStore::new(workspace.base.join("settings.json"))
-        .load()
-        .unwrap()
-        .unwrap();
+    let stored = SettingsStore::new(settings_path).load().unwrap().unwrap();
     assert_eq!(stored.web.default_view, DefaultView::Source);
     assert_eq!(stored.web.hidden_patterns, ["drafts/**"]);
+    assert!(!workspace.base.join("settings.json").exists());
 }
 
 #[test]

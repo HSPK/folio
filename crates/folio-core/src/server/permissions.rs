@@ -68,9 +68,19 @@ impl AppState {
     }
 }
 
+#[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum DocumentRender {
+    #[default]
+    Full,
+    Source,
+}
+
 #[derive(serde::Deserialize)]
 pub(super) struct DocumentQuery {
     id: String,
+    #[serde(default)]
+    render: DocumentRender,
 }
 
 pub(super) async fn document(
@@ -83,7 +93,10 @@ pub(super) async fn document(
         let (path, revision) = state.document_path_with_revision(&query.id)?;
         let permissions = state.document_permissions(&path)?;
         let path = state.root.canonical_document_path(&path)?;
-        let json = state.root.document_json_with_revision(&path, revision)?;
+        let json = match query.render {
+            DocumentRender::Full => state.root.document_json_with_revision(&path, revision)?,
+            DocumentRender::Source => state.root.source_json_with_revision(&path, revision)?,
+        };
         if state.document_path(&query.id)? != path {
             return Err(ApiError::conflict(
                 "This document moved while it was being read. Retry using the same document ID.",

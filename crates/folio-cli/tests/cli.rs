@@ -160,7 +160,7 @@ fn cli_manages_users_after_browser_style_initial_setup() {
             auth_file.to_str().unwrap(),
             "--password-stdin",
         ],
-        "writer password long enough",
+        &"x".repeat(4096),
     );
     assert!(
         added.status.success(),
@@ -176,6 +176,22 @@ fn cli_manages_users_after_browser_style_initial_setup() {
     assert!(listed.status.success());
     assert!(users.contains("owner\tadmin"));
     assert!(users.contains("writer\tuser"));
+    let changed = run_with_password(
+        &[
+            "user",
+            "password",
+            "writer",
+            "--auth-file",
+            auth_file.to_str().unwrap(),
+            "--password-stdin",
+        ],
+        "x",
+    );
+    assert!(
+        changed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&changed.stderr)
+    );
 
     let removed = Command::new(env!("CARGO_BIN_EXE_folio-core"))
         .args(["user", "remove", "writer", "--auth-file"])

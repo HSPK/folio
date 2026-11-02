@@ -125,13 +125,10 @@ fn document_overrides_restrict_shared_projects_and_restore_inheritance() {
     );
     let summary = request(&client, &bob, "default", "GET", "/api/projects", None);
     assert!(!summary.text().contains("INDEX.MD"));
-    assert_eq!(summary.json()[0]["gitAvailable"], false);
     for path in [
         format!("/api/document?id={private}"),
         format!("/api/entry?id={private}"),
         format!("/assets?id={secret}&document={open}"),
-        "/api/git".into(),
-        format!("/api/git/diff?id={private}"),
     ] {
         request(&client, &bob, "default", "GET", &path, None).error(403);
     }
@@ -164,10 +161,6 @@ fn document_overrides_restrict_shared_projects_and_restore_inheritance() {
     .error(403);
     permission(&client, &alice, "private/INDEX.MD", "inherit", false);
     permission(&client, &alice, "readonly.md", "inherit", false);
-    assert_eq!(
-        request(&client, &bob, "default", "GET", "/api/git", None).status,
-        200
-    );
     assert_eq!(
         request(
             &client,
@@ -256,7 +249,6 @@ fn public_links_are_document_scoped_revocable_and_readonly_until_explicitly_enab
     for path in [
         "/api/tree",
         "/api/projects",
-        "/api/git",
         "/api/admin/accounts",
         "/api/public/tree",
     ] {

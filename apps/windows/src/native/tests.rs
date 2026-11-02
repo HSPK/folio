@@ -1,5 +1,6 @@
 use super::*;
 use folio_core::settings::SettingsStore;
+use std::path::PathBuf;
 use std::{
     process::{Child, Command},
     time::{Duration, Instant},
@@ -121,11 +122,12 @@ fn isolated_native_settings_and_quit() {
         auto_open_browser: false,
         ..Settings::default()
     };
-    let path = directory.join("Folio").join("settings.json");
+    let path = directory.join(".local").join("folio").join("settings.json");
     let store = SettingsStore::new(path.clone());
     store.save(&config).unwrap();
     let child = Command::new(exe)
         .env("LOCALAPPDATA", &directory)
+        .env("USERPROFILE", &directory)
         .spawn()
         .unwrap();
     let mut fixture = Fixture { child, directory };
@@ -275,7 +277,11 @@ fn in_process_settings_drafts_appearance_and_brushes() {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, &mut *app as *mut App as isize);
         app.settings();
         assert!(!app.preferences.is_null());
-        assert!(!GetDlgItem(app.preferences, BROWSE as i32).is_null());
+        assert_ne!(
+            GetWindowLongPtrW(GetDlgItem(app.preferences, SETTINGS_PATH), GWL_STYLE) as u32
+                & ES_READONLY as u32,
+            0
+        );
         preferences::layout(&mut app, 144);
         let mut scaled: RECT = zeroed();
         GetWindowRect(GetDlgItem(app.preferences, LATIN_FONT), &mut scaled);
@@ -293,12 +299,12 @@ fn in_process_settings_drafts_appearance_and_brushes() {
         ReleaseDC(app.preferences, dc);
         SetDlgItemTextW(
             app.preferences,
-            DIRECTORY,
-            wide("C:\\unsaved-folder-draft").as_ptr(),
+            SETTINGS_PATH,
+            wide("C:\\other-settings.json").as_ptr(),
         );
         SetDlgItemTextW(app.preferences, LATIN_FONT, wide("Draft Font").as_ptr());
         let draft = preferences::read(app.preferences, app.core.settings()).unwrap();
-        assert_eq!(draft.directory, PathBuf::from("C:\\unsaved-folder-draft"));
+        assert_eq!(draft.directory, directory);
         assert_eq!(app.core.settings().directory, directory);
         app.command(app.preferences, CANCEL);
         app.settings();
@@ -327,26 +333,32 @@ fn in_process_settings_drafts_appearance_and_brushes() {
         );
         assert!(app.core.status().running);
         assert_eq!(app.core.open_url().unwrap(), original_url);
-        // A stopped, test-owned service may change roots; drafts still commit only on Save.
         app.core.stop().unwrap();
-        let replacement = directory.join("replacement");
-        std::fs::create_dir(&replacement).unwrap();
         app.settings();
-        SetDlgItemTextW(app.preferences, DIRECTORY, path_wide(&replacement).as_ptr());
+        SetDlgItemTextW(
+            app.preferences,
+            SETTINGS_PATH,
+            path_wide(&directory.join("replacement.json")).as_ptr(),
+        );
         assert_eq!(app.core.settings().directory, directory);
         app.command(app.preferences, SAVE);
-        assert_eq!(app.core.settings().directory, replacement);
+        assert_eq!(app.core.settings().directory, directory);
+        assert_eq!(app.core.settings_path(), path);
         app.core.start().unwrap();
         assert!(app.core.status().running);
         app.core.stop().unwrap();
-        app.core = FolioCore::new(Some(directory.join("first-run.json"))).unwrap();
-        app.open();
-        assert!(
-            !app.preferences.is_null(),
-            "Missing-folder Open should show Settings, not launch a browser"
-        );
-        assert!(!app.core.status().running);
-        app.command(app.preferences, CANCEL);
+        let first_run_path = directory.join("first-run.json");
+        SettingsStore::new(&first_run_path)
+            .save(&Settings {
+                port,
+                ..Settings::default()
+            })
+            .unwrap();
+        app.core = FolioCore::new(Some(first_run_path)).unwrap();
+        app.start();
+        assert!(app.preferences.is_null());
+        assert!(app.core.status().running);
+        app.core.stop().unwrap();
         let popup = menu(true);
         assert_eq!(GetMenuItemCount(popup), 5);
         DestroyMenu(popup);

@@ -4,6 +4,28 @@ import { pasteImage } from "./project-cases.mjs";
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
+test("library rows retain UUID identity when a different file appears at the current path", async ({ page }) => {
+  await openFixture(page, "Reused-location.md", "# Original identity\n");
+  const original = new URL(page.url()).searchParams.get("document");
+  const authorization = await page.evaluate(() => `Bearer ${sessionStorage.getItem("folio.connection.token")}`);
+  const moved = await page.request.patch(new URL("/api/entry", page.url()).href, {
+    headers: { Authorization: authorization },
+    data: { id: original, destination: "Original-moved.md", updateLinks: false },
+  });
+  expect(moved.ok(), await moved.text()).toBe(true);
+  await fs.writeFile(path.join(root, "Reused-location.md"), "# A different resource\n");
+  await page.locator("#refresh-files").click();
+  const replacement = page.locator('button[data-path="Reused-location.md"]');
+  await expect(replacement).toHaveAttribute("data-resource-id", uuid);
+  await expect(replacement).not.toHaveAttribute("data-resource-id", original);
+  await expect(replacement).not.toHaveAttribute("aria-current", "page");
+  await expect(page.locator('button[data-path="Original-moved.md"]')).toHaveAttribute("aria-current", "page");
+  await expect(page.locator(".ProseMirror")).toContainText("Original identity");
+  await replacement.click();
+  await expect(page.locator(".ProseMirror")).toContainText("A different resource");
+  expect(new URL(page.url()).searchParams.get("document")).not.toBe(original);
+});
+
 test("an upload crossing a document move retains the image without inserting a stale relative path", async ({ browser }) => {
   const library = await collaborativeLibrary(browser, { participants: 1, sharing: "private", source: true });
   let release;

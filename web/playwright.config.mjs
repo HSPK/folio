@@ -12,6 +12,7 @@ export default defineConfig({
     channel: process.platform === "win32" ? "msedge" : undefined,
     headless: true,
     viewport: { width: 1440, height: 960 },
-    trace: "retain-on-failure",
+    // Trace DOM snapshots would add main-thread work to latency measurements.
+    trace: process.env.FOLIO_BENCH_RUNTIME ? "off" : "retain-on-failure",
   },
 });

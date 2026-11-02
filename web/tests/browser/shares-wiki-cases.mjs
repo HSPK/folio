@@ -1,4 +1,4 @@
-import { test, expect, fs, path, root, openFixture, chooseView } from "./fixture.mjs";
+import { test, expect, fs, path, root, openFixture, chooseView, confirmDialog, primaryModifier } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
 test("wiki links render and autocomplete without changing code literals or aliases", async ({ page }) => {
@@ -7,7 +7,7 @@ test("wiki links render and autocomplete without changing code literals or alias
   await expect(page.locator(".ProseMirror .folio-wiki-link")).toHaveText("Other note");
   await expect(page.locator(".ProseMirror code")).toHaveText("[[Literal]]");
   await page.locator(".ProseMirror").focus();
-  await page.keyboard.press("Control+End");
+  await page.keyboard.press(primaryModifier === "Meta" ? "Meta+ArrowDown" : "Control+End");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await page.keyboard.insertText("[[Sec");
@@ -23,7 +23,7 @@ test("wiki links render and autocomplete without changing code literals or alias
   await chooseView(page, "preview");
   await expect(page.locator('#preview a').filter({ hasText: "Other note" })).toHaveAttribute("href", /\/\?document=[a-f0-9-]+/);
   await chooseView(page, "rich");
-  await page.locator(".folio-wiki-link").first().click({ modifiers: ["Control"] });
+  await page.locator(".folio-wiki-link").first().click({ modifiers: [primaryModifier] });
   await expect(page.locator("#document-title")).toHaveText("Second.md");
 });
 
@@ -59,8 +59,8 @@ test("public link passwords gate anonymous editing and the owner can manage all 
     await owner.locator("#shares-open").click();
     await expect(owner.locator("#shares-list")).toContainText("Shared.md");
     await expect(owner.locator("#shares-list")).toContainText("Password protected");
-    owner.once("dialog", (dialog) => dialog.accept());
     await owner.locator("#shares-list").getByRole("button", { name: "Revoke", exact: true }).click();
+    await confirmDialog(owner);
     await expect(owner.locator("#shares-list")).not.toContainText("Shared.md");
     await expect(page.locator("#collaboration-message")).toContainText("revoked");
   } finally { await guest.close(); await library.close(); }

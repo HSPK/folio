@@ -13,7 +13,30 @@ const MAX_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_CACHE_ENTRIES: usize = 64;
 const MAX_CACHED_DOCUMENT_BYTES: usize = 8 * 1024 * 1024;
 
+#[derive(serde::Serialize)]
+struct SourceDocument<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project: Option<&'a str>,
+    path: &'a str,
+    content: &'a str,
+    html: Option<&'a str>,
+    version: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning: Option<&'a str>,
+    bom: bool,
+}
+
 impl Document {
+    fn json(&self) -> Result<Bytes, ApiError> {
+        serde_json::to_vec(self)
+            .map(Bytes::from)
+            .map_err(|error| ApiError::internal(format!("Could not encode document: {error}")))
+    }
+
     pub(in crate::server) fn raw_content(&self) -> std::borrow::Cow<'_, str> {
         if self.bom {
             std::borrow::Cow::Owned(format!("\u{feff}{}", self.content))
@@ -83,20 +106,42 @@ impl Root {
         self.apply_resource_revision(revision)?;
         let (mut file, fingerprint) = self.open_document(path)?;
         if let Ok(mut cache) = self.document_cache.lock() {
-            if let Some(json) = cache.get_json(path, fingerprint) {
+            if let Some(json) = cache.document_json(path, fingerprint)? {
                 return Ok(json);
             }
         }
         let bytes = read_limited(&mut file, MAX_DOCUMENT_BYTES, "Markdown files")?;
         let document = self.rendered_document(path, &bytes)?;
-        let json =
-            Bytes::from(serde_json::to_vec(&document).map_err(|error| {
-                ApiError::internal(format!("Could not encode document: {error}"))
-            })?);
+        let json = document.json()?;
         if let Ok(mut cache) = self.document_cache.lock() {
             cache.insert(path.to_owned(), fingerprint, document, Some(json.clone()));
         }
         Ok(json)
+    }
+
+    pub(in crate::server) fn source_json_with_revision(
+        &self,
+        path: &str,
+        revision: u64,
+    ) -> Result<Bytes, ApiError> {
+        self.apply_resource_revision(revision)?;
+        let document = self.source_document(path)?;
+        let payload = SourceDocument {
+            id: document.id.as_deref(),
+            project: document.project.as_deref(),
+            path: &document.path,
+            content: &document.content,
+            html: None,
+            version: &document.version,
+            title: document.title.as_deref(),
+            warning: document.warning.as_deref(),
+            bom: document.bom,
+        };
+        serde_json::to_vec(&payload)
+            .map(Bytes::from)
+            .map_err(|error| {
+                ApiError::internal(format!("Could not encode document source: {error}"))
+            })
     }
 
     fn open_document(&self, path: &str) -> Result<(File, platform::EntryFingerprint), ApiError> {
@@ -171,6 +216,22 @@ impl DocumentCache {
         fingerprint: platform::EntryFingerprint,
     ) -> Option<Bytes> {
         self.get_with(path, fingerprint, |entry| entry.json.clone())
+    }
+
+    fn document_json(
+        &mut self,
+        path: &str,
+        fingerprint: platform::EntryFingerprint,
+    ) -> Result<Option<Bytes>, ApiError> {
+        if let Some(json) = self.get_json(path, fingerprint) {
+            return Ok(Some(json));
+        }
+        let Some(document) = self.get(path, fingerprint) else {
+            return Ok(None);
+        };
+        let json = document.json()?;
+        self.insert(path.into(), fingerprint, document, Some(json.clone()));
+        Ok(Some(json))
     }
 
     pub(super) fn insert(
@@ -288,6 +349,28 @@ mod tests {
             version: "0".repeat(64),
             title: None,
         }
+    }
+
+    #[test]
+    fn rendered_documents_gain_reusable_json_without_reading_or_rendering_again() {
+        let mut cache = DocumentCache::default();
+        let document = document("note.md", 1024);
+        let fingerprint = platform::EntryFingerprint([7; 5]);
+        let expected = document.json().unwrap();
+        cache.insert("note.md".into(), fingerprint, document, None);
+        assert!(cache.get_json("note.md", fingerprint).is_none());
+        assert_eq!(
+            cache.document_json("note.md", fingerprint).unwrap(),
+            Some(expected.clone())
+        );
+        assert_eq!(cache.get_json("note.md", fingerprint), Some(expected));
+        assert!(
+            cache
+                .document_json("note.md", platform::EntryFingerprint([8; 5]))
+                .unwrap()
+                .is_none()
+        );
+        assert!(cache.entries.is_empty());
     }
 
     #[test]

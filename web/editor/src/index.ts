@@ -1,0 +1,12 @@
+export { createInlineEditor } from "./inline-editor.ts";
+export { createOutlineExtractor, extractOutline, readableMarkdown } from "./markdown.ts";
+export { attachScrollbars } from "./scrollbars.ts";
+export { createSourceEditor } from "./source-editor.ts";
+export { createSharedText, mergeSharedUpdates } from "./shared-text.ts";
+export { normalizeTags, readMetadataTags, updateMetadataTags } from "./metadata-tags.ts";
+export { imageHtml } from "./image-syntax.ts";
+export { decorateCodeBlocks } from "./code-block.ts";
+export { diffLines } from "diff";
+export { applyAppearance } from "./appearance.ts";
+export { createIcon, hydrateIcons } from "./icons.ts";
+export type { InlineEditorOptions, SourceChanges } from "./types/editor.ts";

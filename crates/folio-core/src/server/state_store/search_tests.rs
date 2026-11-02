@@ -83,3 +83,38 @@ fn cancelled_index_write_rolls_back_both_metadata_and_full_text_rows() {
         .unwrap();
     assert_eq!(found.results.len(), 1);
 }
+
+#[test]
+fn search_previews_separate_body_and_metadata_and_keep_utf16_offsets() {
+    let source = "---\ntitle: Design\nstatus: review\n---\n\n# Design\n\n😀 Quartz notes.\n";
+    let (snippet, offset, field) = hit_excerpt(source, "Design", Field::All, &["quartz".into()]);
+    assert!(!snippet.contains("title:"));
+    assert!(snippet.contains("Quartz"));
+    assert_eq!(field, "body");
+    assert_eq!(
+        offset,
+        source[..source.find("Quartz").unwrap()]
+            .encode_utf16()
+            .count()
+    );
+    let (snippet, offset, field) = hit_excerpt(source, "Design", Field::All, &["review".into()]);
+    assert_eq!(field, "metadata");
+    assert!(!snippet.contains("---"));
+    assert!(snippet.contains("status: review"));
+    assert_eq!(
+        offset,
+        source[..source.find("review").unwrap()]
+            .encode_utf16()
+            .count()
+    );
+    for selected in [Field::All, Field::Title, Field::Body] {
+        let (snippet, offset, _) = hit_excerpt(source, "Design", selected, &[]);
+        assert!(snippet.starts_with("# Design"));
+        assert_eq!(
+            offset,
+            source[..source.find("# Design").unwrap()]
+                .encode_utf16()
+                .count()
+        );
+    }
+}

@@ -32,6 +32,7 @@ pub(in crate::server) struct Hit {
     pub tags: Vec<String>,
     pub snippet: String,
     pub offset: usize,
+    pub matched_field: &'static str,
 }
 
 #[derive(Serialize)]
@@ -178,6 +179,45 @@ fn excerpt(source: &str, terms: &[String]) -> (String, usize) {
     (text, offset)
 }
 
+fn hit_excerpt(
+    source: &str,
+    title: &str,
+    field: Field,
+    terms: &[String],
+) -> (String, usize, &'static str) {
+    let body = frontmatter::body(source);
+    let metadata = frontmatter::metadata(source);
+    let matches = |value: &str| {
+        let lower = value.to_lowercase();
+        terms.iter().any(|term| lower.contains(term))
+    };
+    let metadata_match = matches!(field, Field::Metadata)
+        || matches!(field, Field::All) && !matches(body) && !matches(title) && matches(metadata);
+    if metadata_match && !metadata.is_empty() {
+        let (snippet, offset) = excerpt(metadata, terms);
+        let start = source
+            .find(metadata)
+            .expect("Metadata is a slice of the source");
+        return (
+            snippet,
+            source[..start].encode_utf16().count() + offset,
+            "metadata",
+        );
+    }
+    let (snippet, offset) = excerpt(body, terms);
+    let start = source.len() - body.len();
+    let matched_field = if matches!(field, Field::Title) {
+        "title"
+    } else {
+        "body"
+    };
+    (
+        snippet,
+        source[..start].encode_utf16().count() + offset,
+        matched_field,
+    )
+}
+
 impl Store {
     pub(in crate::server) fn search(
         &self,
@@ -250,8 +290,8 @@ impl Store {
                     let id: i64 = row.get(8).map_err(db_error)?;
                     source_statement.query_row([id], |row| row.get::<_, String>(0)).map_err(db_error)?
                 };
-                let (snippet, offset) = excerpt(&source, &terms);
-                results.push(Hit { id: None, project, path, title, version: row.get(6).map_err(db_error)?, tags, snippet, offset });
+                let (snippet, offset, matched_field) = hit_excerpt(&source, &title, field, &terms);
+                results.push(Hit { id: None, project, path, title, version: row.get(6).map_err(db_error)?, tags, snippet, offset, matched_field });
             }
             let mut tags = facets.into_values().map(|(tag,count)| Facet { tag,count }).collect::<Vec<_>>();
             tags.sort_by(|a,b| b.count.cmp(&a.count).then_with(|| a.tag.cmp(&b.tag)));

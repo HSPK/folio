@@ -32,6 +32,7 @@ struct LinkSpan {
     wiki: bool,
     image: bool,
     definition: bool,
+    html: bool,
 }
 
 fn spans(source: &str) -> Vec<LinkSpan> {
@@ -47,9 +48,24 @@ fn spans(source: &str) -> Vec<LinkSpan> {
             wiki: false,
             image: false,
             definition: true,
+            html: false,
         })
         .collect::<Vec<_>>();
-    for (event, range) in parser.into_offset_iter() {
+    let prepared = markdown::image_source::prepare(body, Options::all());
+    for (event, range) in prepared.offset_events() {
+        if let Event::Html(text) | Event::InlineHtml(text) = &event {
+            if let Some(image) = markdown::image_html::parse(text) {
+                spans.push(LinkSpan {
+                    range: range.start + offset..range.end + offset,
+                    destination: image.src,
+                    wiki: false,
+                    image: true,
+                    definition: false,
+                    html: true,
+                });
+            }
+            continue;
+        }
         let (destination, link_type, image) = match event {
             Event::Start(Tag::Link {
                 dest_url,
@@ -72,6 +88,7 @@ fn spans(source: &str) -> Vec<LinkSpan> {
             wiki: matches!(link_type, LinkType::WikiLink { .. }),
             image,
             definition: false,
+            html: false,
         });
     }
     spans
@@ -79,6 +96,14 @@ fn spans(source: &str) -> Vec<LinkSpan> {
 
 fn destination_range(source: &str, link: &LinkSpan) -> Result<Range<usize>, ApiError> {
     let raw = &source[link.range.clone()];
+    if link.html {
+        let image = markdown::image_html::parse(raw).ok_or_else(|| {
+            ApiError::bad_request("The image HTML needs a manual update before renaming.")
+        })?;
+        return Ok(
+            link.range.start + image.source_range.start..link.range.start + image.source_range.end
+        );
+    }
     if link.wiki {
         let opening = raw
             .find("[[")
@@ -237,9 +262,14 @@ pub(super) fn rewrite(
                 "Choose a name that can be represented safely by existing wiki links.",
             ));
         }
+        let destination = format!("{path}{query}{fragment}");
         edits.push((
             destination_range(source, &link)?,
-            format!("{path}{query}{fragment}"),
+            if link.html {
+                markdown::image_html::escape_attribute(&destination)
+            } else {
+                destination
+            },
         ));
     }
     edits.sort_by(|a, b| b.0.start.cmp(&a.0.start));
@@ -319,6 +349,30 @@ pub(super) async fn backlinks(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn renamed_html_images_keep_layout_attributes_and_encoded_queries() {
+        let source = "<img src=\"images/old.png?a=1&amp;b=2\" alt=\"Keep &amp; safe\" style=\"width:50%;display:block;margin-left:auto;margin-right:auto\">";
+        let next = rewrite(
+            source,
+            "note.md",
+            "docs/note.md",
+            "images/old.png",
+            "images/new name.png",
+        )
+        .unwrap();
+        assert_eq!(
+            next,
+            source.replace("images/old.png", "../images/new%20name.png")
+        );
+        let mixed = format!("{source} ![Other](images/other.png) `<img src=\"literal.png\">`");
+        let moved = rewrite(&mixed, "note.md", "docs/note.md", "note.md", "docs/note.md").unwrap();
+        assert!(moved.contains("![Other](../images/other.png)"));
+        assert!(moved.contains("`<img src=\"literal.png\">`"));
+        assert_eq!(
+            markdown::referenced_assets("docs/note.md", &next),
+            BTreeSet::from(["images/new name.png".into()])
+        );
+    }
     #[test]
     fn wiki_and_markdown_references_resolve_without_including_code_or_metadata() {
         let source = "---\nexample: '[[Hidden]]'\n---\n[[Target|Alias]] [regular](Target.md) `[[Code]]`\n\n```\n[[Fence]]\n```\n";

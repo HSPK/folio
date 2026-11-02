@@ -24,14 +24,15 @@ pub(super) mod api;
 mod identities;
 #[path = "projects/public.rs"]
 pub(super) mod public;
+#[path = "projects/settings.rs"]
+mod settings;
 #[path = "projects/shares.rs"]
 pub(super) mod shares;
-#[path = "projects/sync.rs"]
-pub(super) mod sync;
 #[path = "projects/watch_access.rs"]
 pub(super) mod watch_access;
 pub(super) use access::Access;
 use public::{PublicLink, PublicLinkInfo};
+use settings::SettingsUpdate;
 
 #[cfg(test)]
 #[path = "projects/access_tests.rs"]
@@ -53,9 +54,6 @@ pub(super) struct Project {
     owner: Option<String>,
     owner_id: Option<String>,
     root: PathBuf,
-    repository: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    token: Option<String>,
     shared: Sharing,
     pages: BTreeMap<String, Sharing>,
     #[serde(default)]
@@ -64,8 +62,6 @@ pub(super) struct Project {
     image_directory: String,
     #[serde(default)]
     public_links: BTreeMap<String, PublicLink>,
-    #[serde(default)]
-    git_sync: sync::Config,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -85,13 +81,11 @@ pub(super) struct Summary {
     owner: Option<String>,
     owned: bool,
     root: Option<PathBuf>,
-    repository: Option<String>,
     shared: Sharing,
     access: Sharing,
     pages: BTreeMap<String, Sharing>,
     document_ids: BTreeMap<String, String>,
     image_directory: String,
-    git_available: bool,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     public_links: BTreeMap<String, PublicLinkInfo>,
 }
@@ -119,12 +113,6 @@ impl Project {
             || self.shared != Sharing::Private
             || self.pages.values().any(|level| *level != Sharing::Private)
     }
-
-    fn git_available(&self, user: &str) -> bool {
-        self.owned(user)
-            || self.shared != Sharing::Private
-                && !self.pages.values().any(|level| *level == Sharing::Private)
-    }
 }
 
 pub(super) struct Registry {
@@ -137,7 +125,6 @@ pub(super) struct Registry {
     users: UserStore,
     cache: Mutex<Option<(std::time::SystemTime, u64, Arc<Catalog>)>>,
     storage: Mutex<Option<Arc<super::state_store::Store>>>,
-    sync_status: Mutex<HashMap<String, sync::Status>>,
 }
 
 impl Registry {
@@ -163,7 +150,6 @@ impl Registry {
             users: users.clone(),
             cache: Mutex::new(None),
             storage: Mutex::new(None),
-            sync_status: Mutex::new(HashMap::new()),
         };
         if registry.load().map_err(|error| error.message)?.is_some() {
             registry
@@ -202,14 +188,11 @@ impl Registry {
                     .map_err(ApiError::internal)?,
                 owner,
                 root: self.initial_root.clone(),
-                repository: None,
-                token: None,
                 shared: Sharing::Private,
                 pages: BTreeMap::new(),
                 attachments: BTreeMap::new(),
                 image_directory: default_image_directory(),
                 public_links: BTreeMap::new(),
-                git_sync: sync::Config::default(),
             };
             save_json(
                 &self.path,
@@ -260,8 +243,23 @@ impl Registry {
                 return Ok(Some(catalog.clone()));
             }
         }
-        let mut catalog: Option<Catalog> =
+        let saved: Option<serde_json::Value> =
             load_json(&self.path, "projects").map_err(ApiError::internal)?;
+        let mut catalog: Option<Catalog> = saved
+            .map(|mut value| {
+                // Ignore only retired Git metadata; other unknown fields remain errors.
+                if let Some(projects) = value.get_mut("projects").and_then(|v| v.as_object_mut()) {
+                    for project in projects.values_mut().filter_map(|v| v.as_object_mut()) {
+                        for field in ["repository", "token", "gitSync"] {
+                            project.remove(field);
+                        }
+                    }
+                }
+                serde_json::from_value(value).map_err(|error| {
+                    ApiError::internal(format!("Could not read the project catalog: {error}"))
+                })
+            })
+            .transpose()?;
         if let Some(catalog) = &mut catalog {
             if catalog.version != 1 || catalog.projects.len() > 1024 {
                 return Err(ApiError::internal(
@@ -269,7 +267,6 @@ impl Registry {
                 ));
             }
             for (id, project) in &catalog.projects {
-                project.git_sync.validate()?;
                 if !valid_id(id)
                     || project.name.is_empty()
                     || !project.root.is_absolute()
@@ -426,7 +423,10 @@ impl Registry {
             .libraries
             .lock()
             .map_err(|_| ApiError::internal("Projects are unavailable."))?;
-        let library = match libraries.get(id) {
+        let library = match libraries
+            .get(id)
+            .filter(|library| library.root.path() == project.root)
+        {
             Some(library) => library.clone(),
             None => {
                 let mut library = Library::new(Arc::new(files::Root::open(&project.root)?));
@@ -438,12 +438,6 @@ impl Registry {
                 library
             }
         };
-        if let Some(url) = project.repository.clone() {
-            library.git.set_remote(super::git::Remote {
-                url,
-                token: project.token.clone(),
-            })?;
-        }
         Ok(library)
     }
 
@@ -483,61 +477,10 @@ impl Registry {
                     "The project limit has been reached (128 per user).",
                 ));
             }
-            if catalog
-                .projects
-                .values()
-                .any(|p| p.root.starts_with(&project.root) || project.root.starts_with(&p.root))
-            {
-                return Err(ApiError::conflict(
-                    "This directory overlaps an existing project.",
-                ));
-            }
+            catalog.check_root(None, &project.root)?;
             let summary = self.summarize(&project, &id, &identity)?;
             catalog.projects.insert(id, project);
             Ok(summary)
-        })
-    }
-
-    fn manage(
-        &self,
-        id: &str,
-        user: &str,
-        name: Option<String>,
-        path: Option<String>,
-        shared: Sharing,
-        image_directory: Option<String>,
-    ) -> Result<Summary, ApiError> {
-        let identity = self.users.account_id(user).map_err(ApiError::internal)?;
-        self.mutate(|catalog| {
-            let project = catalog
-                .projects
-                .get_mut(id)
-                .filter(|p| p.owned(&identity))
-                .ok_or_else(|| ApiError::forbidden("Only the project owner can change sharing."))?;
-            if let Some(path) = path {
-                let root = files::Root::open(&project.root)?;
-                let path = root.canonical_document_path(&path)?;
-                let doc = root.document(&path)?;
-                if project.pages.len() >= 5000 && !project.pages.contains_key(&path) {
-                    return Err(ApiError::conflict(
-                        "The document permission limit was reached.",
-                    ));
-                }
-                let referenced = super::markdown::referenced_assets(&path, &doc.content);
-                project.attachments.insert(path.clone(), referenced);
-                project.public_links.remove(&path);
-                project.pages.insert(path, shared);
-            } else {
-                if let Some(name) = name {
-                    project.name = validate_name(name)?;
-                }
-                project.shared = shared;
-                if let Some(directory) = image_directory {
-                    files::validate_relative(&directory)?;
-                    project.image_directory = directory;
-                }
-            }
-            self.summarize(project, id, &identity)
         })
     }
 }

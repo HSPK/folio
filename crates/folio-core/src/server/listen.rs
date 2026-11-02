@@ -1,4 +1,4 @@
-use super::{AllowedHostname, AuthService, RunningServer, SettingsStore, start_configured};
+use super::{AllowedHostname, AuthService, RunningServer, start_configured};
 use crate::auth::UserStore;
 use std::{net::Ipv4Addr, path::Path, sync::Arc};
 
@@ -42,7 +42,7 @@ pub fn start_with_users_on_hosts(
     users: UserStore,
     allowed_hosts: &[AllowedHostname],
 ) -> Result<RunningServer, String> {
-    let settings_store = SettingsStore::new(users.path().with_file_name("settings.json"));
+    let settings_store = users.settings_store().clone();
     let scope = std::fs::canonicalize(root)
         .map_err(|error| format!("Could not open the selected folder: {error}"))?;
     start_configured(

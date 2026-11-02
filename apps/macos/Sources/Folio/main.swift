@@ -31,6 +31,7 @@ private struct CoreReply: Decodable {
     let ok: Bool
     let error: String?
     let settings: Settings?
+    let settingsPath: String?
     let firstRun: Bool?
     let status: CoreStatus?
     let url: String?
@@ -112,7 +113,7 @@ private func showError(_ message: String, window: NSWindow? = nil) {
 private final class SettingsWindow: NSWindowController, NSWindowDelegate {
     private var saved: Settings
     private let onSave: (Settings) throws -> Settings
-    private let directory = NSTextField()
+    private let settingsFile = NSTextField(wrappingLabelWithString: "")
     private let port = NSTextField()
     private let autoStart = NSButton(checkboxWithTitle: "Start service when Folio launches",
                                      target: nil, action: nil)
@@ -123,30 +124,30 @@ private final class SettingsWindow: NSWindowController, NSWindowDelegate {
     private let cjkFont = NSComboBox()
     private let themes = ["system", "light", "dark"]
 
-    init(saved: Settings, draft: Settings?, onSave: @escaping (Settings) throws -> Settings) {
+    init(saved: Settings, draft: Settings?, settingsPath: String,
+         onSave: @escaping (Settings) throws -> Settings) {
         self.saved = saved
         self.onSave = onSave
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 440),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 320),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         super.init(window: window)
+        settingsFile.stringValue = (settingsPath as NSString).abbreviatingWithTildeInPath
         window.title = "Folio Settings"
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.center()
         buildControls()
         load(draft ?? saved)
+        window.center()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private func buildControls() {
         guard let content = window?.contentView else { return }
-        let browse = NSButton(title: "Browse…", target: self, action: #selector(browseFolder))
-        directory.placeholderString = "Choose a folder containing Markdown notes"
-        directory.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let folderRow = NSStackView(views: [directory, browse])
-        folderRow.orientation = .horizontal
-        folderRow.spacing = 8
+        settingsFile.isSelectable = true
+        settingsFile.font = .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        settingsFile.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        settingsFile.setAccessibilityLabel("Settings file")
         theme.addItems(withTitles: ["System", "Light", "Dark"])
         let families = NSFontManager.shared.availableFontFamilies.sorted {
             $0.localizedStandardCompare($1) == .orderedAscending
@@ -160,7 +161,7 @@ private final class SettingsWindow: NSWindowController, NSWindowDelegate {
         port.widthAnchor.constraint(equalToConstant: 100).isActive = true
         port.alignment = .left
         let rows: [(String, NSView)] = [
-            ("Folio folder", folderRow), ("Port", port), ("Browser theme", theme),
+            ("Settings file", settingsFile), ("Port", port), ("Browser theme", theme),
             ("English font", latinFont), ("Chinese font", cjkFont),
         ]
         let grid = NSGridView(views: rows.map { title, control in
@@ -169,18 +170,13 @@ private final class SettingsWindow: NSWindowController, NSWindowDelegate {
             label.font = .systemFont(ofSize: NSFont.systemFontSize)
             return [label, control]
         })
-        grid.rowSpacing = 12
-        grid.columnSpacing = 16
+        grid.rowSpacing = 10
+        grid.columnSpacing = 12
         grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 0).width = 120
         grid.column(at: 1).xPlacement = .fill
         grid.cell(atColumnIndex: 1, rowIndex: 1).xPlacement = .leading
         grid.cell(atColumnIndex: 1, rowIndex: 2).xPlacement = .leading
-        let hint = NSTextField(wrappingLabelWithString:
-            "Stop the service from the menu before changing the folder or port. " +
-            "Browser appearance changes apply without restarting. " +
-            "Open Folio starts the service when needed.")
-        hint.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        hint.textColor = .secondaryLabelColor
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelChanges))
         cancel.keyEquivalent = "\u{1b}"
         let save = NSButton(title: "Save", target: self, action: #selector(saveChanges))
@@ -188,25 +184,27 @@ private final class SettingsWindow: NSWindowController, NSWindowDelegate {
         let buttons = NSStackView(views: [NSView(), cancel, save])
         buttons.orientation = .horizontal
         buttons.spacing = 8
-        let stack = NSStackView(views: [grid, autoStart, autoOpen, hint, buttons])
+        let stack = NSStackView(views: [grid, autoStart, autoOpen, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 16
+        stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(stack)
+        let padding: CGFloat = 20
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
-            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -24),
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: padding),
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -padding),
+            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: padding),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -padding),
             grid.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            hint.widthAnchor.constraint(equalTo: stack.widthAnchor),
             buttons.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
+        content.layoutSubtreeIfNeeded()
+        window?.setContentSize(NSSize(width: content.frame.width,
+                                      height: stack.fittingSize.height + padding * 2))
     }
 
     private func load(_ settings: Settings) {
-        directory.stringValue = settings.directory
         port.stringValue = String(settings.port)
         autoStart.state = settings.autoStart ? .on : .off
         autoOpen.state = settings.autoOpenBrowser ? .on : .off
@@ -215,30 +213,12 @@ private final class SettingsWindow: NSWindowController, NSWindowDelegate {
         cjkFont.stringValue = settings.appearance.cjkFont
     }
 
-    @objc private func browseFolder() {
-        guard let window else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        if !directory.stringValue.isEmpty {
-            panel.directoryURL = URL(fileURLWithPath: directory.stringValue, isDirectory: true)
-        }
-        panel.beginSheetModal(for: window) { [weak self] response in
-            if response == .OK, let url = panel.url {
-                self?.directory.stringValue = url.path
-            }
-        }
-    }
-
     @objc private func saveChanges() {
         guard let number = Int(port.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             showError("Enter a whole number for the port.", window: window)
             return
         }
         var draft = saved
-        draft.directory = directory.stringValue
         draft.port = number
         draft.autoStart = autoStart.state == .on
         draft.autoOpenBrowser = autoOpen.state == .on
@@ -269,6 +249,7 @@ private final class SettingsWindow: NSWindowController, NSWindowDelegate {
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var core: FolioCore?
     private var settings: Settings?
+    private var settingsPath: String?
     private var settingsWindow: SettingsWindow?
     private var statusItem: NSStatusItem?
     private var timer: Timer?
@@ -299,19 +280,18 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             let core = try FolioCore()
             self.core = core
             let reply = try core.request("get_settings")
-            guard let loaded = reply.settings else {
+            guard let loaded = reply.settings, let path = reply.settingsPath else {
                 throw AppError(message: "The Folio core returned no settings.")
             }
             settings = loaded
+            settingsPath = path
             refreshStatus()
             timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
                 self?.refreshStatus()
             }
             if reply.firstRun == true, !migrateLegacySettings(from: loaded) { return }
             guard let settings else { return }
-            if settings.directory.isEmpty {
-                openSettings()
-            } else if settings.autoStart {
+            if settings.autoStart {
                 do {
                     _ = try core.request("start")
                     if settings.autoOpenBrowser { try launchBrowser() }
@@ -451,9 +431,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openSettings() { showSettings() }
 
     private func showSettings(draft: Settings? = nil) {
-        guard let settings else { return }
+        guard let settings, let settingsPath else { return }
         if settingsWindow == nil {
-            settingsWindow = SettingsWindow(saved: settings, draft: draft) { [weak self] draft in
+            settingsWindow = SettingsWindow(saved: settings, draft: draft,
+                                            settingsPath: settingsPath) { [weak self] draft in
                 guard let self else { throw AppError(message: "Folio is shutting down.") }
                 return try self.saveSettings(draft)
             }

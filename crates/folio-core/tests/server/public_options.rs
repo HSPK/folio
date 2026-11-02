@@ -195,6 +195,7 @@ fn public_passwords_are_atomic_hashed_and_invalidate_old_visitor_cookies() {
         })),
     );
     assert_eq!(result.status, 200, "{}", result.text());
+    assert_eq!(result.json()["documentIds"]["shared.md"], document);
     assert!(!result.text().contains("argon2") && !result.text().contains("private share password"));
     let link = result.json()["publicLinks"]["shared.md"].clone();
     let token = link["token"].as_str().unwrap();
@@ -270,11 +271,33 @@ fn public_passwords_are_atomic_hashed_and_invalidate_old_visitor_cookies() {
         "/api/projects",
         Some(json!({
             "action":"document","id":"default","document":document,"permission":"publicRead",
-            "publicOptions":{"expiresAt":null,"password":"short"}
+            "publicOptions":{"expiresAt":null,"password":"x","clearPassword":true}
         })),
     )
     .error(400);
     let current = request(&client, &alice, "default", "GET", "/api/shares", None).json();
     assert_eq!(current[0]["access"], "edit");
     assert_eq!(current[0]["passwordRequired"], true);
+    for password in ["x".to_owned(), format!("{}\n", "x".repeat(4096))] {
+        let updated = request(
+            &client,
+            &alice,
+            "default",
+            "POST",
+            "/api/projects",
+            Some(json!({
+                "action": "publicOptions", "id": "default", "document": document,
+                "expiresAt": null, "password": password
+            })),
+        );
+        assert_eq!(updated.status, 200, "{}", updated.text());
+        let unlocked = public(
+            &client,
+            token,
+            "POST",
+            "/api/public/session",
+            Some(json!({"password": password})),
+        );
+        assert_eq!(unlocked.status, 200, "{}", unlocked.text());
+    }
 }

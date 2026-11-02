@@ -4,13 +4,12 @@ use axum::{
 };
 use serde::Deserialize;
 use std::{fs, path::PathBuf, sync::Arc};
-use zeroize::Zeroize;
 
 use super::{Project, Registry, Sharing, Summary, private_directory, validate_name};
 use crate::{
     auth::{AuthenticatedUser, Role},
     server::{
-        ApiError, AppState, Work, files, git, hex,
+        ApiError, AppState, Work, files, hex,
         routes::{blocking, json_error},
     },
 };
@@ -32,9 +31,6 @@ pub(in crate::server) async fn scope(
             | "/api/entry"
             | "/api/directory"
             | "/api/preview"
-            | "/api/git"
-            | "/api/git/diff"
-            | "/api/git/sync"
             | "/assets"
             | "/api/images"
             | "/api/history"
@@ -73,18 +69,13 @@ pub(in crate::server) async fn scope(
         .map(str::to_owned)
         .or(query.project.clone());
     let resource_id = match uri.path() {
-        "/api/resource" | "/api/document" | "/api/entry" | "/assets" | "/api/git/diff" => {
-            query.id.clone()
-        }
+        "/api/resource" | "/api/document" | "/api/entry" | "/assets" => query.id.clone(),
         "/api/history" | "/api/history/content" | "/api/backlinks" | "/api/images" => {
             query.document.clone()
         }
         _ => None,
     };
-    let historical_resource = matches!(
-        uri.path(),
-        "/api/history" | "/api/history/content" | "/api/git/diff"
-    );
+    let historical_resource = matches!(uri.path(), "/api/history" | "/api/history/content");
     tokio::task::spawn_blocking(move || {
         let mut scoped = (*state).clone();
         let registry = state
@@ -129,18 +120,14 @@ pub(in crate::server) enum Action {
         name: String,
         kind: String,
         source: Option<String>,
-        token: Option<String>,
     },
     Share {
         id: String,
         name: Option<String>,
         document: Option<String>,
-        shared: Sharing,
+        shared: Option<Sharing>,
         image_directory: Option<String>,
-    },
-    Credential {
-        id: String,
-        token: String,
+        root: Option<String>,
     },
     Document {
         id: String,
@@ -219,49 +206,32 @@ pub(in crate::server) async fn manage(
                 reset_link,
                 public_options,
             ),
-            Action::Create {
-                name,
-                kind,
-                source,
-                token,
-            } => create(registry, &user, name, &kind, source, token, work),
+            Action::Create { name, kind, source } => {
+                create(registry, &user, name, &kind, source, work)
+            }
             Action::Share {
                 id,
                 name,
                 document,
                 shared,
                 image_directory,
+                root,
             } => {
                 let path = document
                     .as_deref()
                     .map(|document| registry.permission_path(&id, document))
                     .transpose()?;
-                registry.manage(&id, &user.username, name, path, shared, image_directory)
-            }
-            Action::Credential { id, mut token } => {
-                let identity = registry
-                    .users
-                    .account_id(&user.username)
-                    .map_err(ApiError::internal)?;
-                let result = registry.mutate(|catalog| {
-                    let project = catalog
-                        .projects
-                        .get_mut(&id)
-                        .filter(|p| p.owned(&identity))
-                        .ok_or_else(|| {
-                            ApiError::forbidden(
-                                "Only the project owner can change its GitHub token.",
-                            )
-                        })?;
-                    if project.repository.is_none() {
-                        return Err(ApiError::bad_request("This is not a GitHub project."));
-                    }
-                    validate_token(Some(&token))?;
-                    project.token = (!token.is_empty()).then(|| token.clone());
-                    registry.summarize(project, &id, &identity)
-                });
-                token.zeroize();
-                result
+                registry.manage(
+                    &id,
+                    &user,
+                    super::SettingsUpdate {
+                        name,
+                        path,
+                        shared,
+                        image_directory,
+                        root,
+                    },
+                )
             }
         }
     })
@@ -276,49 +246,21 @@ fn registry(state: &AppState) -> Result<&Registry, ApiError> {
         .ok_or_else(|| ApiError::forbidden("Projects require user accounts."))
 }
 
-fn github_url(source: &str) -> Result<String, ApiError> {
-    let source = source
-        .strip_prefix("https://github.com/")
-        .unwrap_or(source)
-        .trim_end_matches('/');
-    let source = source.strip_suffix(".git").unwrap_or(source);
-    let parts = source.split('/').collect::<Vec<_>>();
-    if parts.len() != 2
-        || parts.iter().any(|part| {
-            part.is_empty()
-                || *part == "."
-                || *part == ".."
-                || part.len() > 100
-                || !part
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
-        })
-    {
-        return Err(ApiError::bad_request(
-            "Use https://github.com/owner/repository or owner/repository.",
-        ));
-    }
-    Ok(format!("https://github.com/{source}.git"))
-}
-
 fn create(
     registry: &Registry,
     user: &AuthenticatedUser,
     name: String,
     kind: &str,
     source: Option<String>,
-    mut token: Option<String>,
     work: &Work,
 ) -> Result<Summary, ApiError> {
     let name = validate_name(name)?;
-    validate_token(token.as_deref())?;
-    token = token.filter(|value| !value.is_empty());
     let mut bytes = [0; 16];
     getrandom::fill(&mut bytes).map_err(|error| ApiError::internal(error.to_string()))?;
     let id = hex(&bytes);
     let mut created = None;
     let result = (|| {
-        let (root, repository) = match kind {
+        let root = match kind {
             "folder" => {
                 if user.role != Role::Admin {
                     return Err(ApiError::forbidden(
@@ -326,45 +268,20 @@ fn create(
                     ));
                 }
                 let path = PathBuf::from(source.as_deref().unwrap_or(""));
-                if !path.is_absolute() {
-                    return Err(ApiError::bad_request(
-                        "Choose an absolute server directory path.",
-                    ));
-                }
-                let root = files::Root::open(&path)?.path().to_owned();
-                if registry.protected.starts_with(&root) || root.starts_with(&registry.protected) {
-                    return Err(ApiError::forbidden(
-                        "The Folio account and project storage cannot be attached.",
-                    ));
-                }
-                (root, None)
+                registry.folder_root(&path)?
             }
-            "new" | "github" => {
+            "new" => {
                 if !registry.managed.exists() {
                     private_directory(&registry.managed)?;
                 }
                 let root = registry.managed.join(&id);
                 private_directory(&root)?;
                 created = Some(root.clone());
-                let repository = if kind == "github" {
-                    let url = github_url(source.as_deref().unwrap_or(""))?;
-                    git::clone_repository(
-                        &root,
-                        &git::Remote {
-                            url: url.clone(),
-                            token: token.clone(),
-                        },
-                        &user.username,
-                    )?;
-                    Some(url)
-                } else {
-                    None
-                };
-                (root, repository)
+                root
             }
             _ => {
                 return Err(ApiError::bad_request(
-                    "Choose new, folder, or github as the project source.",
+                    "Choose new or folder as the project source.",
                 ));
             }
         };
@@ -383,20 +300,14 @@ fn create(
                         .map_err(ApiError::internal)?,
                 ),
                 root,
-                token: repository.as_ref().and(token.clone()),
-                repository,
                 shared: Sharing::Private,
                 pages: Default::default(),
                 attachments: Default::default(),
                 image_directory: super::default_image_directory(),
                 public_links: Default::default(),
-                git_sync: Default::default(),
             },
         )
     })();
-    if let Some(token) = &mut token {
-        token.zeroize();
-    }
     if result.is_err() {
         if let Some(path) = created {
             if let Err(error) = fs::remove_dir_all(&path) {
@@ -408,43 +319,4 @@ fn create(
         }
     }
     result
-}
-
-fn validate_token(token: Option<&str>) -> Result<(), ApiError> {
-    if token.is_some_and(|token| {
-        token.len() > 512
-            || !token
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-    }) {
-        return Err(ApiError::bad_request("The GitHub token format is invalid."));
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn github_sources_are_not_arbitrary_remote_commands_or_credentials() {
-        assert_eq!(
-            github_url("owner/repo").unwrap(),
-            "https://github.com/owner/repo.git"
-        );
-        assert_eq!(
-            github_url("https://github.com/owner/repo.git").unwrap(),
-            "https://github.com/owner/repo.git"
-        );
-        for value in [
-            "file:///tmp/repo",
-            "https://other/repo",
-            "https://token@github.com/o/r",
-            "o/r/extra",
-            "o/..",
-            "o/r?token=secret",
-            "ext::command",
-        ] {
-            assert!(github_url(value).is_err(), "{value}");
-        }
-    }
 }

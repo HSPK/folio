@@ -9,26 +9,16 @@ use windows_sys::Win32::UI::HiDpi::{
 const STYLE: u32 = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
 const EX_STYLE: u32 = WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT;
 const CONTROLS: &[(&str, &str, i32, i32, i32, i32, i32, u32)] = &[
-    ("STATIC", "Folio folder", 401, 20, 18, 610, 23, 0),
+    ("STATIC", "Settings file", 401, 20, 18, 610, 23, 0),
     (
         "EDIT",
         "",
-        DIRECTORY,
+        SETTINGS_PATH,
         20,
         46,
-        508,
+        620,
         28,
-        WS_BORDER | ES_AUTOHSCROLL as u32 | WS_TABSTOP,
-    ),
-    (
-        "BUTTON",
-        "Browse…",
-        BROWSE as i32,
-        540,
-        45,
-        100,
-        30,
-        WS_TABSTOP,
+        WS_BORDER | ES_AUTOHSCROLL as u32 | ES_READONLY as u32 | WS_TABSTOP,
     ),
     ("STATIC", "Service port", 402, 20, 100, 175, 25, 0),
     (
@@ -96,7 +86,7 @@ const CONTROLS: &[(&str, &str, i32, i32, i32, i32, i32, u32)] = &[
     ),
     (
         "STATIC",
-        "Appearance changes apply immediately after Save.\nStop the service before changing its folder or port.",
+        "Appearance changes apply immediately after Save.\nStop the service before changing its port.",
         406,
         20,
         379,
@@ -276,8 +266,8 @@ pub(super) unsafe fn create(app: &mut App) {
         layout(app, dpi);
         SetDlgItemTextW(
             app.preferences,
-            DIRECTORY,
-            path_wide(&app.core.settings().directory).as_ptr(),
+            SETTINGS_PATH,
+            path_wide(app.core.settings_path()).as_ptr(),
         );
         SetDlgItemTextW(
             app.preferences,
@@ -324,7 +314,7 @@ pub(super) unsafe fn create(app: &mut App) {
             SetDlgItemTextW(app.preferences, id, wide(selected).as_ptr());
         }
         ShowWindow(app.preferences, SW_SHOW);
-        SetFocus(GetDlgItem(app.preferences, DIRECTORY));
+        SetFocus(GetDlgItem(app.preferences, PORT));
     }
 }
 
@@ -340,9 +330,7 @@ unsafe fn text(hwnd: HWND, id: i32) -> Vec<u16> {
 
 pub(super) unsafe fn read(hwnd: HWND, original: &Settings) -> Result<Settings, String> {
     unsafe {
-        use std::os::windows::ffi::OsStringExt;
         let mut next = original.clone();
-        next.directory = PathBuf::from(std::ffi::OsString::from_wide(&text(hwnd, DIRECTORY)));
         next.port = String::from_utf16_lossy(&text(hwnd, PORT))
             .parse::<u16>()
             .map_err(|_| "Enter a port between 1 and 65535.")?;

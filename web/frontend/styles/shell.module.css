@@ -1,0 +1,17 @@
+.root {
+  height: 100%;
+  min-height: 0;
+}
+
+.failure {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 12px;
+  width: min(100% - 40px, 520px);
+  min-height: 100dvh;
+  margin-inline: auto;
+}
+
+.failure h1, .failure p { margin: 0; }
+.failure p { overflow-wrap: anywhere; color: var(--muted); }

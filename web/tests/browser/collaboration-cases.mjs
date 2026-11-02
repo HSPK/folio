@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { test, expect, fs, path, buildRoot, executable, delay, chooseView, userDocumentUrl } from "./fixture.mjs";
+import { test, expect, fs, path, buildRoot, executable, delay, chooseView, userDocumentUrl, confirmDialog, primaryModifier, openSettingsDialog, selectSettingsSection, metadataField } from "./fixture.mjs";
 
 export async function collaborativeLibrary(browser, { content, source = false, routeSockets = false, saveDelay, participants = 2, sharing = "edit", host = "127.0.0.1", allowedHosts = [] } = {}) {
   const directory = await fs.mkdtemp(path.join(buildRoot, "collaboration-"));
@@ -68,7 +68,7 @@ export async function collaborativeLibrary(browser, { content, source = false, r
       if (!source) await expect(page.locator(".ProseMirror[contenteditable=true]")).toBeVisible();
     }
     if (participants > 1) {
-      for (const page of pages) await expect(page.locator("#collaboration-join")).toHaveText("Sharing");
+      for (const page of pages) await expect(page.locator("#collaboration-join")).toHaveAttribute("aria-pressed", "true");
       for (const page of pages) await expect(page.locator(".collaboration-avatar")).toHaveCount(participants);
     } else {
       await expect(pages[0].locator("#collaboration-join")).toBeHidden();
@@ -92,19 +92,25 @@ export async function collaborativeLibrary(browser, { content, source = false, r
         throw new Error(`Collaboration server did not restart: ${diagnostic}`);
       },
       async close() {
-        await Promise.all(contexts.map((context) => context.close()));
-        await fs.writeFile(stop, "");
-        for (let i = 0; i < 100 && service.exitCode === null; i += 1) await delay(50);
-        if (service.exitCode === null) service.kill();
-        await fs.rm(directory, { recursive: true, force: true });
+        try {
+          await Promise.all(contexts.map((context) => context.close()));
+        } finally {
+          await fs.writeFile(stop, "");
+          for (let i = 0; i < 100 && service.exitCode === null; i += 1) await delay(50);
+          if (service.exitCode === null) service.kill();
+          await fs.rm(directory, { recursive: true, force: true });
+        }
       },
     };
   } catch (error) {
-    await Promise.all(contexts.map((context) => context.close()));
-    await fs.writeFile(stop, "");
-    for (let i = 0; i < 100 && service.exitCode === null; i += 1) await delay(50);
-    if (service.exitCode === null) service.kill();
-    await fs.rm(directory, { recursive: true, force: true });
+    try {
+      await Promise.all(contexts.map((context) => context.close()));
+    } finally {
+      await fs.writeFile(stop, "");
+      for (let i = 0; i < 100 && service.exitCode === null; i += 1) await delay(50);
+      if (service.exitCode === null) service.kill();
+      await fs.rm(directory, { recursive: true, force: true });
+    }
     throw error;
   }
 }
@@ -149,7 +155,7 @@ test("two authenticated editors merge simultaneous Source edits, preserve local 
   } finally { await library.close(); }
 });
 
-test("Live and Compare editors share Markdown and metadata without mixing document presence", async ({ browser }) => {
+test("Live and Compare editors share Markdown and metadata without mixing document presence", async ({ browser, browserName }) => {
   const library = await collaborativeLibrary(browser);
   try {
     const [alice, bob] = library.pages;
@@ -159,14 +165,13 @@ test("Live and Compare editors share Markdown and metadata without mixing docume
     await expect(alice.locator(".ProseMirror")).toContainText("Beta 中文");
     await expect(alice.locator(".folio-math-output .katex")).toHaveCount(1);
     await expect(alice.locator(".collaboration-caret-name")).toHaveText("bob");
-    await alice.screenshot({ path: path.join(buildRoot, "collaboration-live.png") });
+    if (browserName !== "webkit") await alice.screenshot({ path: path.join(buildRoot, "collaboration-live.png") });
     await alice.locator(".ProseMirror h1").click();
     await alice.keyboard.press("End");
     await alice.keyboard.insertText(" jointly");
     await expect(bob.locator("#editor")).toHaveValue(/# Shared jointly/);
-    const metadata = alice.locator(".folio-metadata");
-    await metadata.locator("summary").click();
-    await metadata.locator("textarea").fill("title: Shared together\n");
+    const metadata = await metadataField(alice);
+    await metadata.fill("title: Shared together\n");
     await expect(bob.locator("#editor")).toHaveValue(/title: Shared together/);
     await expect(bob.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     await expect(alice.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
@@ -230,7 +235,7 @@ test("collaborative edits queued during IME and disconnection merge after reconn
     await alice.keyboard.insertText(" offline");
     await sourceCaret(bob, "Beta remote");
     await bob.keyboard.insertText(" online");
-    await expect(alice.locator("#collaboration-join")).toHaveText("Sharing");
+    await expect(alice.locator("#collaboration-join")).toHaveAttribute("aria-pressed", "true");
     for (const page of library.pages) {
       await expect(page.locator("#editor")).toHaveValue(/Alpha offline[\s\S]*Beta remote online/);
       await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
@@ -246,10 +251,10 @@ test("collaborative large Source uses virtual editing and protects external disk
     const virtual = (page) => page.locator(".virtual-source-editor .cm-content");
     for (const page of library.pages) await expect(virtual(page)).toBeVisible();
     await virtual(alice).focus();
-    await alice.keyboard.press("Control+End");
+    await alice.keyboard.press(primaryModifier === "Meta" ? "Meta+ArrowDown" : "Control+End");
     await alice.keyboard.insertText("Alice 中文\n");
     await virtual(bob).focus();
-    await bob.keyboard.press("Control+Home");
+    await bob.keyboard.press(primaryModifier === "Meta" ? "Meta+ArrowUp" : "Control+Home");
     await bob.keyboard.insertText("Bob\n\n");
     for (const page of library.pages) await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     await expect.poll(() => fs.readFile(path.join(library.notes, "Shared.md"), "utf8"))
@@ -267,8 +272,8 @@ test("administrator creates one-use invitations and manages invited users from S
   const guest = await browser.newContext();
   try {
     const [alice] = library.pages;
-    await alice.locator("#settings-open").click();
-    await alice.locator("#settings-dialog").getByRole("tab", { name: "Users", exact: true }).click();
+    await openSettingsDialog(alice);
+    await selectSettingsSection(alice, "users");
     await expect(alice.locator("#accounts-list")).toContainText("alice");
     await expect(alice.locator("#accounts-list")).toContainText("bob");
     await alice.locator("#invite-create").click();
@@ -282,16 +287,20 @@ test("administrator creates one-use invitations and manages invited users from S
     await page.locator("#auth-username").fill("charlie");
     await page.locator("#auth-password").fill("charlie test password long enough");
     await page.locator("#auth-confirm").fill("charlie test password long enough");
+    const invalidFields = await page.locator("#auth-form").evaluate(form => [...form.elements]
+      .filter(element => element instanceof HTMLInputElement && !element.validity.valid)
+      .map(element => ({ id: element.id, missing: element.validity.valueMissing, pattern: element.validity.patternMismatch, length: element.value.length })));
+    expect(invalidFields).toEqual([]);
     await page.locator("#auth-submit").click();
     await expect(page.locator("#auth-screen")).toBeHidden();
-    await page.locator("#settings-open").click();
+    await openSettingsDialog(page);
     await expect(page.locator("[data-settings-tab=users]")).toBeHidden();
     const replay = await guest.request.post(new URL("/api/auth/register", library.url).href, {
       data: { username: "replay", password: "replay password long enough", invitation },
     });
     expect(replay.status()).toBe(400);
-    await alice.locator("#settings-dialog").getByRole("tab", { name: "Library", exact: true }).click();
-    await alice.locator("#settings-dialog").getByRole("tab", { name: "Users", exact: true }).click();
+    await selectSettingsSection(alice, "library");
+    await selectSettingsSection(alice, "users");
     const row = alice.locator(".account-row").filter({ has: alice.getByText("charlie", { exact: true }) });
     await expect(row).toBeVisible();
     await row.getByRole("button", { name: "Reset password" }).click();
@@ -300,8 +309,8 @@ test("administrator creates one-use invitations and manages invited users from S
     await expect(alice.locator("#account-password-dialog")).toBeHidden();
     const denied = await guest.request.get(new URL("/api/admin/accounts", library.url).href);
     expect(denied.status()).toBe(401);
-    alice.once("dialog", (dialog) => dialog.accept());
     await row.getByRole("button", { name: "Delete", exact: true }).click();
+    await confirmDialog(alice);
     await expect(alice.locator("#accounts-list")).not.toContainText("charlie");
   } finally { await guest.close(); await library.close(); }
 });

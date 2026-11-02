@@ -59,7 +59,7 @@ try {
     }
   }
   if (!launchUrl) throw new Error(`Folio did not start: ${diagnostics}`);
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, channel: process.env.FOLIO_BROWSER_CHANNEL });
   const page = await browser.newPage();
   const first = "group-00/note-0000.md";
   const second = "group-01/note-0001.md";

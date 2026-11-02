@@ -113,6 +113,7 @@ pub unsafe extern "C" fn folio_core_request(
             Request::GetSettings => Ok(json!({
                 "ok": true,
                 "firstRun": core.is_first_run(),
+                "settingsPath": core.settings_path(),
                 "settings": serde_json::to_value(core.settings()).map_err(|error| error.to_string())?,
             })),
             Request::SaveSettings { settings } => {
@@ -170,6 +171,10 @@ mod tests {
         assert!(error.is_null());
         let initial = unsafe { call(handle, json!({"op":"get_settings"})) };
         assert_eq!(initial["firstRun"], true);
+        assert_eq!(
+            initial["settingsPath"],
+            base.join("settings.json").to_str().unwrap()
+        );
         let mut settings = initial["settings"].clone();
         settings["Directory"] = json!(base.join("notes"));
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();

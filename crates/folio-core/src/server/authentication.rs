@@ -9,15 +9,16 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use crate::auth::{
-    AuthenticatedUser, Role, SESSION_TTL_SECONDS, normalize_username, validate_password,
-};
+use crate::auth::{AuthenticatedUser, Role, normalize_username, validate_password};
 
 use super::{
     ApiError, AppState, Work,
     routes::{blocking, json_error},
     security::{authenticated_user, cookie_value, has_launch_authorization},
 };
+
+// Browser cookie lifetimes are capped; status checks renew storage, not the session.
+const SESSION_COOKIE_MAX_AGE_SECONDS: u64 = 400 * 24 * 60 * 60;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,7 +57,7 @@ pub(super) async fn status(
     State(state): State<Arc<AppState>>,
     Extension(work): Extension<Arc<Work>>,
     headers: HeaderMap,
-) -> Result<Json<AuthStatus>, ApiError> {
+) -> Result<Response, ApiError> {
     let Some(auth) = state.user_auth.clone() else {
         return Ok(Json(AuthStatus {
             mode: "launchToken",
@@ -65,7 +66,8 @@ pub(super) async fn status(
             username: None,
             role: None,
             recovery: None,
-        }));
+        })
+        .into_response());
     };
     let user = authenticated_user(&headers, &state);
     let recovery = if let Some(user) = &user {
@@ -82,19 +84,27 @@ pub(super) async fn status(
     let setup_required = if user.is_some() {
         false
     } else {
-        blocking(state, work, move |_, _| {
+        blocking(state.clone(), work, move |_, _| {
             auth.setup_required().map_err(ApiError::internal)
         })
         .await?
     };
-    Ok(Json(AuthStatus {
+    let token = user
+        .as_ref()
+        .and_then(|_| cookie_value(&headers, &state.user_cookie_name));
+    let mut response = Json(AuthStatus {
         mode: "users",
         setup_required,
         authenticated: user.is_some(),
         username: user.as_ref().map(|user| user.username.clone()),
         role: user.map(|user| user.role),
         recovery,
-    }))
+    })
+    .into_response();
+    if let Some(token) = token {
+        set_login_cookie(&mut response, &state, token)?;
+    }
+    Ok(response)
 }
 
 pub(super) async fn setup(
@@ -217,12 +227,21 @@ pub(super) async fn authenticated_response(
         },
     })
     .into_response();
+    set_login_cookie(&mut response, state, &token)?;
+    Ok(response)
+}
+
+fn set_login_cookie(
+    response: &mut Response,
+    state: &AppState,
+    token: &str,
+) -> Result<(), ApiError> {
     let cookie = format!(
-        "{}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_TTL_SECONDS}",
+        "{}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_COOKIE_MAX_AGE_SECONDS}",
         state.user_cookie_name
     );
     let cookie = HeaderValue::from_str(&cookie)
         .map_err(|_| ApiError::internal("Could not establish the login session."))?;
     response.headers_mut().insert(header::SET_COOKIE, cookie);
-    Ok(response)
+    Ok(())
 }

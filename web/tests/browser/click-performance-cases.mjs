@@ -6,6 +6,7 @@ test("click latency benchmark separates UI feedback from document and workspace 
   test.skip(!process.env.FOLIO_BENCH_CLICKS, "Opt-in performance measurement with isolated folio.");
   const library = await collaborativeLibrary(browser, { source: true });
   const timings = {};
+  const documentPayloadBytes = [];
   const record = (name, value) => (timings[name] ??= []).push(value);
   try {
     const [page] = library.pages;
@@ -41,12 +42,16 @@ test("click latency benchmark separates UI feedback from document and workspace 
       record("coldFavoriteRequestMs", cold);
       const result = await clickFrame(`[data-path="Bench${index}.md"]`, `[data-path="Bench${index}.md"][aria-current="page"]`);
       record("documentClickFrameMs", result.feedbackMs);
-      for (const request of result.requests) record(`${request.path}Ms`, request.ms);
+      for (const request of result.requests) {
+        record(`${request.path}Ms`, request.ms);
+        if (request.path === "/api/document") documentPayloadBytes.push(request.decodedBytes);
+      }
       await expect(page.locator("#editor")).toBeEnabled();
       await page.locator("#more-menu > summary").click();
       const workspace = await clickFrame("#workspace-open", "#workspace-dialog[open]");
       record("workspaceClickFrameMs", workspace.feedbackMs);
       await page.locator("#workspace-close").click();
+      await page.locator("#more-menu > summary").click();
       const settings = await clickFrame("#settings-open", "#settings-dialog[open]");
       record("settingsClickFrameMs", settings.feedbackMs);
       await page.locator("#settings-cancel").click();
@@ -54,7 +59,8 @@ test("click latency benchmark separates UI feedback from document and workspace 
     const summary = summarizeTimings(timings);
     expect(joins).toBe(0);
     expect(sockets).toBe(0);
-    const report = { bytesPerNote: Buffer.byteLength(content), aclEntries, joins, sockets, summary, timings };
+    const documentPayloadMedianBytes = [...documentPayloadBytes].sort((a, b) => a - b)[Math.floor(documentPayloadBytes.length / 2)];
+    const report = { bytesPerNote: Buffer.byteLength(content), aclEntries, joins, sockets, documentPayloadMedianBytes, summary, timings };
     await fs.mkdir(path.join(buildRoot, "click-performance"), { recursive: true });
     if (profiler) {
       const { profile } = await profiler.send("Profiler.stop");
@@ -62,6 +68,6 @@ test("click latency benchmark separates UI feedback from document and workspace 
       await profiler.detach();
     }
     await fs.writeFile(path.join(buildRoot, "click-performance", `${process.env.FOLIO_BENCH_CLICKS}.json`), JSON.stringify(report, null, 2));
-    console.log(JSON.stringify({ bytesPerNote: report.bytesPerNote, aclEntries, joins, sockets, ...summary }, null, 2));
+    console.log(JSON.stringify({ bytesPerNote: report.bytesPerNote, aclEntries, joins, sockets, documentPayloadMedianBytes, ...summary }, null, 2));
   } finally { await library.close(); }
 });

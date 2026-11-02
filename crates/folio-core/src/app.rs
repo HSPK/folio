@@ -28,14 +28,25 @@ pub struct Status {
 
 impl FolioCore {
     pub fn new(settings_path: Option<PathBuf>) -> Result<Self, String> {
-        let settings_store = settings_path
-            .map(SettingsStore::new)
-            .map_or_else(SettingsStore::platform_default, Ok)?;
-        let user_store = UserStore::alongside_settings(settings_store.path());
+        let (settings_store, user_store) = match settings_path {
+            Some(path) => (
+                SettingsStore::new(&path),
+                UserStore::alongside_settings(&path),
+            ),
+            None => (
+                SettingsStore::platform_default()?,
+                UserStore::platform_default()?,
+            ),
+        };
         let loaded = settings_store.load()?;
+        let first_run = loaded.is_none();
+        let mut settings = loaded.unwrap_or_default();
+        if settings.directory.as_os_str().is_empty() {
+            settings.directory = settings_store.path().with_file_name("workspace");
+        }
         Ok(Self {
-            first_run: loaded.is_none(),
-            settings: loaded.unwrap_or_default(),
+            first_run,
+            settings,
             settings_store,
             user_store,
             service: None,
@@ -64,15 +75,10 @@ impl FolioCore {
             settings.web = persisted.web;
         }
         settings.validate()?;
-        if !settings.directory.as_os_str().is_empty() {
-            settings.directory = settings
-                .directory
-                .canonicalize()
-                .map_err(|error| format!("Could not open the selected folder: {error}"))?;
-            if !settings.directory.is_dir() {
-                return Err("Choose a folder, not a file.".into());
-            }
+        if settings.directory.as_os_str().is_empty() {
+            settings.directory = self.settings_store.path().with_file_name("workspace");
         }
+        settings.directory = self.prepare_directory(&settings.directory)?;
         let current_directory = self
             .service
             .as_ref()
@@ -116,17 +122,33 @@ impl FolioCore {
             return Ok(());
         }
         self.stop()?;
-        if self.settings.directory.as_os_str().is_empty() {
-            return Err("Choose a notes folder in Settings first.".into());
-        }
-        let service = server::start_with_users(
-            &self.settings.directory,
-            self.settings.port,
-            self.user_store.clone(),
-        )?;
+        let directory = self.prepare_directory(&self.settings.directory)?;
+        let service =
+            server::start_with_users(&directory, self.settings.port, self.user_store.clone())?;
         service.set_appearance(self.settings.appearance.clone())?;
+        if self.first_run || directory != self.settings.directory {
+            let mut settings = self.settings.clone();
+            settings.directory = directory;
+            self.settings_store.save(&settings)?;
+            self.settings = settings;
+            self.first_run = false;
+        }
         self.service = Some(service);
         Ok(())
+    }
+
+    fn prepare_directory(&self, directory: &Path) -> Result<PathBuf, String> {
+        if directory == self.settings_store.path().with_file_name("workspace") {
+            std::fs::create_dir_all(directory)
+                .map_err(|error| format!("Could not create the Folio workspace: {error}"))?;
+        }
+        let directory = directory
+            .canonicalize()
+            .map_err(|error| format!("Could not open the selected folder: {error}"))?;
+        if !directory.is_dir() {
+            return Err("Choose a folder, not a file.".into());
+        }
+        Ok(directory)
     }
 
     pub fn stop(&mut self) -> Result<(), String> {
@@ -150,6 +172,32 @@ impl FolioCore {
 mod tests {
     use super::*;
     use crate::appearance::Theme;
+
+    #[test]
+    fn first_run_starts_without_selecting_a_folder() {
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("controller-first-run-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let path = base.join("settings.json");
+        let mut core = FolioCore::new(Some(path.clone())).unwrap();
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        core.settings.port = listener.local_addr().unwrap().port();
+        drop(listener);
+        assert!(!core.status().has_folder);
+        let url = core.open_url().unwrap();
+        assert!(url.starts_with("http://127.0.0.1:"));
+        assert!(core.status().running);
+        assert!(core.status().has_folder);
+        assert!(!core.is_first_run());
+        core.stop().unwrap();
+        assert_eq!(
+            SettingsStore::new(path).load().unwrap().unwrap().directory,
+            base.join("workspace").canonicalize().unwrap()
+        );
+        drop(core);
+        std::fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn controller_preserves_running_session_when_appearance_changes() {

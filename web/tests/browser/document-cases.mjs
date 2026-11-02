@@ -1,6 +1,6 @@
-import { test, expect, fs, path, root, buildRoot, initialText, chooseView, reloadDocument, openFixture, metadataField } from "./fixture.mjs";
+import { test, expect, fs, path, root, buildRoot, initialText, chooseView, reloadDocument, openFixture, metadataField, confirmDialog, primaryModifier } from "./fixture.mjs";
 
-test("opens a rendered editable page without changing the Markdown", async ({ page }) => {
+test("opens a rendered editable page without changing the Markdown", async ({ page, browserName }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const editor = page.locator(".ProseMirror[contenteditable=true]");
@@ -31,12 +31,12 @@ test("opens a rendered editable page without changing the Markdown", async ({ pa
   await expect(page.locator("#command-palette-open")).toBeHidden();
   await expect(page.locator("#connection-label")).toBeHidden();
   await expect(page.locator("#view-label")).toHaveText("Live");
-  await expect(page.locator("#git-tab")).toBeVisible();
+  await expect(page.locator("#git-tab")).toHaveCount(0);
   await expect(page.getByText(/Change the folder in the desktop app/)).toHaveCount(0);
   expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe(initialText);
   expect(page.url()).not.toContain("token=");
   expect(errors).toEqual([]);
-  await page.screenshot({ path: path.join(buildRoot, "folio-editor.png"), fullPage: true });
+  if (browserName !== "webkit") await page.screenshot({ path: path.join(buildRoot, "folio-editor.png"), fullPage: true });
 });
 
 test("inline edits save to disk and survive reopening in source mode", async ({ page }) => {
@@ -98,14 +98,14 @@ test("large Source documents use the virtual editor and save exact Unicode text"
   await expect(editor).toBeVisible();
   await expect(editor).toHaveAttribute("aria-label", "Markdown source");
   await editor.focus();
-  await page.keyboard.press("Control+End");
+  await page.keyboard.press(primaryModifier === "Meta" ? "Meta+ArrowDown" : "Control+End");
   await page.keyboard.insertText("Written virtually 中文");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
-  await page.keyboard.press("Control+z");
+  await page.keyboard.press(`${primaryModifier}+z`);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-  await page.keyboard.press("Control+Shift+z");
+  await page.keyboard.press(`${primaryModifier}+Shift+z`);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
-  await page.keyboard.press("Control+s");
+  await page.keyboard.press(`${primaryModifier}+s`);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   expect(await fs.readFile(path.join(root, "Virtual-source.md"), "utf8"))
     .toBe(`${content}Written virtually 中文`);
@@ -115,9 +115,9 @@ test("large Source documents use the virtual editor and save exact Unicode text"
   await chooseView(page, "split");
   await expect(editor).toBeVisible();
   await expect(page.locator("#preview h1")).toHaveText("Virtual source");
-  await page.keyboard.press("Control+/");
+  await page.keyboard.press(`${primaryModifier}+/`);
   await expect(page.locator(".ProseMirror[contenteditable=true]")).toBeVisible();
-  await page.keyboard.press("Control+/");
+  await page.keyboard.press(`${primaryModifier}+/`);
   await expect(editor).toBeVisible();
 });
 
@@ -145,7 +145,7 @@ test("Read reuses a current preview and refreshes it after source edits", async 
   await chooseView(page, "preview");
   await expect(page.locator("#preview h1")).toHaveText("Welcome");
   const originalHeading = await page.locator("#preview h1").elementHandle();
-  expect(previewRequests).toBe(0);
+  expect(previewRequests).toBe(1);
 
   await chooseView(page, "editor");
   await expect(page.locator(".preview-pane")).toBeHidden();
@@ -154,18 +154,18 @@ test("Read reuses a current preview and refreshes it after source edits", async 
     (node) => document.querySelector("#preview h1") === node,
     originalHeading,
   )).toBe(true);
-  expect(previewRequests).toBe(0);
+  expect(previewRequests).toBe(1);
 
   await chooseView(page, "editor");
   await page.locator("#editor").fill("# Updated preview\n\nChanged body.\n");
   await chooseView(page, "preview");
   await expect(page.locator("#preview h1")).toHaveText("Updated preview");
-  expect(previewRequests).toBe(1);
+  expect(previewRequests).toBe(2);
 
   await chooseView(page, "editor");
   await chooseView(page, "preview");
   await expect(page.locator("#preview h1")).toHaveText("Updated preview");
-  expect(previewRequests).toBe(1);
+  expect(previewRequests).toBe(2);
 });
 
 test("Read outline jumps target scoped and escaped heading IDs", async ({ page }) => {
@@ -213,16 +213,18 @@ test("external changes cause a conflict without losing editor text", async ({ pa
   await expect(page.locator("#document-title")).toHaveText("README.md *");
   await expect(page.locator("#editor")).toHaveValue("# My unsaved work\n");
   expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe("# Changed elsewhere\n");
-  page.once("dialog", (dialog) => dialog.dismiss());
   await reloadDocument(page);
+  await confirmDialog(page, { accept: false });
   await expect(page.locator("#editor")).toHaveValue("# My unsaved work\n");
 });
 
-test("cancelled navigation retains unsaved text", async ({ page }) => {
+test("cancelled navigation after a save failure retains unsaved text", async ({ page }) => {
   await chooseView(page, "editor");
+  await page.route("**/api/document", route => route.request().method() === "PUT"
+    ? route.fulfill({ status: 500, json: { error: "Save is temporarily unavailable." } }) : route.continue());
   await page.locator("#editor").fill("# Keep me\n");
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.locator("#file-list").getByRole("button", { name: "Second.md", exact: true }).click();
+  await confirmDialog(page, { accept: false });
   await expect(page.locator("#document-title")).toHaveText("README.md *");
   await expect(page.locator("#editor")).toHaveValue("# Keep me\n");
 });
@@ -316,12 +318,15 @@ test("metadata titles and folder actions support rename and drag moves", async (
   await page.locator("#file-rename").click();
   await page.locator("#rename-path").fill("Renamed.md");
   await page.locator("#confirm-rename").click();
+  await expect(page.locator("#rename-dialog")).toBeHidden();
+  const renamed = page.locator('button[data-path="Guides/Renamed.md"]');
+  await expect(renamed).toBeVisible();
   await expect(page.locator("#document-title")).toHaveText("Draft");
   expect(await fs.stat(path.join(root, "Guides", "Renamed.md"))).toBeTruthy();
 
-  const renamed = page.locator('button[data-path="Guides/Renamed.md"]');
   const child = page.locator('details.directory[data-path="Guides/Child"] > summary');
   await renamed.dragTo(child);
+  await expect(page.locator('button[data-path="Guides/Child/Renamed.md"]')).toBeVisible();
   await expect(page.locator("#document-title")).toHaveText("Draft");
   expect(await fs.stat(path.join(root, "Guides", "Child", "Renamed.md"))).toBeTruthy();
 
@@ -348,7 +353,7 @@ test("live typing retains heading and emphasis formatting instead of expanding M
   await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "rich");
   await expect(page.locator("#editor")).toBeHidden();
   await expect(editor).not.toContainText("# Welcome");
-  await page.keyboard.press("Control+z");
+  await page.keyboard.press(`${primaryModifier}+z`);
   await expect(page.locator("#editor")).toHaveValue(initialText);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   await editor.locator("strong").click();
@@ -381,7 +386,7 @@ test("the sidebar can hide and outline navigation does not change the note", asy
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
 });
 
-test("MkDocs metadata is separate from the formatted body and remains exact after a body edit", async ({ page }) => {
+test("MkDocs metadata is separate from the formatted body and remains exact after a body edit", async ({ page, browserName }) => {
   const header = "\uFEFF---\r\n# Keep this comment\n"
     + "title: 'Metadata title'\r\ndescription: >-\n  A folded description.\r\n"
     + "tags: [one, two]\ncustom:\r\n  keep: true\r\n...\n\r\n";
@@ -392,21 +397,23 @@ test("MkDocs metadata is separate from the formatted body and remains exact afte
   await expect(live).not.toContainText("Metadata title");
   await expect(live.locator("hr")).toHaveCount(0);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-  await expect(page.locator(".folio-metadata summary")).toHaveText("Metadata");
-  await expect(page.locator(".folio-metadata-summary,.folio-metadata-description,.folio-metadata-hint,.folio-metadata-editor-heading")).toHaveCount(0);
+  await expect(page.locator(".folio-metadata-caption")).toHaveText("Properties");
+  await expect(page.locator(".folio-metadata-summary")).toHaveText("one · two");
+  await expect(page.locator(".folio-metadata-source")).toBeHidden();
   await page.locator("#outline-tab").click();
   await expect(page.locator("#outline-list")).toHaveText("Real heading");
-  await page.screenshot({ path: path.join(buildRoot, "metadata-frontmatter.png") });
+  // Playwright's WebKit screenshot hook injects a nonce-free stylesheet.
+  if (browserName !== "webkit") await page.screenshot({ path: path.join(buildRoot, "metadata-frontmatter.png"), caret: "initial" });
   await live.locator("h1").click();
   await page.keyboard.press("End");
   await page.keyboard.insertText(" updated");
   await expect(live.locator("h1")).toHaveText("Real heading updated");
-  await page.keyboard.press("Control+s");
+  await page.keyboard.press(`${primaryModifier}+s`);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   expect((await fs.readFile(path.join(root, "Metadata.md"), "utf8")).startsWith(header)).toBeTruthy();
   const field = await metadataField(page);
   await expect(field).toHaveValue(/# Keep this comment[\s\S]*custom:\n {2}keep: true/);
-  await page.screenshot({ path: path.join(buildRoot, "metadata-frontmatter-expanded.png") });
+  if (browserName !== "webkit") await page.screenshot({ path: path.join(buildRoot, "metadata-frontmatter-expanded.png"), caret: "initial" });
   await chooseView(page, "preview");
   await expect(page.locator("#preview h1")).toHaveText("Real heading updated");
   await expect(page.locator("#preview")).not.toContainText("Metadata title");
@@ -438,26 +445,26 @@ test("body undo does not discard a metadata edit", async ({ page }) => {
   await page.keyboard.press("End");
   await page.keyboard.insertText(" addition");
   await expect(page.locator(".ProseMirror h1")).toHaveText("Body addition");
-  await page.keyboard.press("Control+z");
+  await page.keyboard.press(`${primaryModifier}+z`);
   await expect(page.locator(".ProseMirror h1")).toHaveText("Body");
-  await page.keyboard.press("Control+s");
+  await page.keyboard.press(`${primaryModifier}+s`);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   expect(await fs.readFile(path.join(root, "Metadata-undo.md"), "utf8"))
     .toBe(source.replace("Original title", "Changed title"));
 });
 
-test("invalid YAML is reported without hiding the body or discarding source", async ({ page }) => {
+test("invalid YAML is reported without hiding the body or discarding source", async ({ page, browserName }) => {
   const header = "---\ntitle: [unfinished\n---\n\n";
   await openFixture(page, "Invalid-metadata.md", `${header}# Body\n\nText.\n`);
   const field = await metadataField(page);
   await expect(field).toHaveValue(/title: \[unfinished/);
-  await expect(page.locator(".status-bar #metadata-message")).toBeVisible();
+  await expect(page.locator(".status-notices #metadata-message")).toBeVisible();
   await expect(page.locator("#metadata-message")).toContainText("Invalid YAML");
   await expect(field).toHaveAttribute("aria-invalid", "true");
   await expect(page.locator(".ProseMirror h1")).toHaveText("Body");
   await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "rich");
   expect((await fs.readFile(path.join(root, "Invalid-metadata.md"), "utf8")).startsWith(header)).toBeTruthy();
-  await page.screenshot({ path: path.join(buildRoot, "metadata-validation.png") });
+  if (browserName !== "webkit") await page.screenshot({ path: path.join(buildRoot, "metadata-validation.png") });
 });
 
 test("math, empty table cells and list headings open safely in Live mode", async ({ page }) => {
@@ -483,10 +490,10 @@ test("math, empty table cells and list headings open safely in Live mode", async
   await inlineSource.fill("x^3 + y");
   await expect(inlineMath.locator("annotation")).toHaveText("x^3 + y");
   await expect(inlineMath).toHaveAttribute("data-value", "x^3 + y");
-  await page.keyboard.press("Control+z");
+  await page.keyboard.press(`${primaryModifier}+z`);
   await expect(inlineMath).toHaveAttribute("data-value", "\\Vert f(o_g)-o_s\\Vert");
   await expect(inlineMath.locator("annotation")).toHaveText("\\Vert f(o_g)-o_s\\Vert");
-  await page.keyboard.press("Control+Shift+z");
+  await page.keyboard.press(`${primaryModifier}+Shift+z`);
   await expect(inlineMath).toHaveAttribute("data-value", "x^3 + y");
   await expect(inlineMath.locator("annotation")).toHaveText("x^3 + y");
   const blockMath = editor.locator('[data-type="math_block"]').first();
@@ -505,7 +512,8 @@ test("math, empty table cells and list headings open safely in Live mode", async
   await expect(page.locator("#editor")).toHaveValue(/\$\$\s*L\(x\)=x\^3\s*\$\$/);
 });
 
-test("empty and marked formulas support direct editing and composition", async ({ page }) => {
+test("empty and marked formulas support direct editing and composition", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Native IME injection requires Chromium CDP.");
   const source = "# Formula edges\n\n**Before $x$ after**\n\nEmpty inline: $ $\n\n$$$$\n\nEnd.\n";
   await openFixture(page, "Formula-edges.md", source);
   const editor = page.locator(".ProseMirror[contenteditable=true]");

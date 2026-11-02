@@ -25,9 +25,6 @@ const defaultPreferences = {
     sidebarOpen: true,
     hiddenPatterns: [],
     treeRefreshSeconds: 0,
-    gitRefreshSeconds: 15,
-    gitShowUntracked: true,
-    gitDefaultDiff: "working",
     largeDocumentThresholdKib: 768,
     previewDelayMs: 300,
     outlineDelayMs: 75,
@@ -45,14 +42,107 @@ let launchUrl;
 let diagnostics = "";
 
 export const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+export const primaryModifier = process.platform === "darwin" ? "Meta" : "Control";
+export async function confirmDialog(page, { accept = true } = {}) {
+  const region = page.locator("[data-confirmation-region]:visible");
+  await expect(region).toHaveCount(1);
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+  await region.locator(accept ? "[data-confirmation-proceed]" : "[data-confirmation-cancel]").click();
+  await expect(region).toBeHidden();
+}
+
 export async function chooseView(page, id) {
   await page.locator("#view-menu > summary").click();
   await page.locator(`#view-${id}`).click();
 }
 
+/** Open the independent heading navigator without changing the sidebar section. */
+export async function openOutline(page) {
+  const trigger = page.locator("#outline-tab");
+  if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+  await expect(page.locator("#outline-panel")).toBeVisible();
+}
+
+export async function openMoreAction(page, id) {
+  const menu = page.locator("#more-menu");
+  if (await menu.getAttribute("open") === null) await menu.locator(":scope > summary").click();
+  const action = page.locator(`#${id}`);
+  const disclosure = await action.evaluate(node => node.closest(".menu-disclosure")?.id ?? null);
+  if (disclosure && await page.locator(`#${disclosure}`).getAttribute("open") === null) {
+    await page.locator(`#${disclosure} > summary`).click();
+  }
+  await action.click();
+}
+
+export async function selectSettingsSection(page, section) {
+  const picker = page.locator("#settings-section");
+  if (await picker.isVisible()) await picker.selectOption(section);
+  else await page.locator(`[data-settings-tab="${section}"]`).click();
+  await expect(page.locator(`[data-settings-panel="${section}"]`)).toBeVisible();
+}
+
+export async function openSettingsDialog(page, { section } = {}) {
+  await openMoreAction(page, "settings-open");
+  await expect(page.locator("#settings-dialog")).toBeVisible();
+  if (section) await selectSettingsSection(page, section);
+}
+
 export async function reloadDocument(page) {
-  await page.locator("#more-menu > summary").click();
-  await page.locator("#reload-document").click();
+  await openMoreAction(page, "reload-document");
+}
+
+export async function openImageOptions(page, { custom = false } = {}) {
+  await page.locator(".folio-inline-image").first().hover();
+  const panel = page.locator("#folio-image-options");
+  if (!await panel.isVisible()) await page.getByRole("button", { name: "Image size and layout", exact: true }).click();
+  await expect(panel).toBeVisible();
+  if (custom && await panel.locator("details").getAttribute("open") === null) {
+    await panel.locator("details > summary").click();
+  }
+  return panel;
+}
+
+export async function openTableTools(page, index = 0, axis = "column") {
+  const tools = page.getByRole("menu", { name: "Table actions", exact: true });
+  if (await tools.isVisible()) {
+    await tools.press("Escape");
+    await expect(tools).toBeHidden();
+  }
+  const table = page.locator(".folio-table-wrapper").nth(index);
+  if (axis === "table") await table.hover();
+  if (axis !== "table" && !await table.evaluate(node => node.classList.contains("is-active"))) await table.locator("th, td").first().click();
+  await (axis === "table" ? page : table).getByRole("button", {
+    name: axis === "row" ? "Row actions" : axis === "table" ? "Table actions" : "Column actions", exact: true,
+  }).click();
+  await expect(tools).toBeVisible();
+  return tools;
+}
+
+export async function openBlockTools(page, block, label) {
+  const opened = page.locator('.folio-node-toolbar[role="menu"]:not([inert]):visible');
+  if (await opened.count()) await opened.press("Escape");
+  await hoverBlockTools(page, block, label);
+  await page.locator(".folio-block-grip").click();
+  const menu = page.getByRole("menu", { name: label === "Table" ? "Table actions" : "Block actions", exact: true });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+export async function hoverBlockTools(page, block, label) {
+  await block.hover();
+  const grip = page.locator(".folio-block-grip");
+  await expect(grip).toHaveAttribute("aria-label", `${label} actions`);
+  return page.getByRole("group", { name: "Block controls", exact: true });
+}
+
+export async function openLinkOptions(page, link = page.locator(".ProseMirror a").first()) {
+  await link.click();
+  const actions = page.getByRole("toolbar", { name: "Link actions" });
+  await expect(actions).toBeVisible();
+  await actions.getByRole("button", { name: /^(Edit link|Link details)$/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Link options" });
+  await expect(dialog).toBeVisible();
+  return dialog;
 }
 
 export async function openFixture(page, name, content, displayTitle = name) {
@@ -91,9 +181,11 @@ export async function userDocumentUrl(context, base, path, project = "default") 
 }
 
 export async function metadataField(page) {
-  const panel = page.locator("#rich-editor details");
+  const panel = page.locator(".folio-metadata > details");
   await expect(panel).toBeVisible();
-  if (await panel.getAttribute("open") === null) await panel.locator("summary").click();
+  if (await panel.getAttribute("open") === null) await panel.locator(":scope > summary").click();
+  const advanced = panel.locator(".folio-metadata-advanced");
+  if (await advanced.getAttribute("open") === null) await advanced.locator("summary").click();
   return panel.locator("textarea");
 }
 

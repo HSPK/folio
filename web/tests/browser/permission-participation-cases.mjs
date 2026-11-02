@@ -1,4 +1,4 @@
-import { test, expect, fs, path, userDocumentUrl, userResourceId } from "./fixture.mjs";
+import { test, expect, fs, path, userDocumentUrl, userResourceId, confirmDialog } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
 async function loginPage(browser, library, username) {
@@ -58,7 +58,7 @@ test("only another authorized identity activates collaboration and pending solo 
     await expect(alice.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
     await other.page.goto(await userDocumentUrl(other.context, library.url, "Shared.md"));
     for (const page of [alice, same.page, other.page]) {
-      await expect(page.locator("#collaboration-join")).toHaveText("Sharing");
+      await expect(page.locator("#collaboration-join")).toHaveAttribute("aria-pressed", "true");
       await expect(page.locator("#editor")).toHaveValue("# Unsaved handoff\n\nKeep the local edit.\n");
       await expect(page.locator(".collaboration-avatar")).toHaveCount(3);
     }
@@ -127,8 +127,8 @@ test("a delayed handoff cannot save or enter collaboration in a subsequently ope
     await alice.waitForFunction(() => window.draftEncryptionBlocked);
     await other.page.goto(await userDocumentUrl(other.context, library.url, "Shared.md"));
     await expect(alice.locator("#editor")).toBeDisabled();
-    alice.once("dialog", (dialog) => dialog.accept());
     await alice.locator('[data-path="Other.md"]').click();
+    await confirmDialog(alice);
     await expect(alice.locator("#document-title")).toHaveText("Other.md");
     await expect(alice.locator("#editor")).toBeEnabled();
     const target = await userResourceId(alice.context(), library.url, "Other.md");

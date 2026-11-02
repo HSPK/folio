@@ -47,16 +47,30 @@ impl Access {
     }
 
     pub(in crate::server) fn project(&self) -> Result<Project, ApiError> {
-        match &self.guest {
-            Some(guest) => self.registry.guest_project(&self.id, guest),
-            None => self.registry.project(&self.id, &self.identity),
-        }
+        self.with_project(|project| Ok(project.clone()))
+    }
+
+    pub(in crate::server) fn directory_changed(&self) -> Result<bool, ApiError> {
+        Ok(self
+            .registry
+            .catalog()?
+            .projects
+            .get(&self.id)
+            .is_some_and(|project| project.root != self.library.root.path()))
     }
 
     fn with_project<T>(
         &self,
         operation: impl FnOnce(&Project) -> Result<T, ApiError>,
     ) -> Result<T, ApiError> {
+        let operation = |project: &Project| {
+            if project.root != self.library.root.path() {
+                return Err(ApiError::forbidden(
+                    "The project folder changed. Reopen the project to continue.",
+                ));
+            }
+            operation(project)
+        };
         match &self.guest {
             Some(guest) => operation(&self.registry.guest_project(&self.id, guest)?),
             None => self
@@ -432,15 +446,5 @@ impl Access {
             }
             Ok(())
         })
-    }
-
-    pub(in crate::server) fn git_read(&self) -> Result<(), ApiError> {
-        self.check(None, false)?;
-        if !self.project()?.git_available(&self.identity) {
-            return Err(ApiError::forbidden(
-                "Git access is limited to the owner while this project contains private documents.",
-            ));
-        }
-        Ok(())
     }
 }

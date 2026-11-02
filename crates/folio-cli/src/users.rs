@@ -160,7 +160,6 @@ fn read_password(from_stdin: bool, confirm: bool) -> Result<Zeroizing<String>, S
     let password = if from_stdin {
         let mut input = String::new();
         std::io::stdin()
-            .take(2048)
             .read_to_string(&mut input)
             .map_err(|error| format!("Could not read the password from stdin: {error}"))?;
         if input.ends_with('\n') {

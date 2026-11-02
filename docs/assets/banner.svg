@@ -3,8 +3,9 @@
   <desc>Folio is a local-first Markdown workspace for Windows, macOS and Linux.</desc>
   <rect width="1280" height="640" rx="24" fill="#f5f5f0"/>
   <g transform="translate(80 60) scale(.55)" fill="#292929">
-    <path d="M32 12H78L108 42V104A12 12 0 0 1 96 116H32A12 12 0 0 1 20 104V24A12 12 0 0 1 32 12Z"/>
-    <path fill="#fff" d="M40 38H76V52H54V64H76V78H54V96H40ZM82 20L100 38H82Z"/>
+    <path d="M36 10H75a10 10 0 0 1 7 3l23 23a10 10 0 0 1 3 7v57a18 18 0 0 1-18 18H36a18 18 0 0 1-18-18V28a18 18 0 0 1 18-18Z"/>
+    <path d="M45 91V43h26M45 65h22" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path fill="#fff" d="M82 18v17a4 4 0 0 0 4 4h17Z"/>
   </g>
   <g fill="#292929" font-family="Arial, Helvetica, sans-serif">
     <text x="158" y="111" font-size="43" font-weight="700" letter-spacing="-1.5">Folio</text>
@@ -15,8 +16,9 @@
     <text x="86" y="559" font-size="20">github.com/HSPK/folio</text>
   </g>
   <g transform="translate(934 188) scale(1.65)">
-    <path fill="#292929" d="M32 12H78L108 42V104A12 12 0 0 1 96 116H32A12 12 0 0 1 20 104V24A12 12 0 0 1 32 12Z"/>
-    <path fill="#fff" d="M40 38H76V52H54V64H76V78H54V96H40ZM82 20L100 38H82Z"/>
+    <path fill="#292929" d="M36 10H75a10 10 0 0 1 7 3l23 23a10 10 0 0 1 3 7v57a18 18 0 0 1-18 18H36a18 18 0 0 1-18-18V28a18 18 0 0 1 18-18Z"/>
+    <path d="M45 91V43h26M45 65h22" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path fill="#fff" d="M82 18v17a4 4 0 0 0 4 4h17Z"/>
   </g>
   <path d="M900 498h280" stroke="#d8dad1" stroke-width="1"/>
   <text x="902" y="532" fill="#62645e" font-family="Arial, Helvetica, sans-serif" font-size="18">Plain files. Live editing.</text>

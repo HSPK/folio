@@ -24,6 +24,40 @@ impl Drop for Lease {
 }
 
 impl Hub {
+    pub(in crate::server) fn relocate<T>(
+        &self,
+        operation: impl FnOnce() -> Result<T, ApiError>,
+    ) -> Result<T, ApiError> {
+        let mut rooms = self
+            .rooms
+            .lock()
+            .map_err(|_| ApiError::internal("Collaboration is unavailable."))?;
+        let mut current = rooms
+            .values()
+            .map(|room| {
+                room.lock()
+                    .map_err(|_| ApiError::internal("The collaborative room is unavailable."))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if current.iter().any(|room| room.dirty) {
+            return Err(ApiError::conflict(
+                "Wait until shared changes are saved before changing the project folder.",
+            ));
+        }
+        let result = operation()?;
+        for room in &mut current {
+            room.stopped = true;
+            room.lease = None;
+            let _ = room.events.send(super::room::Event::Reset(
+                "The project folder changed. Reopen the project; unsynced local text is kept."
+                    .into(),
+            ));
+        }
+        drop(current);
+        rooms.clear();
+        Ok(result)
+    }
+
     pub(in crate::server) fn lease(
         &self,
         path: &str,

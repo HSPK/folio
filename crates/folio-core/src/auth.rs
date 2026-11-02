@@ -22,12 +22,9 @@ pub(crate) use password::{hash_password, verify_password};
 #[path = "auth/sessions.rs"]
 mod sessions;
 pub(crate) use accounts::{AccountAction, AccountOverview, AccountResult};
-pub(crate) use sessions::SESSION_TTL_SECONDS;
 use sessions::SessionStore;
 
 const DATABASE_VERSION: u32 = 1;
-const MIN_PASSWORD_BYTES: usize = 12;
-const MAX_PASSWORD_BYTES: usize = 1024;
 const MAX_USERS: usize = 256;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -47,6 +44,7 @@ pub struct UserSummary {
 #[derive(Clone, Debug)]
 pub struct UserStore {
     path: PathBuf,
+    settings: SettingsStore,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -126,16 +124,30 @@ impl UserDatabase {
 
 impl UserStore {
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
+        let path = path.into();
+        Self {
+            settings: SettingsStore::new(path.with_file_name("settings.json")),
+            path,
+        }
     }
 
     pub fn platform_default() -> Result<Self, String> {
-        let settings = SettingsStore::platform_default()?;
-        Ok(Self::alongside_settings(settings.path()))
+        // Keep account, session and project storage at its existing location.
+        Ok(Self {
+            path: SettingsStore::platform_data_directory()?.join("users.json"),
+            settings: SettingsStore::platform_default()?,
+        })
     }
 
     pub fn alongside_settings(settings_path: &Path) -> Self {
-        Self::new(settings_path.with_file_name("users.json"))
+        Self {
+            path: settings_path.with_file_name("users.json"),
+            settings: SettingsStore::new(settings_path),
+        }
+    }
+
+    pub(crate) fn settings_store(&self) -> &SettingsStore {
+        &self.settings
     }
 
     pub fn path(&self) -> &Path {
@@ -300,10 +312,8 @@ pub fn normalize_username(value: &str) -> Result<String, String> {
 }
 
 pub fn validate_password(password: &str) -> Result<(), String> {
-    if !(MIN_PASSWORD_BYTES..=MAX_PASSWORD_BYTES).contains(&password.len()) {
-        return Err(format!(
-            "Passwords must contain {MIN_PASSWORD_BYTES}-{MAX_PASSWORD_BYTES} UTF-8 bytes."
-        ));
+    if password.is_empty() {
+        return Err("Passwords cannot be empty.".into());
     }
     Ok(())
 }
@@ -578,7 +588,9 @@ mod tests {
         for invalid in ["ab", " leading", "-leading", "name space", "用户"] {
             assert!(normalize_username(invalid).is_err(), "{invalid}");
         }
-        assert!(validate_password("short").is_err());
-        assert!(validate_password("long enough password").is_ok());
+        assert!(validate_password("").is_err());
+        for password in ["x", "密", "\n", &"x".repeat(4096)] {
+            assert!(validate_password(password).is_ok());
+        }
     }
 }

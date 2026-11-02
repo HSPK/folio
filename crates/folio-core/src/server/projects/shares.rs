@@ -43,13 +43,6 @@ impl PublicOptions {
                 "Choose either a new password or Remove password.",
             ));
         }
-        if !password.is_empty()
-            && (!(8..=1024).contains(&password.len()) || password.chars().any(char::is_control))
-        {
-            return Err(ApiError::bad_request(
-                "Share passwords must contain 8-1024 UTF-8 bytes without control characters.",
-            ));
-        }
         let password = if self.clear_password {
             Some(None)
         } else if password.is_empty() {

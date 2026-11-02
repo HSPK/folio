@@ -23,12 +23,12 @@
 **English, one line**
 
 Folio is an open-source, local-first Markdown workspace with Live editing,
-plain-file storage, search, collaboration and optional Git sync.
+plain-file storage, search and collaboration.
 
 **中文一句话**
 
 Folio 是开源、本地优先的 Markdown 工作台，支持实时编辑、文件存储、搜索、
-协作和可选的 Git 同步。
+协作。
 
 **English, a short paragraph**
 
@@ -66,7 +66,7 @@ CLI, or set `FOLIO_CAPTURE_EXE` to a specific release executable.
 ### X / Mastodon / Bluesky
 
 > Meet Folio: a local-first Markdown workspace. Live editing, plain files,
-> search, wiki links, collaboration and optional Git sync.
+> search, wiki links and collaboration.
 >
 > Windows / macOS / Linux. MIT licensed.
 >
@@ -79,7 +79,7 @@ CLI, or set `FOLIO_CAPTURE_EXE` to a specific release executable.
 > 做了一个 Markdown 工作台：Folio。
 >
 > 不导入专有笔记库，打开文件夹就能写；支持 Live / Source / Compare / Read、
-> 全文搜索、双链、历史与按需协作，也能接 Git。
+> 全文搜索、双链、历史与按需协作。
 >
 > Windows / macOS / Linux，x64 / ARM64，MIT 开源。仍处于早期阶段，欢迎试用和反馈。
 >
@@ -101,7 +101,7 @@ CLI, or set `FOLIO_CAPTURE_EXE` to a specific release executable.
 > Notes stay as files. A Rust service opens the workspace in your existing
 > browser; Windows/macOS have native launchers, and Linux uses a CLI.
 > It supports Live, Source, Compare and Read views, search, wiki links, history,
-> projects and opt-in collaboration. Git commit-and-push is optional.
+> projects and opt-in collaboration.
 >
 > The first release is 0.1.0, available for x64 and ARM64 across all three
 > platforms. It is MIT licensed and early-stage: important notes should be
@@ -120,7 +120,7 @@ CLI, or set `FOLIO_CAPTURE_EXE` to a specific release executable.
 >
 > 它把 Rust 本地服务和现有浏览器结合起来，提供实时排版编辑、源码和预览对照、
 > 全文搜索、双链、历史、项目与按需协作。Markdown 和附件仍保存在文件夹中，
-> 可以继续用自己的 Git 与备份工具。
+> 可以继续用自己的文件与备份工具。
 >
 > 0.1.0 已发布，支持 Windows、macOS、Linux 的 x64 / ARM64，使用 MIT 许可证。
 > 目前仍是早期项目，重要内容请备份；macOS 版本尚未公证。
@@ -138,7 +138,7 @@ CLI, or set `FOLIO_CAPTURE_EXE` to a specific release executable.
 
 GitHub topics: `markdown`, `markdown-editor`, `notes`, `note-taking`,
 `local-first`, `knowledge-management`, `personal-knowledge-management`,
-`self-hosted`, `collaborative-editing`, `git`, `rust`, `cross-platform`,
+`self-hosted`, `collaborative-editing`, `rust`, `cross-platform`,
 `windows`, `macos`, `linux`, `open-source`.
 
 中文渠道可选择 V2EX、掘金、少数派等适合的社区；英文渠道可选择 Show HN、

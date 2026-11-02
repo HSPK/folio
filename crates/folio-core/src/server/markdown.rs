@@ -1,9 +1,18 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
-use pulldown_cmark::{CowStr, Event, LinkType, Options, Parser, Tag, TagEnd, html};
+use pulldown_cmark::{CowStr, Event, LinkType, Options, Tag, TagEnd, html};
 
 use super::{files, frontmatter};
+
+#[path = "markdown/auto_links.rs"]
+mod auto_links;
+#[path = "markdown/image_html.rs"]
+pub(super) mod image_html;
+#[path = "markdown/image_source.rs"]
+pub(super) mod image_source;
+#[path = "markdown/source_positions.rs"]
+mod source_positions;
 
 #[cfg(test)]
 #[path = "markdown/render_tests.rs"]
@@ -28,7 +37,8 @@ pub(super) fn resource_paths(
     content: &str,
 ) -> std::collections::BTreeMap<String, bool> {
     let mut paths = std::collections::BTreeMap::new();
-    for event in Parser::new_ext(body_after_frontmatter(content), options()) {
+    let source = image_source::prepare(body_after_frontmatter(content), options());
+    for event in source.events() {
         let (target, image, wiki) = match event {
             Event::Start(Tag::Link {
                 dest_url,
@@ -40,6 +50,12 @@ pub(super) fn resource_paths(
                 matches!(link_type, LinkType::WikiLink { .. }),
             ),
             Event::Start(Tag::Image { dest_url, .. }) => (dest_url, true, false),
+            Event::Html(text) | Event::InlineHtml(text) => {
+                let Some(image) = image_html::parse(&text) else {
+                    continue;
+                };
+                (image.src.into(), true, false)
+            }
             _ => continue,
         };
         if let Some(target) = local_reference(path, &target, image, wiki) {
@@ -61,68 +77,99 @@ pub(super) fn render_with_urls(
     content: &str,
     mut resolve: impl FnMut(String, bool) -> Option<String>,
 ) -> String {
+    let prefix = content[..content.len() - body_after_frontmatter(content).len()]
+        .encode_utf16()
+        .count();
     let content = body_after_frontmatter(content);
     let options = options();
     let mut links = Vec::new();
     let mut images = Vec::new();
-    let events = heading_events(Parser::new_ext(content, options)).filter_map(|event| {
-        Some(match event {
-            Event::Html(text) | Event::InlineHtml(text) => Event::Text(text),
-            Event::Start(Tag::Link {
-                link_type,
-                dest_url,
-                title,
-                id,
-            }) => {
-                let destination = if matches!(link_type, LinkType::WikiLink { .. }) {
-                    wiki_destination(&dest_url).and_then(|target| rewrite_url(path, &target, false))
-                } else {
-                    rewrite_url(path, &dest_url, false)
+    let source = image_source::prepare(content, options);
+    let events =
+        heading_events(auto_links::events(source.offset_events())).filter_map(|(event, range)| {
+            let block_html = matches!(&event, Event::Html(_));
+            let event = match event {
+                Event::Html(text) | Event::InlineHtml(text) => {
+                    if let Some(image) = image_html::parse(&text) {
+                        match rewrite_url(path, &image.src, true).and_then(|url| resolve(url, true))
+                        {
+                            Some(destination) => {
+                                let markup = image.render(&destination);
+                                Event::Html(
+                                    if block_html {
+                                        format!("<p>{markup}</p>\n")
+                                    } else {
+                                        markup
+                                    }
+                                    .into(),
+                                )
+                            }
+                            None => Event::Text(image.alt.into()),
+                        }
+                    } else {
+                        Event::Text(text)
+                    }
                 }
-                .and_then(|url| resolve(url, false));
-                links.push(destination.is_some());
-                let destination = destination?;
                 Event::Start(Tag::Link {
                     link_type,
-                    dest_url: destination.into(),
+                    dest_url,
                     title,
                     id,
-                })
-            }
-            Event::End(TagEnd::Link) => {
-                if !links.pop().unwrap_or(false) {
-                    return None;
+                }) => {
+                    let destination = if matches!(link_type, LinkType::WikiLink { .. }) {
+                        wiki_destination(&dest_url)
+                            .and_then(|target| rewrite_url(path, &target, false))
+                    } else {
+                        rewrite_url(path, &dest_url, false)
+                    }
+                    .and_then(|url| resolve(url, false));
+                    links.push(destination.is_some());
+                    let destination = destination?;
+                    Event::Start(Tag::Link {
+                        link_type,
+                        dest_url: destination.into(),
+                        title,
+                        id,
+                    })
                 }
-                Event::End(TagEnd::Link)
-            }
-            Event::Start(Tag::Image {
-                link_type,
-                dest_url,
-                title,
-                id,
-            }) => {
-                let destination =
-                    rewrite_url(path, &dest_url, true).and_then(|url| resolve(url, true));
-                images.push(destination.is_some());
-                let destination = destination?;
+                Event::End(TagEnd::Link) => {
+                    if !links.pop().unwrap_or(false) {
+                        return None;
+                    }
+                    Event::End(TagEnd::Link)
+                }
                 Event::Start(Tag::Image {
                     link_type,
-                    dest_url: destination.into(),
+                    dest_url,
                     title,
                     id,
-                })
-            }
-            Event::End(TagEnd::Image) => {
-                if !images.pop().unwrap_or(false) {
-                    return None;
+                }) => {
+                    let destination =
+                        rewrite_url(path, &dest_url, true).and_then(|url| resolve(url, true));
+                    images.push(destination.is_some());
+                    let destination = destination?;
+                    Event::Start(Tag::Image {
+                        link_type,
+                        dest_url: destination.into(),
+                        title,
+                        id,
+                    })
                 }
-                Event::End(TagEnd::Image)
-            }
-            other => other,
-        })
-    });
+                Event::End(TagEnd::Image) => {
+                    if !images.pop().unwrap_or(false) {
+                        return None;
+                    }
+                    Event::End(TagEnd::Image)
+                }
+                other => other,
+            };
+            Some((event, range))
+        });
     let mut output = String::with_capacity(content.len());
-    html::push_html(&mut output, events);
+    html::push_html(
+        &mut output,
+        source_positions::events(content, prefix, events),
+    );
     output
 }
 
@@ -131,8 +178,8 @@ fn body_after_frontmatter(content: &str) -> &str {
 }
 
 fn heading_events<'a>(
-    mut events: impl Iterator<Item = Event<'a>>,
-) -> impl Iterator<Item = Event<'a>> {
+    mut events: impl Iterator<Item = (Event<'a>, std::ops::Range<usize>)>,
+) -> impl Iterator<Item = (Event<'a>, std::ops::Range<usize>)> {
     let mut pending = VecDeque::new();
     let mut counts = HashMap::<String, usize>::new();
     let mut used = HashSet::new();
@@ -140,14 +187,14 @@ fn heading_events<'a>(
         if let Some(event) = pending.pop_front() {
             return Some(event);
         }
-        let event = events.next()?;
+        let (event, range) = events.next()?;
         let Event::Start(Tag::Heading { level, .. }) = event else {
-            return Some(event);
+            return Some((event, range));
         };
         // Only the current heading is buffered: its ID precedes its inline text in HTML.
         let mut heading = String::new();
         let mut characters = 0;
-        for event in events.by_ref() {
+        for (event, position) in events.by_ref() {
             let end = matches!(event, Event::End(TagEnd::Heading(_)));
             match &event {
                 Event::Text(text) | Event::Code(text) => {
@@ -162,9 +209,17 @@ fn heading_events<'a>(
                         characters += 1;
                     }
                 }
+                Event::Html(text) | Event::InlineHtml(text) => {
+                    if let Some(image) = image_html::parse(text) {
+                        for character in image.alt.chars().take(160 - characters) {
+                            heading.push(character);
+                            characters += 1;
+                        }
+                    }
+                }
                 _ => {}
             }
-            pending.push_back(event);
+            pending.push_back((event, position));
             if end {
                 break;
             }
@@ -182,12 +237,15 @@ fn heading_events<'a>(
                 break candidate;
             }
         };
-        Some(Event::Start(Tag::Heading {
-            level,
-            id: Some(CowStr::from(id)),
-            classes: Vec::new(),
-            attrs: Vec::new(),
-        }))
+        Some((
+            Event::Start(Tag::Heading {
+                level,
+                id: Some(CowStr::from(id)),
+                classes: Vec::new(),
+                attrs: Vec::new(),
+            }),
+            range,
+        ))
     })
 }
 
@@ -346,10 +404,15 @@ pub(super) fn referenced_assets(
     document: &str,
     content: &str,
 ) -> std::collections::BTreeSet<String> {
-    Parser::new_ext(body_after_frontmatter(content), Options::all())
+    let source = image_source::prepare(body_after_frontmatter(content), Options::all());
+    source
+        .events()
         .filter_map(|event| {
             let (url, image) = match event {
                 Event::Start(Tag::Image { dest_url, .. }) => (dest_url, true),
+                Event::Html(text) | Event::InlineHtml(text) => {
+                    (image_html::parse(&text)?.src.into(), true)
+                }
                 Event::Start(Tag::Link {
                     dest_url,
                     link_type,
@@ -442,100 +505,6 @@ custom:\n\
             body_after_frontmatter("---\ndescription: |\n  ---\n  ...\n---\n# Body"),
             "# Body"
         );
-    }
-
-    #[test]
-    fn markdown_features_and_heading_anchors_work() {
-        let output = render(
-            "readme.md",
-            "\
-# Hello world
-
-# Hello world
-
-## 你好 世界
-
-| Name | Value |
-| --- | --- |
-| **bold** | ~~old~~ |
-
-- [x] done
-- [ ] todo
-
-Reference[^one].
-
-[^one]: footnote text
-",
-        );
-        for expected in [
-            "<h1 id=\"hello-world\">",
-            "<h1 id=\"hello-world-2\">",
-            "<h2 id=\"你好-世界\">",
-            "<table>",
-            "<strong>bold</strong>",
-            "<del>old</del>",
-            "type=\"checkbox\"",
-            "checked",
-            "footnote",
-        ] {
-            assert!(output.contains(expected), "missing {expected:?}: {output}");
-        }
-    }
-
-    #[test]
-    fn raw_html_and_script_schemes_cannot_execute() {
-        let output = render(
-            "readme.md",
-            "\
-<script>alert('bad')</script>
-
-<img src=x onerror=alert(1)>
-
-[run](javascript:alert%281%29)
-[run](JaVaScRiPt:alert%281%29)
-[run](vbscript:msgbox%281%29)
-[run](data:text/html,evil)
-[run](file:///C:/secret.txt)
-[run](%6aavascript:alert%281%29)
-![bad](data:image/svg+xml,evil)
-
-`<script>not code</script>`
-",
-        );
-        assert!(!output.contains("<script>"));
-        assert!(!output.contains("<img "));
-        for scheme in ["javascript:", "JaVaScRiPt:", "vbscript:", "data:", "file:"] {
-            assert!(!output.contains(&format!("href=\"{scheme}")));
-        }
-        assert!(output.contains("&lt;script&gt;"));
-        assert!(output.contains("&lt;img"));
-    }
-
-    #[test]
-    fn links_and_images_are_root_relative_and_encoded() {
-        let output = render(
-            "guides/nested/page.md",
-            "\
-[intro](../../介绍.md#你好-世界)
-[same](#local)
-[other](../overview.MARKDOWN#my-heading)
-![image](../../images/a%20b.png)
-[attachment](../../files/paper.pdf)
-[site](https://example.com/path?q=1)
-[email](mailto:person@example.com)
-",
-        );
-        for expected in [
-            "href=\"/%E4%BB%8B%E7%BB%8D.md#%E4%BD%A0%E5%A5%BD-%E4%B8%96%E7%95%8C\"",
-            "href=\"#local\"",
-            "href=\"/guides/overview.MARKDOWN#my-heading\"",
-            "src=\"/images/a%20b.png\"",
-            "href=\"/files/paper.pdf\"",
-            "href=\"https://example.com/path?q=1\"",
-            "href=\"mailto:person@example.com\"",
-        ] {
-            assert!(output.contains(expected), "missing {expected:?}: {output}");
-        }
     }
 
     #[test]
