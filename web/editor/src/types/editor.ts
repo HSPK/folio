@@ -129,16 +129,14 @@ export interface TagEditor {
 
 export interface MetadataEditor {
   details: HTMLDetailsElement;
-  advanced: HTMLDetailsElement;
-  textarea: HTMLTextAreaElement;
-  tags: TagEditor;
-  fields: Map<string, HTMLInputElement>;
+  summary: HTMLElement;
   navigation?: TextSelectionRange | null;
 }
 
 export interface BodySerializer {
   reset(document: ProseNode, source: string, tree?: Root): void;
   serialize(document: ProseNode): string;
+  blockRange(document: ProseNode, source: string, index: number): TextSelectionRange | null;
 }
 
 export interface EditorSession {

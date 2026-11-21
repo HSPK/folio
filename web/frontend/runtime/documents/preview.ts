@@ -102,7 +102,7 @@ export function renderPreview(html: string | null, resetScroll = false): void {
     paragraph.style.setProperty("--folio-image-row-count", String(images.length));
   }
   refreshPreviewLinks();
-  if (!html.trim()) emptyPreview("A fresh page", "Start typing Markdown in the editor. Your preview will appear here.");
+  if (!html.trim()) emptyPreview("A fresh page", "Start typing Markdown");
   for (const link of appState.ui.preview.querySelectorAll<HTMLAnchorElement>(
     'a[href]:not([href^="/"]):not([href^="#"])',
   )) {
@@ -126,7 +126,7 @@ export function refreshPreviewLinks(): void {
       else node.removeAttribute("title");
     } else {
       node.removeAttribute(attribute);
-      node.title = "This resource is unavailable in the current document.";
+      node.title = "Resource unavailable";
     }
   }
 }
@@ -166,11 +166,11 @@ export function schedulePreview(delay = settingsState.webPreferences.previewDela
   if (!documentSession.current) return;
   if (!["split", "preview"].includes(shell.view)) return;
   if (currentEditorAnalysis().bytes > MAX_MARKDOWN_BYTES) {
-    previewStatus("Preview paused: the note exceeds 4 MiB.", true);
+    previewStatus("Preview paused: over 4 MiB", true);
     return;
   }
   if (rootChanged()) {
-    previewStatus("Preview paused: the notes folder changed.", true);
+    previewStatus("Preview paused: folder changed", true);
     return;
   }
   if (
@@ -189,7 +189,7 @@ export function schedulePreview(delay = settingsState.webPreferences.previewDela
     return;
   }
   if (appState.connectionState !== "ready") {
-    previewStatus("Disconnected. The last successful preview is still shown.", true);
+    previewStatus("");
     return;
   }
   const ticket = appState.previewGate.next();
@@ -215,18 +215,17 @@ export function schedulePreview(delay = settingsState.webPreferences.previewDela
       });
       if (!appState.previewGate.isCurrent(ticket) || id !== documentSession.id || revision !== documentSession.revision)
         return;
-      if (typeof payload?.html !== "string") throw new ApiError("The service returned an incomplete preview.");
+      if (typeof payload?.html !== "string") throw new ApiError("Incomplete preview");
       renderPreview(payload.html);
       previewStatus("Up to date");
     } catch (errorCause) {
       const error = errorContext(errorCause);
       if (!appState.previewGate.isCurrent(ticket) || aborted(error)) return;
-      const kept =
-        appState.renderedPreviewDocument === documentSession.id ? " The last successful preview is still shown." : "";
-      previewStatus(`Preview failed: ${error.message}${kept}`, true);
+      if (!isConnectionLoss(error)) previewStatus(`Preview failed: ${error.message}`, true);
       connectionFailure(error);
     } finally {
       if (appState.previewGate.isCurrent(ticket)) appState.previewController = null;
     }
   }, delay);
 }
+import { isConnectionLoss } from "../core/recovery";

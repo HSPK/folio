@@ -63,12 +63,13 @@ export function FileDialogs() {
       </AppDialog>
       <div id="file-context-menu" class="context-menu" role="menu" aria-label="File actions" hidden>
         <span id="file-context-name" class="menu-context-label"></span>
-        <button id="file-details" type="button" role="menuitem">
+        <button id="file-details" type="button" role="menuitem" data-menu-icon="circle-help">
           Details
         </button>
-        <button id="file-rename" type="button" role="menuitem">
+        <button id="file-rename" type="button" role="menuitem" data-menu-icon="edit">
           Rename
         </button>
+        <div id="file-icon-choices" class="context-icons" role="group" aria-label="Icon"></div>
       </div>
       <AppDialog id="rename-dialog" aria-labelledby="rename-title">
         <form id="rename-form">

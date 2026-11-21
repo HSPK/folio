@@ -62,7 +62,9 @@ test("public document links default to read-only, allow opt-in anonymous collabo
     const other = await secondGuest.newPage();
     await other.goto(url);
     await expect(other.locator("#collaboration-join")).toHaveAttribute("aria-pressed", "true");
+    await other.locator("#more-menu > summary").click();
     await expect(other.getByRole("img", { name: /^Guest [a-f0-9]+ \(you\)$/ })).toBeVisible();
+    await other.keyboard.press("Escape");
     await expect(owner.locator(".collaboration-avatar")).toHaveCount(4);
     const names = await owner.locator(".collaboration-avatar").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
     expect(new Set(names.filter((name) => name.startsWith("Guest "))).size).toBe(2);

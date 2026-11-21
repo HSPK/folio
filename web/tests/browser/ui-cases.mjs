@@ -1,5 +1,5 @@
 import {
-  test, expect, fs, path, root, buildRoot, initialText, chooseView, openFixture, metadataField, primaryModifier, openSettingsDialog, selectSettingsSection,
+  test, expect, fs, path, root, buildRoot, initialText, chooseView, openFixture, primaryModifier, openSettingsDialog, selectSettingsSection,
 } from "./fixture.mjs";
 
 test("slash commands insert blocks without a permanent formatting toolbar", async ({ page, browserName }) => {
@@ -31,12 +31,14 @@ test("sidebar and page width controls resize and persist across reloads", async 
   const handle = await resizer.boundingBox();
   await page.mouse.move(handle.x + handle.width / 2, handle.y + 120);
   await page.mouse.down();
-  await page.mouse.move(handle.x + 72, handle.y + 120, { steps: 5 });
+  expect((await sidebar.boundingBox()).width).toBeCloseTo(initialSidebar.width, 0);
+  await page.mouse.move(handle.x + handle.width / 2 + 72, handle.y + 120, { steps: 5 });
   await page.mouse.up();
-  await expect.poll(async () => (await sidebar.boundingBox()).width).toBeGreaterThan(initialSidebar.width + 50);
+  await expect.poll(async () => (await sidebar.boundingBox()).width).toBeCloseTo(initialSidebar.width + 72, 0);
 
   const initialPageWidth = (await page.locator(".folio-live-page").boundingBox()).width;
-  await page.locator("#layout-menu > summary").click();
+  await page.locator("#more-menu > summary").click();
+  await page.locator("#compact-layout-menu > summary").click();
   await page.getByRole("button", { name: /Wide/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-page-width", "wide");
   await expect.poll(async () => (await page.locator(".folio-live-page").boundingBox()).width)
@@ -145,7 +147,7 @@ test("recursive index hide rules apply immediately and survive refresh without h
   try {
     await fs.mkdir(path.join(root, "Glob-docs/topic"), { recursive: true });
     await Promise.all(entries.map((name) => fs.writeFile(path.join(root, name), `# ${name}\n`)));
-    await page.locator("#refresh-files").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     for (const name of entries) await expect(page.locator(`button[data-path="${name}"]`)).toHaveCount(1);
     await setRule("*/index.md");
     await expect(page.locator('button[data-path="Glob-docs/index.md"]')).toHaveCount(0);
@@ -185,11 +187,10 @@ test("writing surface has compact chrome in light, dark and hidden-sidebar frame
   await page.reload();
   await expect(page.locator(".ProseMirror")).toContainText("A quieter place to write");
   await expect(page.locator("#format-toggle, #format-panel")).toHaveCount(0);
-  const header = await page.locator(".document-header").boundingBox();
-  expect(header.height).toBeLessThanOrEqual(55);
+  await expect(page.locator(".document-area > header")).toHaveCount(0);
   const heading = await page.getByRole("heading", { name: "A quieter place to write", exact: true }).boundingBox();
   const paragraph = await page.locator(".ProseMirror p").first().boundingBox();
-  expect(heading.y - header.height).toBeLessThanOrEqual(80);
+  expect(heading.y).toBeLessThanOrEqual(80);
   expect(paragraph.y - (heading.y + heading.height)).toBeLessThanOrEqual(45);
   await page.locator("#outline-tab").click();
   await page.screenshot({ path: path.join(buildRoot, "design-light-outline.png") });
@@ -197,8 +198,8 @@ test("writing surface has compact chrome in light, dark and hidden-sidebar frame
   await expect(page.locator(".ProseMirror strong")).toHaveText("formatting as you edit");
   await expect(page.locator(".ProseMirror")).not.toContainText("**");
   await page.screenshot({ path: path.join(buildRoot, "design-live-editing.png") });
-  await page.locator("#document-title").click();
-  await page.locator("#sidebar-toggle").click();
+  await page.locator("#more-menu > summary").focus();
+  await page.locator("#sidebar-hide").click();
   await page.screenshot({ path: path.join(buildRoot, "design-light-hidden.png") });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.locator("#sidebar-toggle").click();
@@ -293,7 +294,7 @@ test("saving a title retains tree rows and sorting while filters stay current", 
   await expect(page.locator("#file-list .file-button")).toHaveCount(1);
   await saveTitle("Changed title");
   await expect(page.locator("#file-list .file-button")).toHaveCount(0);
-  await expect(page.locator("#tree-message")).toHaveText("No notes match your filter.");
+  await expect(page.locator("#tree-message")).toHaveText("No matching notes");
   await page.locator("#file-filter").fill("Changed title");
   await expect(page.locator('#file-list [aria-current="page"] .file-name')).toHaveText("Changed title");
 });
@@ -301,7 +302,7 @@ test("saving a title retains tree rows and sorting while filters stay current", 
 test("keyed library refreshes retain unaffected rows across title and structural changes", async ({ page }) => {
   const refresh = async () => {
     const response = page.waitForResponse((item) => item.url().includes("/api/tree"));
-    await page.locator("#refresh-files").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await (await response).finished();
     await expect(page.locator("#file-nav")).toHaveAttribute("aria-busy", "false");
   };
@@ -372,7 +373,7 @@ test("file and outline scrolling never introduces a sidebar gutter", async ({ pa
     await Promise.all(Array.from({ length: 80 }, (_, index) =>
       fs.writeFile(path.join(folder, `Note ${String(index).padStart(2, "0")}.md`), "# Note\n"),
     ));
-    await page.locator("#refresh-files").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(page.locator("#file-list").getByRole("button", { name: "Many notes/Note 79.md", exact: true })).toBeAttached();
     await expect.poll(() => fileViewport.evaluate((element) => element.scrollHeight > element.clientHeight)).toBeTruthy();
     expect(await dimensions()).toEqual(before);
@@ -436,7 +437,7 @@ test("hidden outline analysis refreshes when the Outline tab opens", async ({ pa
 test("hidden Live outline reflects edits when opened again", async ({ page }) => {
   await page.locator("#outline-tab").click();
   await expect(page.locator("#outline-list button").first()).toHaveText("Welcome");
-  await page.locator("#files-tab").click();
+  await page.locator("#outline-tab").click();
   await page.locator(".ProseMirror h1").click();
   await page.keyboard.press("End");
   await page.keyboard.insertText(" deferred");
@@ -445,18 +446,9 @@ test("hidden Live outline reflects edits when opened again", async ({ page }) =>
   await expect(page.locator('#outline-list [aria-current="location"]')).toHaveText("Welcome deferred");
 });
 
-test("source and metadata scrollbars do not change textarea width or consume a gutter", async ({ page }) => {
+test("source scrollbars do not change textarea width or consume a gutter", async ({ page }) => {
   const raw = "---\ntitle: Folio\n---\n\n# Body\n";
   await openFixture(page, "Textarea-scroll.md", raw, "Folio");
-  const metadata = await metadataField(page);
-  const metadataWidth = await metadata.evaluate((element) => element.clientWidth);
-  await metadata.fill("title: Folio\n" + Array.from({ length: 60 }, (_, index) => `field${index}: value`).join("\n"));
-  expect(await metadata.evaluate((element) => element.clientWidth)).toBe(metadataWidth);
-  expect(await metadata.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return element.offsetWidth - element.clientWidth
-      - Number.parseFloat(style.borderLeftWidth) - Number.parseFloat(style.borderRightWidth);
-  })).toBe(0);
   await chooseView(page, "editor");
   const source = page.locator("#editor");
   const width = await source.evaluate((element) => element.clientWidth);
@@ -539,12 +531,12 @@ test("native appearance updates override the OS theme without replacing unsaved 
 
 test("appearance retrieval errors retain the last theme and the current draft", async ({ page }) => {
   await page.route("**/api/appearance", (route) => route.fulfill({
-    status: 503, json: { error: "Appearance is temporarily unavailable." },
+    status: 422, json: { error: "Appearance settings are invalid." },
   }));
   await chooseView(page, "editor");
   await page.locator("#editor").fill("# Keep my draft\n");
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(page.getByText(/appearance.*unavailable/i).first()).toBeVisible();
+  await expect(page.getByText(/appearance.*invalid/i).first()).toBeVisible();
   await expect(page.locator("#editor")).toHaveValue("# Keep my draft\n");
   await expect(page.locator("#connection-label")).toHaveAttribute("data-state", "ready");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
@@ -560,7 +552,7 @@ test("file search uses a rounded focus surface without bars and filenames have n
     before: getComputedStyle(element, "::before").content,
     radius: getComputedStyle(element).borderRadius,
     background: getComputedStyle(element).backgroundColor,
-  }))).toMatchObject({ before: "none", radius: "9px" });
+  }))).toMatchObject({ before: "none", radius: "12px" });
   expect(await input.boundingBox()).toEqual(box);
   const file = page.locator("#file-list").getByRole("button", { name: "README.md", exact: true });
   expect(await file.evaluate((element) => getComputedStyle(element, "::before").content)).toBe("none");

@@ -74,7 +74,7 @@ test("source changes switch to inline editing and auto-save after one second idl
   const content = "# Changed in source\n\nA **bold** paragraph.\n";
   await page.locator("#editor").fill(content);
   await chooseView(page, "rich");
-  await page.locator("#document-title").click();
+  await page.locator("#more-menu > summary").focus();
   await expect(page.getByRole("heading", { name: "Changed in source", exact: true })).toBeVisible();
   await expect(page.locator(".ProseMirror")).toContainText("A bold paragraph.");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
@@ -90,12 +90,15 @@ test("large Source documents use the virtual editor and save exact Unicode text"
       `Line ${index} ${"with enough Markdown text for virtualization. ".repeat(10)}\n`).join("");
   await fs.writeFile(path.join(root, "Virtual-source.md"), content);
   await chooseView(page, "editor");
-  await page.locator("#refresh-files").click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.locator('[data-path="Virtual-source.md"]').click();
   await expect(page.locator("#document-title")).toHaveText("Virtual-source.md");
   await expect(page.locator("#editor")).toBeHidden();
   const editor = page.locator(".virtual-source-editor .cm-content");
   await expect(editor).toBeVisible();
+  for (const selector of [".virtual-source-editor", ".virtual-source-editor .cm-editor"]) {
+    await expect(page.locator(selector)).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  }
   await expect(editor).toHaveAttribute("aria-label", "Markdown source");
   await editor.focus();
   await page.keyboard.press(primaryModifier === "Meta" ? "Meta+ArrowDown" : "Control+End");
@@ -129,7 +132,7 @@ test("cached editor analysis refreshes after edits and saved baselines", async (
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
   await page.keyboard.press("Control+s");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-  await page.locator("#refresh-files").click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.locator("#file-nav")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   await expect(page.locator("#editor-stats")).toHaveText("3 words");
@@ -267,7 +270,7 @@ test("raw HTML remains inert and editable without executing", async ({ page }) =
 });
 
 test("creating a note never overwrites an existing file", async ({ page }) => {
-  await page.locator("#new-note").click();
+  await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
   await page.locator("#new-note-title").fill("Second");
   await page.locator("#create-note").click();
   await expect(page.locator("#new-note-error")).toBeVisible();
@@ -369,12 +372,15 @@ test("the sidebar can hide and outline navigation does not change the note", asy
   await expect(page.locator(".ProseMirror h1")).toHaveText("Welcome");
   await expect(page.locator(".ProseMirror")).not.toContainText("# Welcome");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-  await page.locator("#sidebar-toggle").click();
+  await page.locator("#sidebar-hide").click();
   await expect(page.locator("#sidebar")).toBeHidden();
   await expect(page.locator("#sidebar-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#sidebar-toggle")).toBeFocused();
   await page.keyboard.press("Control+Shift+l");
   await expect(page.locator("#sidebar")).toBeVisible();
   await expect(page.locator("#sidebar-toggle")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#sidebar-toggle")).toBeHidden();
+  await expect(page.locator("#sidebar-hide")).toBeFocused();
   await page.keyboard.press("Control+/");
   await expect(page.locator("#editor")).toBeVisible();
   await expect(page.locator("#outline-list")).toContainText("Welcome");
@@ -398,7 +404,7 @@ test("MkDocs metadata is separate from the formatted body and remains exact afte
   await expect(live.locator("hr")).toHaveCount(0);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   await expect(page.locator(".folio-metadata-caption")).toHaveText("Properties");
-  await expect(page.locator(".folio-metadata-summary")).toHaveText("one · two");
+  await expect(page.locator(".folio-property-preview")).toHaveText("#one #two");
   await expect(page.locator(".folio-metadata-source")).toBeHidden();
   await page.locator("#outline-tab").click();
   await expect(page.locator("#outline-list")).toHaveText("Real heading");
@@ -412,7 +418,8 @@ test("MkDocs metadata is separate from the formatted body and remains exact afte
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   expect((await fs.readFile(path.join(root, "Metadata.md"), "utf8")).startsWith(header)).toBeTruthy();
   const field = await metadataField(page);
-  await expect(field).toHaveValue(/# Keep this comment[\s\S]*custom:\n {2}keep: true/);
+  await expect(field).toHaveValue("Metadata title");
+  await expect(page.locator(".folio-metadata textarea")).toHaveCount(0);
   if (browserName !== "webkit") await page.screenshot({ path: path.join(buildRoot, "metadata-frontmatter-expanded.png"), caret: "initial" });
   await chooseView(page, "preview");
   await expect(page.locator("#preview h1")).toHaveText("Real heading updated");
@@ -457,10 +464,10 @@ test("invalid YAML is reported without hiding the body or discarding source", as
   const header = "---\ntitle: [unfinished\n---\n\n";
   await openFixture(page, "Invalid-metadata.md", `${header}# Body\n\nText.\n`);
   const field = await metadataField(page);
-  await expect(field).toHaveValue(/title: \[unfinished/);
+  await expect(field).toBeDisabled();
   await expect(page.locator(".status-notices #metadata-message")).toBeVisible();
   await expect(page.locator("#metadata-message")).toContainText("Invalid YAML");
-  await expect(field).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#metadata-message")).toContainText("Source mode");
   await expect(page.locator(".ProseMirror h1")).toHaveText("Body");
   await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "rich");
   expect((await fs.readFile(path.join(root, "Invalid-metadata.md"), "utf8")).startsWith(header)).toBeTruthy();

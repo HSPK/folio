@@ -1,6 +1,19 @@
 import { test, expect, openSettingsDialog, selectSettingsSection, primaryModifier } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
+test("startup shows one centered heading before the app loads", async ({ page }) => {
+  await page.route("**/app.mjs", route => route.abort());
+  await page.reload();
+  const status = page.getByRole("status");
+  await expect(status).toHaveText("Opening Folio");
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const box = await status.getByRole("heading").boundingBox();
+    expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThan(1);
+    expect(Math.abs(box.y + box.height / 2 - viewport.height / 2)).toBeLessThan(1);
+  }
+});
+
 test("Solid workspace fills the viewport and keeps editor nodes stable across chrome changes", async ({ page }) => {
   await expect(page.locator('[data-framework="solid"]')).toBeVisible();
   await expect(page.getByRole("heading", { name: "Opening Folio" })).toHaveCount(0);
@@ -31,13 +44,13 @@ test("Kobalte layers preserve dialog fields and restore the nearest popup trigge
   await page.keyboard.press("Escape");
   await expect(page.locator("#settings-dialog")).toBeHidden();
   await expect(page.locator("#more-menu > summary")).toBeFocused();
-  await page.locator("#view-menu > summary").click();
+  await page.locator("#more-menu > summary").click();
   await page.locator("#view-rich").focus();
   await page.keyboard.press("ArrowDown");
   await expect(page.locator("#view-editor")).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(page.locator("#view-menu")).not.toHaveAttribute("open", "");
-  await expect(page.locator("#view-menu > summary")).toBeFocused();
+  await expect(page.locator("#more-menu")).not.toHaveAttribute("open", "");
+  await expect(page.locator("#more-menu > summary")).toBeFocused();
 });
 
 test("long Solid search lists virtualize rows and preserve keyboard selection on narrow screens", async ({ browser }) => {

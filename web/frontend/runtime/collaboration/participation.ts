@@ -5,7 +5,8 @@ import { createSaveSnapshot } from "@folio/model";
 import type { Participation } from "../../types/domain";
 import { clearTimer, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
-import { refreshControls } from "../accounts/authentication";
+import { connectionFailure, refreshControls } from "../accounts/authentication";
+import { connectivity, isConnectionLoss } from "../core/recovery";
 import { api } from "../core/api";
 import { appState, dirty } from "../core/bootstrap";
 import { ApiError, aborted } from "../core/dom";
@@ -102,6 +103,10 @@ export async function pollDocumentParticipation(
   current.controller = new AbortController();
   let delay = 1000;
   try {
+    if (connectivity.serviceLost) {
+      delay = 3000;
+      return;
+    }
     const status = await api("/api/collaboration/presence", {
       decode: decodedParticipation,
       method: "POST",
@@ -113,7 +118,7 @@ export async function pollDocumentParticipation(
       !["solo", "prepare", "join"].includes(status.phase) ||
       (status.participant !== null && !/^[a-f0-9]{48}$/.test(status.participant ?? ""))
     ) {
-      throw new ApiError("The service returned incomplete document participation.");
+      throw new ApiError("Incomplete participation response");
     }
     current.participant = status.participant;
     const wasPreparing = current.preparing;
@@ -140,14 +145,12 @@ export async function pollDocumentParticipation(
         await persistCurrentDraft();
         if (current !== participationState.documentParticipation) return;
         stopCollaboration();
-        collaborationNotice("Shared editing permission was removed. Any unsaved local text is kept.", true);
+        collaborationNotice("Shared editing permission removed", true);
       }
     } else if (status.phase === "solo" && !collaborationState.collaboration) {
       current.ready = false;
       current.preparing = false;
-      collaborationNotice(
-        current.recoveryRecord ? "A local collaborative draft is kept. It will merge when shared editing resumes." : "",
-      );
+      collaborationNotice(current.recoveryRecord ? "Local draft kept" : "");
     } else if (status.phase === "prepare" && collaborationState.collaboration?.initialized) {
       current.ready = true;
     } else if (
@@ -174,9 +177,7 @@ export async function pollDocumentParticipation(
       current.ready = !dirty() && !documentSession.saving && !documentSession.conflict;
       if (!current.ready) current.preparing = false;
       collaborationNotice(
-        current.ready
-          ? "Another authorized editor is here. Waiting for saved drafts before shared editing…"
-          : "Shared editing is waiting. Save or resolve this local draft first.",
+        current.ready ? "Waiting for saved drafts…" : "Save local draft to collaborate",
         !current.ready,
       );
       delay = current.ready ? 150 : 1000;
@@ -186,6 +187,7 @@ export async function pollDocumentParticipation(
       if (!collaborationState.collaboration) await startCollaboration();
       else if (
         !collaborationState.collaboration.connected &&
+        !collaborationState.collaboration.retry &&
         !collaborationState.collaboration.connecting &&
         !collaborationState.collaboration.unmerged &&
         !collaborationState.collaboration.failed
@@ -207,9 +209,14 @@ export async function pollDocumentParticipation(
     if (current !== participationState.documentParticipation || aborted(error)) return;
     current.ready = false;
     current.preparing = false;
+    if (isConnectionLoss(error)) {
+      connectionFailure(error);
+      delay = 3000;
+      return;
+    }
     if (error.status === 410) {
       current.participant = null;
-      collaborationNotice("Document presence expired; reconnecting…");
+      collaborationNotice("Reconnecting…");
       refreshControls();
       delay = 150;
       return;
@@ -225,7 +232,7 @@ export async function pollDocumentParticipation(
       }
       if (publicState.publicView && error.status === 401) requestPublicPassword();
     }
-    collaborationNotice(`Document access could not be refreshed: ${error.message} Local text is kept.`, true);
+    collaborationNotice(`Access refresh failed: ${error.message}`, true);
     refreshControls();
     delay = 3000;
   } finally {

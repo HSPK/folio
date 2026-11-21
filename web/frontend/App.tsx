@@ -8,9 +8,20 @@ import { WorkspaceShell } from "./components/WorkspaceShell";
 import { startApplication } from "./runtime/application";
 import styles from "./styles/shell.module.css";
 
+export function StartupError() {
+  return (
+    <main role="alert" class="startup-screen">
+      <h1>Folio could not start</h1>
+      <button type="button" onClick={() => location.reload()}>
+        Reload
+      </button>
+    </main>
+  );
+}
+
 /** Mount stable application hosts before starting document and account services. */
 export function App() {
-  const [failure, setFailure] = createSignal<string>();
+  const [failed, setFailed] = createSignal(false);
   let disposed = false;
   let stop: (() => void) | undefined;
   onMount(() =>
@@ -20,7 +31,7 @@ export function App() {
         stop = startApplication();
       } catch (error) {
         console.error("Folio could not initialize its application services.", error);
-        setFailure(error instanceof Error ? error.message : String(error));
+        setFailed(true);
       }
     }),
   );
@@ -32,7 +43,7 @@ export function App() {
   return (
     <div class={styles.root} data-framework="solid">
       <Show
-        when={failure()}
+        when={failed()}
         fallback={
           <>
             <WorkspaceShell />
@@ -44,15 +55,7 @@ export function App() {
           </>
         }
       >
-        {(message) => (
-          <section class={styles.failure} role="alert">
-            <h1>Folio could not start</h1>
-            <p>{message()}</p>
-            <button type="button" onClick={() => location.reload()}>
-              Reload
-            </button>
-          </section>
-        )}
+        <StartupError />
       </Show>
     </div>
   );

@@ -8,7 +8,7 @@ import { resumeStatusNotice, suspendStatusNotice } from "../navigation/status";
 export async function confirmDocumentLeave(request: LeaveConfirmation, owner: AbortSignal) {
   const { action, policy, snapshot, signal } = request;
   if (policy === "discard")
-    return confirmAction(`“${snapshot.path}” has unsaved changes. Discard them and ${action}?`, {
+    return confirmAction(`Discard unsaved changes and ${action}?`, {
       label: "Discard changes",
       signal,
     });
@@ -28,8 +28,8 @@ export async function confirmDocumentLeave(request: LeaveConfirmation, owner: Ab
   try {
     return await confirmAction(
       snapshot.conflict
-        ? `${detail || "The disk version changed. Your local edits were not saved."}\n\nKeep editing to resolve the conflict, or discard this local version and ${action}?`
-        : `${detail || `The changes in “${snapshot.path}” could not be saved or confirmed.`}\n\nRetry saving before you ${action}, or keep editing.`,
+        ? `${detail || "Changed on disk, not saved"}\n\nDiscard local version and ${action}?`
+        : `${detail || "Changes not saved"}\n\nRetry saving before you ${action}?`,
       {
         label: snapshot.conflict ? "Discard and continue" : "Retry save",
         cancelLabel: "Keep editing",

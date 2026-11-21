@@ -47,17 +47,15 @@ export function createDraftRecovery(ports: RecoveryPorts) {
     });
     try {
       signal.throwIfAborted();
-      if (!current() || !ports.canWrite())
-        throw new Error("This recovery copy cannot be applied to the current writable note.");
-      if (session.loading || session.saving)
-        throw new Error("Wait for the current document operation before applying recovery.");
+      if (!current() || !ports.canWrite()) throw new Error("Open the matching note with edit access.");
+      if (session.loading || session.saving) throw new Error("Note is busy. Retry recovery shortly.");
       ports.cancelAutoSave();
       paused = true;
       if (!(await abortable(ports.confirm(record, signal), signal)) || !current()) return "canceled";
       const baseline = shared ? null : await abortable(ports.read(record.document, signal), signal);
       if (!current() || shared !== ports.shared()) return "canceled";
       if (!ports.canWrite() || session.loading || session.saving)
-        throw new Error("The note is no longer ready for recovery. Your recovery copy is kept.");
+        throw new Error("Recovery paused. Your copy is kept.");
       if (baseline && !session.rebaseRecovery(checkpoint, baseline)) return "canceled";
       staged = true;
       ports.applySource(record.source);

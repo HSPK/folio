@@ -3,7 +3,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--surface);
+  background: var(--editor-surface, var(--surface));
 }
 .virtual-source-editor[hidden] { display: none; }
 .editor-pane.is-virtual-source > textarea.editor,
@@ -11,7 +11,7 @@
 .virtual-source-editor .cm-editor {
   height: 100%;
   color: var(--text);
-  background: var(--surface);
+  background: var(--editor-surface, var(--surface));
   font-family: var(--code-font);
   font-size: var(--source-size, 15px);
 }
@@ -26,7 +26,7 @@
 }
 .virtual-source-editor .cm-content {
   min-height: 100%;
-  padding: var(--document-top) max(var(--document-gutter), calc((100% - var(--document-width)) / 2)) 140px;
+  padding: var(--document-top) max(var(--document-gutter), calc((100% - var(--document-width)) / 2)) var(--document-end, 140px);
   caret-color: var(--text);
 }
 .virtual-source-editor .cm-line { padding: 0; }
@@ -36,5 +36,5 @@
   background: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 .document-panes[data-view="split"] .virtual-source-editor .cm-content {
-  padding: 35px 25px 100px;
+  padding: var(--document-top) 36px 100px;
 }

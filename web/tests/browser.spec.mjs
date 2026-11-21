@@ -1,5 +1,6 @@
 import "./browser/document-cases.mjs";
 import "./browser/ui-cases.mjs";
+import "./browser/canvas-cases.mjs";
 import "./browser/focus-cases.mjs";
 import "./browser/auth-cases.mjs";
 import "./browser/collaboration-cases.mjs";
@@ -17,6 +18,8 @@ import "./browser/interaction-polish-cases.mjs";
 import "./browser/continuity-polish-cases.mjs";
 import "./browser/writing-flow-cases.mjs";
 import "./browser/writing-comfort-cases.mjs";
+import "./browser/writing-continuity-cases.mjs";
+import "./browser/sidebar-cases.mjs";
 import "./browser/slash-cases.mjs";
 import "./browser/keymap-cases.mjs";
 import "./browser/table-controls-cases.mjs";

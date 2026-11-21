@@ -46,16 +46,10 @@ export function initializeDocumentsRelated(): void {
       .filter((entry) => paths.has(entry.path))
       .map(({ id, stamp }) => ({ id, stamp }));
     if (!files.length) {
-      notice(appState.element("attachments-message"), "Select attachments to recycle.");
+      notice(appState.element("attachments-message"), "No attachments selected");
       return;
     }
-    if (
-      !(await confirmAction(
-        `Recycle ${files.length} selected attachments? Other programs or offline drafts may still reference them. They remain recoverable for 30 days.`,
-        { label: "Recycle files" },
-      ))
-    )
-      return;
+    if (!(await confirmAction(`Recycle ${files.length} attachments?`, { label: "Recycle files" }))) return;
     appState.element("attachments-recycle").disabled = true;
     try {
       await api("/api/attachments", { method: "POST", body: { files } });
@@ -75,7 +69,7 @@ export function initializeDocumentsRelated(): void {
     const project = projectModel.active?.id;
     appState.element("backlinks-list").replaceChildren();
     showDialog(appState.element("backlinks-dialog"));
-    notice(appState.element("backlinks-message"), "Finding references…");
+    notice(appState.element("backlinks-message"), "Finding links…");
     try {
       const references = await api(`/api/backlinks?document=${encodeURIComponent(documentSession.current.id)}`, {
         decode: decodedBacklinks,
@@ -94,10 +88,7 @@ export function initializeDocumentsRelated(): void {
           return button;
         }),
       );
-      notice(
-        appState.element("backlinks-message"),
-        references.length ? "" : "No accessible notes link to this document.",
-      );
+      notice(appState.element("backlinks-message"), references.length ? "" : "No backlinks");
     } catch (errorCause) {
       const error = errorContext(errorCause);
       notice(appState.element("backlinks-message"), error.message, "error");
@@ -106,7 +97,7 @@ export function initializeDocumentsRelated(): void {
   listen(appState.element("backlinks-close"), "click", () => appState.element("backlinks-dialog").close());
 }
 export async function loadAttachments(): Promise<void> {
-  notice(appState.element("attachments-message"), "Checking Markdown references…");
+  notice(appState.element("attachments-message"), "Checking references…");
   try {
     const result = await api("/api/attachments", {
       decode: decodedAttachments,
@@ -116,7 +107,7 @@ export async function loadAttachments(): Promise<void> {
     renderAttachments();
     notice(
       appState.element("attachments-message"),
-      result.truncated ? "The scan was limited. Recycling is disabled until the complete project can be checked." : "",
+      result.truncated ? "Scan incomplete, recycling disabled" : "",
       result.truncated ? "warning" : "",
     );
   } catch (errorCause) {
@@ -140,7 +131,7 @@ export function renderAttachments(): void {
       name.className = "workspace-item-name";
       name.textContent = entry.path;
       const details = document.createElement("small");
-      details.textContent = `${formatByteCount(entry.size)} · ${entry.referenced ? "Referenced by Markdown" : "No saved Markdown reference"}`;
+      details.textContent = `${formatByteCount(entry.size)} · ${entry.referenced ? "Referenced" : "Unreferenced"}`;
       name.append(details);
       row.append(select, name);
       return row;

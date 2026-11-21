@@ -42,14 +42,14 @@ export function initializeCollaborationPresence(): void {
   listen(presenceState.collaborationUi.join, "click", () => {
     if (participationState.documentParticipation?.preparing && !collaborationState.collaboration) {
       stopDocumentParticipation();
-      collaborationNotice("Automatic collaboration paused for this document. Reopen it to watch for editors.");
+      collaborationNotice("Collaboration paused");
       renderCollaborators();
       refreshControls();
       return;
     }
     if (collaborationState.collaboration?.connected) {
       if (dirty() || collaborationState.collaboration.pending.size || collaborationState.collaboration.saving) {
-        collaborationNotice("Save all shared changes before leaving collaboration.", true);
+        collaborationNotice("Save shared changes first", true);
         saveCollaboration();
         return;
       }

@@ -1,8 +1,8 @@
 .folio-node-toolbar {
   position: fixed; z-index: 80; top: 0; left: 0; display: flex; align-items: center; gap: 2px;
   width: max-content; max-width: calc(100vw - 16px); padding: 4px;
-  border: 1px solid var(--border, #ddd); border-radius: var(--menu-radius, 10px);
-  background: var(--surface, #fff); color: var(--text, #333);
+  border: 1px solid var(--panel-border, var(--border, #ddd)); border-radius: var(--menu-radius, 10px);
+  background: var(--float-fill, var(--surface, #fff)); color: var(--text, #333);
   box-shadow: var(--menu-shadow, 0 6px 24px #00000014); font: 13px/1.45 var(--document-font, sans-serif);
 }
 .folio-node-toolbar, .folio-block-controls {
@@ -20,8 +20,7 @@
 }
 .folio-node-toolbar button:hover { background: var(--control-hover-background, #eee); }
 .folio-node-toolbar button:focus-visible {
-  outline: var(--focus-width, 1px) solid var(--focus, #70899c); outline-offset: -2px; box-shadow: none;
-  background: var(--control-focus-background, #eee);
+  outline: none; box-shadow: none; background: var(--control-focus-background, #eee);
 }
 .folio-node-toolbar button:disabled { opacity: 0.4; cursor: default; }
 .folio-node-tool-actions { display: flex; gap: 2px; align-items: center; }
@@ -29,16 +28,14 @@
 .folio-image-quick { display: flex; align-items: center; gap: 2px; color: var(--muted, #777); }
 .folio-image-quick > button { min-width: 28px; min-height: 26px; padding: 4px; }
 .folio-image-quick > button:last-child { border-inline-start: 1px solid var(--border, #ddd); border-radius: 0 5px 5px 0; padding-inline-start: 7px; }
-.folio-image-quick .folio-icon { width: 17px; height: 17px; }
-.folio-image-quick [data-icon="more-horizontal"] { width: 17px; height: 17px; stroke-width: 2.4; }
+.folio-image-quick [data-icon="more-horizontal"] { stroke-width: 2.2; }
 .folio-image-menu, .folio-image-options {
   position: absolute; z-index: 1; max-height: calc(100dvh - 24px); overflow: auto;
-  border: 1px solid var(--border, #ddd); border-radius: var(--menu-radius, 10px);
-  background: var(--surface, #fff); box-shadow: var(--menu-shadow, 0 6px 24px #00000014);
+  border: 1px solid var(--panel-border, var(--border, #ddd)); border-radius: var(--menu-radius, 10px);
+  background: var(--float-fill, var(--surface, #fff)); box-shadow: var(--menu-shadow, 0 6px 24px #00000014);
 }
-.folio-image-menu { display: grid; gap: 2px; width: 216px; padding: var(--menu-padding, 6px); }
+.folio-image-menu { display: grid; gap: 2px; width: max-content; max-width: calc(100vw - 24px); padding: var(--menu-padding, 6px); }
 .folio-image-menu button { justify-content: flex-start; gap: 10px; width: 100%; min-height: var(--menu-item-height, 32px); text-align: left; }
-.folio-image-menu .folio-icon { width: 17px; height: 17px; }
 .folio-image-menu [data-image-destructive] { color: var(--error, #bd4545); }
 .folio-image-options {
   position: fixed; z-index: 81; display: grid; gap: 10px; padding: 11px; overscroll-behavior: contain;
@@ -47,20 +44,20 @@
 .folio-image-panel-header strong { font-size: 12px; font-weight: 600; }
 .folio-image-layouts, .folio-image-presets { display: flex; align-items: center; justify-content: space-between; gap: 3px; }
 .folio-image-layouts > button, .folio-image-presets > button { flex: 1; min-width: 0; padding: 5px; }
-.folio-image-options .folio-image-side-by-side { justify-content: flex-start; background: var(--subtle-surface, #fafafa); }
+.folio-image-options .folio-image-side-by-side { justify-content: flex-start; }
 .folio-node-toolbar button[aria-pressed="true"] { background: var(--control-selected-background, #eee); }
 .folio-image-precision { border-top: 1px solid var(--border, #ddd); padding-top: 7px; }
 .folio-image-precision > summary { padding: 5px 3px; font-size: 11px; color: var(--muted, #777); cursor: pointer; }
 .folio-image-custom { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding-top: 8px; }
 .folio-image-options label { display: grid; min-width: 0; gap: 4px; font-size: 11px; color: var(--muted, #777); }
 .folio-image-custom label:nth-child(3), .folio-image-custom-actions { grid-column: 1 / -1; }
-.folio-image-options input, .folio-image-options select {
+.folio-image-options input {
   width: 100%; min-width: 0; min-height: 30px; padding: 4px 7px;
   border: 1px solid var(--border, #ddd); border-radius: 6px;
   background: var(--surface, #fff); color: var(--text, #333); font: inherit;
 }
 .folio-image-custom-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.folio-image-custom-actions button[type="submit"] { background: var(--control-selected-background, #eee); }
+.folio-image-custom-actions button[type="submit"] { color: var(--accent-text); font-weight: 600; }
 .folio-prose .folio-inline-image {
   position: relative; vertical-align: middle; line-height: inherit; -webkit-user-select: none; user-select: none;
 }
@@ -115,22 +112,19 @@
 .folio-prose .folio-table-wrapper .selectedCell::after { background: transparent; }
 .folio-table-selection { position: absolute; z-index: 2; border: 2px solid var(--focus, #70899c); border-radius: 3px; pointer-events: none; }
 .folio-table-grip, .folio-table-add {
-  --control-background: var(--surface, #fff);
-  --control-hover-background: color-mix(in srgb, var(--text, #333) 6%, var(--surface, #fff));
-  --control-focus-background: color-mix(in srgb, var(--text, #333) 8%, var(--surface, #fff));
   position: absolute; display: flex; align-items: center; justify-content: center;
-  min-height: 0; padding: 0; border: 1px solid var(--border, #ddd); border-radius: 4px; background: var(--subtle-surface, #fafafa); color: var(--muted);
+  min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted);
   opacity: 0; pointer-events: none; cursor: pointer;
 }
-.folio-table-grip { z-index: 3; background: var(--surface); }
+.folio-table-grip { z-index: 3; }
 .folio-prose :is(.folio-table-grip, .folio-table-add) { transition: opacity var(--motion-hover-duration, 120ms) ease-out, background-color 80ms ease-out; }
-.folio-table-grip .folio-icon { width: 16px; height: 16px; stroke-width: 3; }
+.folio-table-grip .folio-icon { stroke-width: 2.2; }
 .folio-table-column-grip .folio-icon { transform: rotate(90deg); }
 .folio-table-grip[aria-expanded="true"] {
   --control-background: var(--focus); --control-hover-background: var(--focus); --control-color: var(--surface);
   border-color: var(--focus); background: var(--focus); color: var(--surface);
 }
-.folio-table-add { --control-background: var(--subtle-surface, #fafafa); z-index: 1; }
+.folio-table-add { z-index: 1; }
 .folio-table-add-region { position: absolute; z-index: 1; }
 .folio-table-add-region-row { left: 0; right: 0; bottom: -24px; height: 24px; }
 .folio-table-add-region-column { right: -20px; top: 0; bottom: 0; width: 20px; }
@@ -143,30 +137,26 @@
 .folio-table-wrapper > [hidden] { display: none; }
 .folio-prose .ProseMirror[contenteditable="false"] .folio-table-add { display: none; }
 .folio-block-controls {
-  position: fixed; z-index: 40; display: flex; justify-content: flex-end; align-items: center; gap: 2px; height: 26px;
+  position: fixed; z-index: 40; display: flex; justify-content: flex-end; align-items: center; gap: 1px; height: 24px;
 }
 .folio-block-controls > button {
-  --control-background: var(--surface, #fff);
-  --control-hover-background: color-mix(in srgb, var(--text, #333) 6%, var(--surface, #fff));
-  --control-focus-background: color-mix(in srgb, var(--text, #333) 8%, var(--surface, #fff));
   display: flex; align-items: center; justify-content: center;
-  width: var(--folio-grip-width, 18px); height: 26px; min-height: 0; padding: 0; border: 0; border-radius: 4px;
-  background: var(--surface, #fff); color: var(--muted, #777); cursor: pointer;
+  width: var(--folio-grip-width, 20px); height: 24px; min-height: 0; padding: 0; border: 0;
+  border-radius: var(--control-radius, 6px);
+  background: transparent; color: var(--muted, #777); cursor: pointer;
 }
+.folio-block-controls > button:hover { background: var(--control-hover-background, #eee); color: var(--text, #333); }
 .folio-block-controls > [hidden] { display: none; }
-.folio-block-controls > .folio-block-add { width: calc(var(--folio-grip-width, 18px) + 6px); }
-.folio-block-add .folio-icon { width: 20px; height: 20px; }
 .folio-prose .folio-math-block.ProseMirror-selectednode { outline: 1px solid var(--focus, #70899c); outline-offset: 2px; }
-.folio-block-grip .folio-icon { width: 16px; height: 18px; stroke-width: 3; }
+.folio-block-grip .folio-icon { stroke-width: 2.2; }
 .folio-block-grip[aria-expanded="true"] {
   --control-background: var(--control-hover-background); --control-color: var(--text);
 }
-.folio-block-tools, .folio-table-tools { display: grid; gap: 5px; width: 260px; max-height: calc(100dvh - 24px); padding: var(--menu-padding, 6px); overflow: auto; }
+.folio-block-tools, .folio-table-tools { display: grid; gap: 5px; max-height: calc(100dvh - 24px); padding: var(--menu-padding, 6px); overflow: auto; }
 .folio-block-menu-heading, .folio-table-menu-heading { padding: 4px 8px; color: var(--muted); font-size: 11px; font-weight: 550; }
 .folio-block-actions, .folio-table-actions { display: grid; gap: 2px; }
 .folio-block-actions > button, .folio-table-actions > button { justify-content: flex-start; gap: 10px; min-height: var(--menu-item-height, 32px); }
 .folio-block-actions > [data-block-action="delete"], .folio-table-actions > [data-table-action="delete"] { color: var(--error, #bd4545); }
-.folio-block-actions .folio-icon, .folio-table-actions .folio-icon { width: 17px; height: 17px; }
 .folio-table-alignment { padding-top: 5px; border-top: 1px solid var(--border); }
 .folio-table-alignment .folio-menu-check { margin-inline-start: auto; width: 14px; height: 14px; opacity: 0; }
 .folio-table-alignment [aria-checked="true"] .folio-menu-check { opacity: 1; }
@@ -179,13 +169,12 @@
 .folio-link-dialog .dialog-actions { flex-wrap: wrap; }
 .folio-link-dialog .notice { margin-top: 12px; }
 .folio-prose a:not([href]) { color: var(--muted); text-decoration-style: dotted; }
-.folio-link-actions { position: fixed; z-index: 85; display: flex; flex-wrap: wrap; gap: 2px; max-width: min(360px, calc(100vw - 16px)); padding: 3px; border: 1px solid var(--border); border-radius: var(--menu-radius, 10px); background: var(--surface); color: var(--text); box-shadow: var(--menu-shadow, 0 6px 24px #00000014); font: 13px/1.45 var(--document-font, sans-serif); }
+.folio-link-actions { position: fixed; z-index: 85; display: flex; flex-wrap: wrap; gap: 2px; max-width: min(360px, calc(100vw - 16px)); padding: 4px; border: 1px solid var(--panel-border, var(--border)); border-radius: var(--menu-radius, 10px); background: var(--float-fill, var(--surface)); color: var(--text); box-shadow: var(--menu-shadow, 0 6px 24px #00000014); font: 13px/1.45 var(--document-font, sans-serif); }
 .folio-link-actions[hidden] { display: none; }
 .folio-link-actions button { padding: 4px 8px; font: inherit; }
 .folio-link-actions p { flex-basis: 100%; margin: 4px 6px; color: var(--error); }
 @media (pointer: coarse) {
   .folio-node-toolbar button { min-height: 36px; min-width: 36px; }
-  .folio-image-quick .folio-icon { width: 17px; height: 17px; }
   .folio-prose .folio-image-resize { width: 10px; height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {

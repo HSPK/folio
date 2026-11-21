@@ -23,10 +23,7 @@ export function initializeProjectGateway(changed: () => void): void {
       } catch (cause) {
         const error = errorContext(cause);
         if (!signal.aborted && (error.network || error.status === 408 || !error.status || error.status >= 500))
-          throw new Error(
-            `The project change could not be confirmed and may already have been applied. Refresh before retrying. ${error.message}`,
-            { cause },
-          );
+          throw new Error(`Project change unconfirmed: ${error.message}`, { cause });
         throw cause;
       }
     },

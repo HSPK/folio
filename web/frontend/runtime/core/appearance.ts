@@ -6,7 +6,9 @@ import { settingsState } from "../preferences/settings";
 import { publicState } from "../sharing/public";
 import { api } from "./api";
 import { appState } from "./bootstrap";
-import { notice } from "./dom";
+import { connectionFailure } from "../accounts/authentication";
+import { isConnectionLoss } from "./recovery";
+import { ApiError, notice } from "./dom";
 export function stopAppearancePolling(): void {
   clearTimer(appState.appearanceTimer);
   appState.appearanceTimer = null;
@@ -56,9 +58,10 @@ export async function refreshAppearance(force = false): Promise<void> {
   } catch (errorCause) {
     const error = errorContext(errorCause);
     if (ticket !== appState.appearanceGeneration || (controller.signal.aborted && !timedOut)) return;
-    appearanceNotice(
-      `Appearance settings could not be loaded. ${timedOut ? "The request timed out." : error.message} Your note is unchanged.`,
-    );
+    if (isConnectionLoss(error) || timedOut) {
+      appearanceNotice("");
+      connectionFailure(timedOut ? new ApiError("Timed out", 408) : error);
+    } else appearanceNotice(`Appearance load failed: ${error.message}`);
   } finally {
     clearTimer(timeout);
     if (appState.appearanceController === controller) {

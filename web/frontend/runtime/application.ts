@@ -11,6 +11,7 @@ import { configureApiClient } from "./core/api";
 import { initializeCoreCommands } from "./core/commands";
 import { initializeCoreEvents } from "./core/events";
 import { initializeCoreLayout } from "./core/layout";
+import { decorateMenuIcons } from "./core/menu-icons";
 import { initializeEditorHost } from "./editor-host";
 import { initializeDialogsDialogs } from "./dialogs/dialogs";
 import { initializeDocumentsDrafts, persistCurrentDraft } from "./documents/drafts";
@@ -55,6 +56,7 @@ export function startApplication() {
   };
   try {
     initializeCoreBootstrap();
+    decorateMenuIcons();
     initializeEditorHost();
     initializeCoreLayout();
     onApplicationDispose(

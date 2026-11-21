@@ -1,8 +1,8 @@
 import { projectModel } from "../../state/projects";
-import { connect } from "./connection";
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
 import { entryDestination, makeNoteUrl, readNoteRoute } from "@folio/model";
+import { libraryCatalog } from "../../state/library";
 import { shell, viewLabels } from "../../state/shell";
 import { installInputDiagnostics } from "../../diagnostics/install";
 import { clearTimer, datasetValue, entryKind, requireValue } from "../../types/elements";
@@ -13,9 +13,7 @@ import {
   logout,
   renderDocumentStatus,
   scheduleControlRefresh,
-  selectNavigation,
   setSidebar,
-  showAuthentication,
   submitAuthentication,
   toggleFocusMode,
 } from "../accounts/authentication";
@@ -50,7 +48,7 @@ import {
   scheduleOutlineRefresh,
   setCurrentOutline,
 } from "../navigation/outline";
-import { openSettings } from "../preferences/settings";
+import { openSettings, settingsState } from "../preferences/settings";
 import { switchProject } from "../projects/projects";
 import { publicState } from "../sharing/public";
 import { refreshAppearance, stopAppearancePolling } from "./appearance";
@@ -95,15 +93,10 @@ export function initializeCoreEvents(): void {
       closeCommandPanel();
     }
   });
-  listen(appState.ui.reconnect, "click", () => {
-    if (authenticationSession.mode === "users" && !authenticationSession.user) showAuthentication(false);
-    else void connect();
-  });
-  listen(appState.ui.sidebarToggle, "click", () => setSidebar(document.body.dataset.sidebar !== "open"));
+  listen(appState.ui.sidebarToggle, "click", () => setSidebar(true));
   listen(appState.element("sidebar-hide"), "click", () => setSidebar(false));
   listen(appState.element("sidebar-settings-open"), "click", () => openSettings());
   listen(appState.ui.scrim, "click", () => setSidebar(false));
-  listen(appState.ui.filesTab, "click", () => selectNavigation("files"));
   listen(appState.ui.outlineList, "click", (event) => {
     if (!(event.target instanceof Element)) return;
     const button = event.target.closest<HTMLButtonElement>("button[data-heading]");
@@ -122,16 +115,17 @@ export function initializeCoreEvents(): void {
   listen(appState.ui.emptyNew, "click", () => openNewNote());
   listen(appState.compactLayout, "change", () => setSidebar(!appState.compactLayout.matches));
   listen(window, "resize", () => setSidebarWidth(appState.preferredSidebarWidth));
+  let sidebarResizeOffset = 0;
   listen(appState.ui.sidebarResizer, "pointerdown", (event) => {
     if (event.button !== 0 || appState.compactLayout.matches || document.body.dataset.sidebar !== "open") return;
     event.preventDefault();
+    sidebarResizeOffset = event.clientX - appState.ui.sidebar.getBoundingClientRect().width;
     document.body.dataset.resizingSidebar = "true";
     appState.ui.sidebarResizer.setPointerCapture(event.pointerId);
-    setSidebarWidth(event.clientX);
   });
   listen(appState.ui.sidebarResizer, "pointermove", (event) => {
     if (!appState.ui.sidebarResizer.hasPointerCapture(event.pointerId)) return;
-    setSidebarWidth(event.clientX);
+    setSidebarWidth(event.clientX - sidebarResizeOffset);
   });
   const finishSidebarResize = (event: PointerEvent) => {
     if (!appState.ui.sidebarResizer.hasPointerCapture(event.pointerId)) return;
@@ -170,7 +164,6 @@ export function initializeCoreEvents(): void {
     if (!(event.target instanceof Element)) return;
     if (event.target.closest<HTMLDetailsElement>(".popup-panel button, .popup-panel a")) closeMenus();
   });
-  listen(appState.ui.refreshFiles, "click", () => void refreshFiles());
   listen(appState.ui.filter, "input", scheduleFileFilterRender);
   listen(appState.ui.fileList, "contextmenu", (event) => {
     if (!(event.target instanceof Element)) return;
@@ -312,13 +305,19 @@ export function initializeCoreEvents(): void {
   listen(appState.ui.editor, "input", (event) => {
     if (!documentSession.current) return;
     documentSession.edited();
-    if (cancelDocumentLoad()) documentNotice("Opening a note was canceled because you continued editing.");
+    if (cancelDocumentLoad()) documentNotice("Open canceled");
     renderDocumentStatus(true);
     collaborationChanged();
     queueDraftPersistence(true);
     scheduleAutoSave();
-    scheduleOutlineRefresh(event instanceof CustomEvent && isRecord(event.detail) ? event.detail.changes : undefined);
-    scheduleControlRefresh();
+    // Re-reading a long note for its outline, word count and size takes real time, so those wait for a
+    // pause that grows with the note instead of running between keystrokes.
+    const patience = Math.min(1500, appState.ui.editor.value.length / 4096);
+    scheduleOutlineRefresh(
+      event instanceof CustomEvent && isRecord(event.detail) ? event.detail.changes : undefined,
+      settingsState.webPreferences.outlineDelayMs + patience,
+    );
+    scheduleControlRefresh(180 + patience);
     schedulePreview();
   });
   listen(appState.ui.preview, "click", (event) => {
@@ -346,6 +345,24 @@ export function initializeCoreEvents(): void {
       void navigateTo(route.id ?? (publicState.publicView ? documentSession.current.id : null), route.hash, { url });
     }
   });
+  // Focus surfaces follow keyboard navigation only, so Escape after a click leaves the trigger quiet.
+  listen(
+    window,
+    "keydown",
+    (event) => {
+      if (event.key === "Tab" || event.key.startsWith("Arrow")) document.documentElement.dataset.input = "keyboard";
+    },
+    true,
+  );
+  listen(window, "pointerdown", () => delete document.documentElement.dataset.input, true);
+  if (CSS.supports("selector(select:open)")) {
+    listen(document.body, "keydown", (event) => {
+      // Let the browser dismiss the picker before the surrounding dialog or menu handles Escape.
+      if (event.key === "Escape" && event.target instanceof Element && event.target.closest("select:open")) {
+        event.stopPropagation();
+      }
+    });
+  }
   listen(window, "keydown", (event) => {
     if (event.isComposing) return;
     const modal = document.querySelector<HTMLDialogElement>("dialog[open]");
@@ -395,15 +412,16 @@ export function initializeCoreEvents(): void {
     if (event.key.toLowerCase() !== "s") return;
     event.preventDefault();
     if (appState.ui.newDialog.open) {
-      if (!appState.creating)
-        notice(appState.ui.newError, "Choose Create note to create this file, or Cancel to return to the editor.");
+      if (!appState.creating) notice(appState.ui.newError, "Create note or cancel");
     } else {
       void saveDocument();
     }
   });
   listen(window, "focus", () => {
     void refreshAppearance(true);
-    scheduleTreeRefresh();
+    // The file list follows the disk on its own: returning to the window is the moment it may have changed.
+    if (appState.connectionState === "ready" && !libraryCatalog.loading) void refreshFiles();
+    else scheduleTreeRefresh();
   });
   listen(window, "blur", stopAppearancePolling);
   listen(window, "pagehide", stopAppearancePolling);
@@ -453,7 +471,7 @@ export function initializeCoreEvents(): void {
           documentBytes: currentEditorAnalysis().bytes,
         }),
       },
-      (error) => documentNotice(`Input diagnostics could not start: ${error.message}`, "error"),
+      (error) => documentNotice(`Diagnostics failed: ${error.message}`, "error"),
     );
   }
 }

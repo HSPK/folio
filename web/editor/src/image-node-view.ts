@@ -98,7 +98,7 @@ export function createImageNodeView(
     };
     const position = () => {
       const value = getPos();
-      if (typeof value !== "number") throw new Error("This image is no longer in the document.");
+      if (typeof value !== "number") throw new Error("Image no longer in document");
       return value;
     };
     const update = () => {
@@ -126,7 +126,7 @@ export function createImageNodeView(
       }
     };
     const change = (attrs: Partial<ImageNodeAttrs>, { preserveSelection = false } = {}) => {
-      if (!current() || !editable_fn()) throw new Error("This image is no longer editable.");
+      if (!current() || !editable_fn()) throw new Error("Image not editable");
       const panel = panel_fn();
       const previousSelection = view.state.selection;
       const transaction = imageLayoutTransaction(view.state, { position: position(), attrs });
@@ -162,23 +162,22 @@ export function createImageNodeView(
       },
       rowAvailable_fn: () => current() && Boolean(imageRowNeighbor(view.state.doc, position())),
       row_fn() {
-        if (!current() || !editable_fn()) throw new Error("This image is no longer editable.");
+        if (!current() || !editable_fn()) throw new Error("Image not editable");
         const neighbor = imageRowNeighbor(view.state.doc, position());
         const transaction = neighbor && imageRowTransaction(view.state, neighbor);
-        if (!transaction)
-          throw new Error("Place two image blocks next to each other before arranging them side by side.");
+        if (!transaction) throw new Error("Needs two adjacent image blocks");
         view.dispatch(transaction);
         view.focus();
       },
       remove_fn() {
-        if (!current() || !editable_fn()) throw new Error("This image is no longer editable.");
+        if (!current() || !editable_fn()) throw new Error("Image not editable");
         const transaction = imageRemovalTransaction(view.state, position());
-        if (!transaction) throw new Error("This image is no longer in the document.");
+        if (!transaction) throw new Error("Image no longer in document");
         view.dispatch(transaction);
         view.focus();
       },
       captureReplacement_fn() {
-        if (!current() || !editable_fn()) throw new Error("This image is no longer editable.");
+        if (!current() || !editable_fn()) throw new Error("Image not editable");
         const previous = node;
         const version = context_fn();
         const valid_fn = () => version === context_fn() && current() && editable_fn() && node.eq(previous);

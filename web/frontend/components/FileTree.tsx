@@ -3,6 +3,14 @@ import { createIcon } from "@folio/editor-runtime";
 import { fileDisplayKey, fileLabel, type FileEntry, type FileTree as Tree } from "../models/library";
 import { libraryCatalog, libraryModel, libraryView } from "../state/library";
 
+/** The glyph a reader chose for this entry, or the default for its kind. */
+function entryIcon(path: string, fallback: string) {
+  const name = libraryCatalog.icons.get(path) ?? fallback;
+  const icon = createIcon(name);
+  icon.dataset.icon = name;
+  return icon;
+}
+
 function FileRow(props: { file: Readonly<FileEntry> }) {
   const duplicate = () => (libraryView.counts.get(fileDisplayKey(props.file)) ?? 0) > 1;
   return (
@@ -13,7 +21,6 @@ function FileRow(props: { file: Readonly<FileEntry> }) {
         classList={{ "has-duplicate-title": duplicate() }}
         tabIndex={-1}
         draggable="true"
-        title={props.file.path}
         aria-label={props.file.path}
         data-path={props.file.path}
         data-resource-id={props.file.id}
@@ -21,7 +28,7 @@ function FileRow(props: { file: Readonly<FileEntry> }) {
         data-entry-kind="file"
         aria-current={libraryModel.selected(props.file) ? "page" : undefined}
       >
-        {createIcon("file")}
+        {entryIcon(props.file.path, "file")}
         <span class="file-name">{fileLabel(props.file)}</span>
         <Show when={duplicate()}>
           <small class="file-path">{props.file.path}</small>
@@ -47,27 +54,14 @@ function Directory(props: { directory: Tree<Readonly<FileEntry>> }) {
           data-entry-path={props.directory.path}
           data-entry-kind="directory"
           data-directory-path={props.directory.path}
-          title={props.directory.path}
         >
-          {createIcon("folder")}
+          {entryIcon(props.directory.path, "folder")}
           <span class="directory-label">{label()}</span>
           <span class="directory-actions">
-            <button
-              type="button"
-              tabIndex={-1}
-              data-tree-action="note"
-              title="New note"
-              aria-label={`New note in ${label()}`}
-            >
+            <button type="button" tabIndex={-1} data-tree-action="note" aria-label={`New note in ${label()}`}>
               {createIcon("file-plus")}
             </button>
-            <button
-              type="button"
-              tabIndex={-1}
-              data-tree-action="folder"
-              title="New folder"
-              aria-label={`New folder in ${label()}`}
-            >
+            <button type="button" tabIndex={-1} data-tree-action="folder" aria-label={`New folder in ${label()}`}>
               {createIcon("folder-plus")}
             </button>
           </span>

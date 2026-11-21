@@ -6,10 +6,11 @@ import { decodedPublicSession } from "../../api/contracts";
 import { isResourceId, makeNoteUrl } from "@folio/model";
 import { requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
-import { hideAuthentication, refreshControls, setSidebar } from "../accounts/authentication";
+import { connectionFailure, hideAuthentication, refreshControls, setSidebar } from "../accounts/authentication";
 import { collaborationState, connectCollaboration } from "../collaboration/collaboration";
 import { api } from "../core/api";
 import { stopAppearancePolling } from "../core/appearance";
+import { clearServiceOutage, isConnectionLoss } from "../core/recovery";
 import { appState } from "../core/bootstrap";
 import { ApiError, notice, setText } from "../core/dom";
 import { showDialog } from "../dialogs/dialogs";
@@ -54,13 +55,7 @@ export function initializeSharingPublic(): void {
   listen(appState.element("sharing-form"), "change", refreshSharingCopy);
   listen(appState.element("sharing-level"), "change", renderPublicShareFields);
   listen(appState.element("sharing-reset-link"), "click", async () => {
-    if (
-      !(await confirmProjectAction(
-        "Reset this public link? Existing links and guest connections will stop working.",
-        "Reset link",
-      ))
-    )
-      return;
+    if (!(await confirmProjectAction("Reset this public link? Existing links stop working", "Reset link"))) return;
     await saveSharing(true);
   });
   listen(appState.element("sharing-clear-password"), "change", () => {
@@ -72,8 +67,7 @@ export function scopedApiPath(path: string, headers: Record<string, string>) {
   if (publicState.publicView) {
     const url = new URL(path, window.location.href);
     const name = url.pathname.replace(/^\/api\/(?:public\/)?/, "");
-    if (!publicState.publicApiPaths.has(name))
-      throw new ApiError("This action is unavailable from a public document.", 403);
+    if (!publicState.publicApiPaths.has(name)) throw new ApiError("Unavailable in public documents", 403);
     url.pathname = `/api/public/${name}`;
     headers["X-Folio-Share"] = publicState.publicToken ?? "";
     delete headers.Authorization;
@@ -101,13 +95,14 @@ export async function connectPublic(password?: string): Promise<void> {
   appState.connectionState = "connecting";
   refreshControls();
   try {
-    if (!/^[a-f0-9]{64}$/i.test(publicState.publicToken ?? ""))
-      throw new ApiError("Open a valid public document link.", 403);
+    if (!/^[a-f0-9]{64}$/i.test(publicState.publicToken ?? "")) throw new ApiError("Invalid public link", 403);
     const session = await api("/api/public/session", {
       decode: decodedPublicSession,
       method: "POST",
+      timeoutMs: 15000,
       ...(password !== undefined ? { body: { password } } : {}),
     });
+    clearServiceOutage();
     if (session.passwordRequired) {
       publicState.publicWritable = false;
       appState.connectionState = "error";
@@ -115,7 +110,7 @@ export async function connectPublic(password?: string): Promise<void> {
       return;
     }
     if (!isResourceId(session.id) || typeof session.path !== "string" || typeof session.writable !== "boolean") {
-      throw new ApiError("The service returned an incomplete public document.");
+      throw new ApiError("Incomplete public document");
     }
     publicState.publicWritable = session.writable;
     appState.element("public-password-dialog").close();
@@ -134,6 +129,13 @@ export async function connectPublic(password?: string): Promise<void> {
     const error = errorContext(errorCause);
     publicState.publicWritable = false;
     appState.connectionState = "error";
+    if (isConnectionLoss(error)) {
+      if (appState.element("public-password-dialog").open)
+        notice(appState.element("public-password-error"), "Disconnected", "error");
+      else connectionFailure(error);
+      return;
+    }
+    clearServiceOutage();
     notice(appState.ui.connectionMessage, error.message, "error");
     if (error.status === 401) {
       requestPublicPassword();
@@ -144,6 +146,7 @@ export async function connectPublic(password?: string): Promise<void> {
   }
 }
 export function requestPublicPassword(): void {
+  clearServiceOutage();
   notice(appState.element("public-password-error"), "");
   showDialog(appState.element("public-password-dialog"));
   appState.element("public-password").focus();
@@ -174,7 +177,7 @@ export function refreshSharingCopy(): void {
     projectDialogState.projectFormSnapshot !== null &&
     projectDialogState.projectFormSnapshot !== projectFormState();
   copy.disabled = projectDialogState.sharingSaving || unsaved || (publicSelected && !link);
-  copy.title = copy.disabled ? "Save the permissions before copying this link" : "Copy sharing link";
+  copy.title = copy.disabled ? "Save permissions to copy the link" : "Copy link";
   setText(copy, "Copy link");
   appState.element("sharing-feedback").hidden = true;
 }

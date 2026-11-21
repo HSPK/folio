@@ -4,7 +4,34 @@ import {
 import { imageFixture } from "./node-tools-cases.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
-test("non-critical messages collapse in a modal, avoid Save and can be dismissed", async ({ page, browserName }) => {
+test("settings dropdowns share the More menu surface and keep native selection", async ({ page }) => {
+  test.skip(!await page.evaluate(() => CSS.supports("appearance", "base-select") && CSS.supports("selector(::picker(select))")));
+  for (const theme of ["light", "dark"]) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.locator("#more-menu > summary").click();
+    const surface = await page.locator("#more-actions-panel").evaluate(node => {
+      const style = getComputedStyle(node);
+      return [style.backgroundColor, style.borderRadius, style.boxShadow];
+    });
+    await page.locator("#settings-open").click();
+    const select = page.locator("#settings-default-view");
+    await select.click();
+    await expect(select.locator("option").last()).toBeVisible();
+    expect(await select.evaluate(node => {
+      const style = getComputedStyle(node, "::picker(select)");
+      return [style.backgroundColor, style.borderRadius, style.boxShadow];
+    })).toEqual(surface);
+    await page.keyboard.press("Escape");
+    await expect(select.locator("option").last()).toBeHidden();
+    await expect(page.locator("#settings-dialog[open]")).toBeVisible();
+    await select.click();
+    await select.getByRole("option", { name: "Source", exact: true }).click();
+    await expect(select).toHaveValue("source");
+    await page.locator("#settings-cancel").click();
+  }
+});
+
+test("non-critical messages show in full in a modal, avoid Save and can be dismissed", async ({ page, browserName }) => {
   await page.setViewportSize({ width: 390, height: 680 });
   await page.route("**/api/appearance", route => route.fulfill({
     json: { theme: "system", latinFont: "sans-serif", cjkFont: "Folio Missing Audit Font" },
@@ -16,9 +43,7 @@ test("non-critical messages collapse in a modal, avoid Save and can be dismissed
   const font = page.locator("#settings-cjk-font");
   await font.focus();
   await expect(font).toBeFocused();
-  const toggle = page.getByRole("button", { name: "Toggle status messages", exact: true });
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await toggle.click();
+  await expect(page.getByRole("button", { name: "Toggle status messages", exact: true })).toBeHidden();
   await expect(warning).toBeVisible();
   await expect.poll(async () => {
     const stack = await page.locator("#status-notices").boundingBox();
@@ -62,6 +87,9 @@ test(`settings use scoped navigation without clipped tabs at ${viewport.width}px
   await page.setViewportSize(viewport);
   await openSettingsDialog(page);
   await expect(page.locator('[data-settings-panel="editor"]')).toBeVisible();
+  const rowHeight = await page.locator('label[for="settings-spellcheck"]').evaluate(node => node.offsetHeight);
+  expect(rowHeight).toBeGreaterThanOrEqual(44);
+  expect(rowHeight).toBeLessThan(50);
   await expect(page.locator('[data-settings-group="Writing preferences"]')).toHaveCount(1);
   if (viewport.width < 650) {
     await expect(page.locator(".settings-tabs")).toBeHidden();
@@ -92,6 +120,7 @@ test("More keeps Settings visible while recovery scrolls and exposes licenses th
     await expect(page.locator("#more-document-actions")).toBeVisible();
     await expect(page.locator("#more-workspace-actions")).toBeVisible();
     await expect(page.locator("#history-open")).toBeHidden();
+    await expect(page.locator("#more-actions-panel")).toHaveCSS("transform", "none");
     const before = await page.locator("#settings-open").boundingBox();
     await page.locator(".more-menu-scroll").evaluate(node => { node.scrollTop = node.scrollHeight; });
     await page.locator("#more-recovery > summary").click();
@@ -109,17 +138,17 @@ test("More keeps Settings visible while recovery scrolls and exposes licenses th
   } finally { await library.close(); }
 });
 
-test("collaboration presence is distinct from public sharing and view mode is a disclosure", async ({ browser }) => {
+test("the floating menu keeps collaboration presence distinct from public sharing and shows the active view", async ({ browser }) => {
   const library = await collaborativeLibrary(browser);
   try {
     const [page] = library.pages;
     const join = page.locator("#collaboration-join");
     await expect(join).toHaveAttribute("aria-pressed", "true");
     await expect(join).toHaveText("Collaborating");
-    await expect(page.locator("#view-menu > summary svg[data-icon=chevron-down]")).toBeVisible();
+    await page.locator("#more-menu > summary").click();
+    await expect(page.locator('#document-view-options [aria-pressed="true"] svg')).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(join).toHaveText(/\d+ online/);
-    await page.locator("#more-menu > summary").click();
     await expect(page.locator("#share-page")).toHaveText("Share page");
   } finally { await library.close(); }
 });

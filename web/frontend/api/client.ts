@@ -61,21 +61,21 @@ export function createApiClient({
       });
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) throw error;
-      throw new ApiError("The local Folio service could not be reached.", 0, true);
+      throw new ApiError("Folio is unreachable.", 0, true);
     }
     let payload: unknown;
     try {
       payload = await response.json();
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) throw error;
-      throw new ApiError(`The service returned an unreadable response (HTTP ${response.status}).`, response.status);
+      throw new ApiError(`Unreadable response (HTTP ${response.status}).`, response.status);
     }
     if (signal?.aborted) throw new DOMException("The request was canceled.", "AbortError");
     if (!response.ok) {
       const error = new ApiError(
         isRecord(payload) && typeof payload.error === "string"
           ? payload.error
-          : `The request failed (HTTP ${response.status}).`,
+          : `Request failed (HTTP ${response.status}).`,
         response.status,
       );
       error.authenticationGeneration = request.authenticationGeneration;
@@ -90,10 +90,8 @@ export function createApiClient({
         const value: unknown = JSON.parse(permissions);
         payload = { ...payload, permissions: validatedDocumentPermissions(value) };
       } catch (error) {
-        throw new ApiError(
-          `Invalid document permissions: ${error instanceof Error ? error.message : String(error)}`,
-          response.status,
-        );
+        console.error("Invalid document permissions", error);
+        throw new ApiError("Invalid document permissions.", response.status);
       }
     }
     const result = decode ? decode(payload) : payload;
@@ -112,7 +110,7 @@ export function createApiClient({
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        reject(new ApiError("The local Folio request timed out.", 408));
+        reject(new ApiError("Request timed out.", 408));
         controller.abort();
       }, timeoutMs);
     });

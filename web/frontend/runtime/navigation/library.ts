@@ -1,4 +1,6 @@
+import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
+import { projectModel } from "../../state/projects";
 import { filterNotes, sameTreeEntries } from "@folio/model";
 import { decodedTree } from "../../api/contracts";
 import { libraryCatalog, libraryModel } from "../../state/library";
@@ -8,9 +10,11 @@ import { connectionFailure, refreshControls, setRoot } from "../accounts/authent
 import { api } from "../core/api";
 import { appState, rootChanged } from "../core/bootstrap";
 import { aborted, notice } from "../core/dom";
+import { readLayoutPreference, storeLayoutPreference } from "../core/layout";
 import { resourceState } from "../documents/resources";
 import { onApplicationDispose } from "../lifecycle";
 import { settingsState, visibleLibraryDirectories, visibleLibraryFiles } from "../preferences/settings";
+import { restoreEntryIcons } from "./icons";
 import { syncTreeTabStop } from "./tree";
 
 class LibraryState {
@@ -25,11 +29,31 @@ export const libraryState = new LibraryState();
 export function initializeNavigationLibrary(): void {
   libraryState.fileFilterFrame = libraryState.treeRefreshTimer = null;
   libraryState.selectedFileButton = libraryState.treeTabStop = null;
+  libraryModel.observeCollapsed((paths) => storeLayoutPreference(collapsedFoldersKey(), JSON.stringify([...paths])));
   onApplicationDispose(() => {
+    libraryModel.observeCollapsed(null);
     clearTimer(libraryState.treeRefreshTimer);
     if (libraryState.fileFilterFrame !== null) cancelAnimationFrame(libraryState.fileFilterFrame);
     libraryState.selectedFileButton = libraryState.treeTabStop = null;
   });
+}
+
+/** Folder states belong to one account's view of one project, so a reload reopens the tree as it was left. */
+function collapsedFoldersKey() {
+  const account = authenticationSession.user?.username ?? "local";
+  return `folio.tree.collapsed.${account}.${projectModel.active?.id ?? appState.currentRoot ?? "default"}`;
+}
+
+function restoreCollapsedFolders(directories: readonly { path: string }[]): void {
+  let stored: unknown = null;
+  try {
+    stored = JSON.parse(readLayoutPreference(collapsedFoldersKey()) ?? "null");
+  } catch {
+    stored = null;
+  }
+  if (!Array.isArray(stored)) return;
+  const known = new Set(directories.map((directory) => directory.path));
+  libraryModel.restoreCollapsed(stored.filter((path): path is string => typeof path === "string" && known.has(path)));
 }
 
 export function refreshFilteredNote(): void {
@@ -64,20 +88,13 @@ export function renderTreeStatus(
   visible = filterNotes(libraryFiles, appState.ui.filter.value),
 ): void {
   let message = libraryCatalog.error;
-  if (libraryCatalog.loading) message = libraryCatalog.loaded ? "Refreshing the file list…" : "Loading Markdown files…";
-  else if (!message && libraryCatalog.loaded && !libraryFiles.length) message = "No notes yet.";
-  else if (!message && libraryCatalog.loaded && !visible.length) message = "No notes match your filter.";
+  if (libraryCatalog.loading) message = libraryCatalog.loaded ? "Refreshing…" : "Loading…";
+  else if (!message && libraryCatalog.loaded && !libraryFiles.length) message = "No notes yet";
+  else if (!message && libraryCatalog.loaded && !visible.length) message = "No matching notes";
   else if (!message && !libraryCatalog.loaded)
-    message =
-      appState.connectionState === "ready"
-        ? "Refresh to list Markdown files."
-        : "Open Folio using the app or CLI launch URL to connect.";
+    message = appState.connectionState === "ready" ? "Refresh to list files" : "";
   notice(appState.ui.treeMessage, message, libraryCatalog.error && !libraryCatalog.loading ? "error" : "");
-  notice(
-    appState.ui.treeLimit,
-    libraryCatalog.truncated ? "File limit reached. Filtering searches only the listed notes." : "",
-    "warning",
-  );
+  notice(appState.ui.treeLimit, libraryCatalog.truncated ? "File limit reached" : "", "warning");
   appState.ui.fileNav.setAttribute("aria-busy", String(libraryCatalog.loading));
 }
 
@@ -142,7 +159,12 @@ export async function refreshFiles(): Promise<void> {
     const changed =
       !sameTreeEntries(libraryCatalog.files, result.files) ||
       !sameTreeEntries(libraryCatalog.directories, result.directories);
+    const first = !libraryCatalog.loaded;
     libraryModel.replace(result.files, result.directories, result.truncated);
+    if (first) {
+      restoreCollapsedFolders(result.directories);
+      restoreEntryIcons();
+    }
     if (changed) {
       renderFiles();
       updateFileSelection();
@@ -151,7 +173,7 @@ export async function refreshFiles(): Promise<void> {
     const error = errorContext(cause);
     if (!appState.treeGate.isCurrent(ticket) || aborted(error)) return;
     libraryModel.update({
-      error: `Could not refresh files: ${error.message}${libraryCatalog.loaded ? " The previous list is still shown." : ""}`,
+      error: isConnectionLoss(error) ? "" : `Refresh failed: ${error.message}`,
     });
     connectionFailure(error);
   } finally {
@@ -164,3 +186,4 @@ export async function refreshFiles(): Promise<void> {
     }
   }
 }
+import { isConnectionLoss } from "../core/recovery";

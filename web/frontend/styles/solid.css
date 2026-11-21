@@ -1,16 +1,21 @@
 #folio-root { height: 100%; min-height: 0; }
 #status-notices { max-width: calc(100vw - 28px); }
 .menu-panel-host { display: contents; }
+/* Let Kobalte finish fading out before native details hides its contents. */
+.popup::details-content { content-visibility: visible; }
+.menu-panel-host > .popup-panel { display: none; }
 .menu-panel-host > div { z-index: 30; }
 .menu-panel-host .popup-panel { inset: auto; }
 .menu-panel-host .popup-panel {
   max-width: min(calc(100vw - 24px), var(--kb-popper-content-available-width, 100vw));
   max-height: min(680px, var(--kb-popper-content-available-height, calc(100dvh - 88px)));
 }
-.startup-failure {
-  display: grid; align-content: center; gap: 14px;
+.startup-screen {
+  display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center;
   width: min(100% - 40px, 520px); min-height: 100dvh; margin-inline: auto;
 }
+.startup-screen h1 { margin: 0; }
+@media (scripting: none) { #folio-root { display: none; } }
 .search-results-viewport {
   min-height: 0;
   max-height: min(58dvh, 560px);
@@ -21,12 +26,10 @@
 .search-layout > section { overflow: hidden; }
 .workspace-results li { min-width: 0; }
 .workspace-results button[aria-selected="true"] {
-  background: var(--selection);
-  box-shadow: inset 2px 0 var(--accent);
+  background: var(--control-selected-background);
 }
 .settings-content { overscroll-behavior: contain; }
 @media (max-width: 650px) {
   .search-results-viewport { max-height: min(52dvh, 420px); }
-  .document-header { padding-inline: 10px; gap: 8px; }
   .settings-header, .settings-actions { padding-inline: 16px; }
 }

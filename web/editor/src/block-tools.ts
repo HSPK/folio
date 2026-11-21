@@ -56,6 +56,22 @@ function blockAtDOM(view: EditorView, target: Node | null) {
   }
   return null;
 }
+/** Vertical centre of a block's first line of text; blocks without text use their own box. */
+function firstLine(dom: HTMLElement, bounds: DOMRect) {
+  const fallback = bounds.height <= 44 ? bounds.top + bounds.height / 2 : bounds.top + 14;
+  const walker = document.createTreeWalker(dom, NodeFilter.SHOW_TEXT);
+  for (let text = walker.nextNode(), seen = 0; text && seen < 8; text = walker.nextNode(), seen++) {
+    if (!text.nodeValue?.trim()) continue;
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, 1);
+    const rect = range.getClientRects()[0];
+    if (!rect?.height) continue;
+    const centre = rect.top + rect.height / 2;
+    return centre < bounds.top || centre > bounds.top + 64 ? fallback : centre;
+  }
+  return fallback;
+}
 export function createBlockTools({
   lifetime,
   root,
@@ -99,8 +115,7 @@ export function createBlockTools({
     icon: "plus",
     onClick() {
       try {
-        if (!current?.handle.active_fn() || !current.handle.editable_fn())
-          throw new Error("Select an editable block first.");
+        if (!current?.handle.active_fn() || !current.handle.editable_fn()) throw new Error("Read-only");
         const { view, position } = current;
         const transaction = blockActionTransaction(view.state, { position, action: "insert" });
         close();
@@ -108,7 +123,7 @@ export function createBlockTools({
         view.focus();
         onNotice?.("");
       } catch (error) {
-        onNotice?.(`Could not add block: ${errorMessage(error)}`, "error");
+        onNotice?.(`Add failed: ${errorMessage(error)}`, "error");
       }
     },
   });
@@ -130,7 +145,7 @@ export function createBlockTools({
       onClick() {
         try {
           const target = menu.target();
-          if (!target?.editable_fn() || !current) throw new Error("Select an editable block first.");
+          if (!target?.editable_fn() || !current) throw new Error("Read-only");
           const { view, position } = current;
           const transaction = blockActionTransaction(view.state, { position, action });
           close();
@@ -138,7 +153,7 @@ export function createBlockTools({
           view.focus();
           onNotice?.("");
         } catch (error) {
-          onNotice?.(`Could not edit block: ${errorMessage(error)}`, "error");
+          onNotice?.(`Edit failed: ${errorMessage(error)}`, "error");
         }
       },
     });
@@ -203,15 +218,17 @@ export function createBlockTools({
           ? (current.dom.parentElement ?? current.dom)
           : current.dom;
     const left = edge.getBoundingClientRect().left;
-    const gripWidth = Math.min(18, Math.max(14, left - viewport.left - 36));
-    const width = gripWidth * 2 + 8;
-    const x = Math.max(viewport.left + 1, left - width - 8);
-    const y = Math.max(viewport.top + 2, Math.min(bounds.top + 2, viewport.bottom - 28));
+    const gripWidth = Math.min(20, Math.max(14, left - viewport.left - 30));
+    const width = gripWidth * 2 + 1;
+    const x = Math.max(viewport.left + 1, left - width - 6);
+    // Centre on the block's first line, whatever its type size, rather than hanging from its top edge.
+    const line = firstLine(current.dom, bounds);
+    const y = Math.max(viewport.top + 2, Math.min(line - 12, viewport.bottom - 26));
     controls.style.setProperty("--folio-grip-width", `${gripWidth}px`);
     controls.style.width = `${width}px`;
     controls.style.left = `${x}px`;
     controls.style.top = `${y}px`;
-    current.corridor = { left: x - 2, right: Math.max(bounds.left, x + width), top: y - 4, bottom: y + 30 };
+    current.corridor = { left: x - 2, right: Math.max(bounds.left, x + width), top: y - 4, bottom: y + 28 };
     menu.position();
     if (current.node.type.name === "table") tableTools.position();
   }
@@ -262,7 +279,7 @@ export function createBlockTools({
   }
   function open() {
     try {
-      if (!current?.handle.active_fn()) throw new Error("This block is no longer open.");
+      if (!current?.handle.active_fn()) throw new Error("Block is gone");
       const { view, node, position: at } = current;
       clearTimeout(timer);
       if (expanded()) {
@@ -280,7 +297,7 @@ export function createBlockTools({
       menu.open(grip);
       (actions.querySelector<HTMLButtonElement>("button:not(:disabled)") ?? toolbar).focus({ preventScroll: true });
     } catch (error) {
-      onNotice?.(`Could not open block menu: ${errorMessage(error)}`, "error");
+      onNotice?.(`Menu failed: ${errorMessage(error)}`, "error");
     }
   }
   lifetime.listen(toolbar, "keydown", (event) => {
@@ -361,7 +378,7 @@ export function createBlockTools({
                   return true;
                 } catch (error) {
                   event.preventDefault();
-                  onNotice?.(`Could not open block menu: ${errorMessage(error)}`, "error");
+                  onNotice?.(`Menu failed: ${errorMessage(error)}`, "error");
                   return true;
                 }
               },

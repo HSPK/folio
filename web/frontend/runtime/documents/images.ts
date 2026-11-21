@@ -25,12 +25,7 @@ export function initializeDocumentsImages(): void {
     "paste",
     (event) => {
       if (!(event.target instanceof Element)) return;
-      if (
-        !documentSession.current ||
-        !collaborationState.collaborativeTarget(event.target) ||
-        event.target.closest<HTMLElement>(".folio-metadata-source")
-      )
-        return;
+      if (!documentSession.current || !collaborationState.collaborativeTarget(event.target)) return;
       const images = [...(event.clipboardData?.items ?? [])].filter(
         (item) => item.kind === "file" && item.type.startsWith("image/"),
       );
@@ -59,12 +54,12 @@ export function initializeDocumentsImages(): void {
       event.preventDefault();
       event.stopImmediatePropagation();
       if (!documentSession.current || !projectWritable() || event.target.closest<HTMLElement>(".folio-metadata")) {
-        documentNotice("Drop images into an editable document body.", "warning");
+        documentNotice("Document not editable", "warning");
         return;
       }
       const images = [...event.dataTransfer.files];
       if (images.some((file) => !["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type))) {
-        documentNotice("Drop PNG, JPEG, GIF, or WebP images.", "warning");
+        documentNotice("PNG, JPEG, GIF, or WebP only", "warning");
         return;
       }
       if (shell.view === "rich") {
@@ -88,9 +83,9 @@ export function imageMarkdownPath(path: string, documentPath: string) {
     .join("/");
 }
 export async function uploadImageFile(image: File, operation: ImageOperation) {
-  if (!image || image.size > 16 * 1024 * 1024) throw new Error("Images must not exceed 16 MiB.");
+  if (!image || image.size > 16 * 1024 * 1024) throw new Error("Image over 16 MiB");
   if (operation.id !== documentSession.id || operation.project !== projectModel.active?.id || !projectWritable()) {
-    throw new Error("The open page or its permissions changed before uploading.");
+    throw new Error("Page changed before upload");
   }
   const result = await api(`/api/images?document=${encodeURIComponent(operation.resource)}`, {
     decode: decodedImage,
@@ -102,21 +97,20 @@ export async function uploadImageFile(image: File, operation: ImageOperation) {
     result.document !== operation.resource ||
     typeof result.documentPath !== "string"
   ) {
-    throw new Error("The server returned an invalid image or document identity.");
+    throw new Error("Invalid upload response");
   }
   const url = imageMarkdownPath(result.path, result.documentPath);
   if (result.documentPath !== operation.path) {
-    throw new Error(`The document moved while uploading. The new image is kept at ${url}.`);
+    throw new Error(`Document moved; image at ${url}`);
   }
   if (operation.id !== documentSession.id || operation.project !== projectModel.active?.id || !projectWritable()) {
-    throw new Error(`The page or its permissions changed while uploading. The new image is kept at ${url}.`);
+    throw new Error(`Page changed; image at ${url}`);
   }
   return { url, warning: result.warning };
 }
 export async function uploadReplacementImage(image: File) {
-  if (!documentSession.current || !projectWritable() || collaborationLocked())
-    throw new Error("This page is not editable.");
-  if (imageState.imageUploading) throw new Error("Wait for the current image upload to finish.");
+  if (!documentSession.current || !projectWritable() || collaborationLocked()) throw new Error("Read-only");
+  if (imageState.imageUploading) throw new Error("Upload in progress");
   imageState.imageUploading = true;
   try {
     const result = await uploadImageFile(image, {
@@ -140,11 +134,11 @@ export async function insertImages(
   } = {},
 ): Promise<void> {
   if (!projectWritable() || collaborationLocked()) {
-    documentNotice("This page is not editable.", "warning");
+    documentNotice("Read-only", "warning");
     return;
   }
   if (imageState.imageUploading) {
-    documentNotice("Wait for the current image upload to finish.");
+    documentNotice("Upload in progress");
     return;
   }
   const operation = {
@@ -156,7 +150,7 @@ export async function insertImages(
   };
   const selection = collaborativeSelection();
   if (!selection) {
-    documentNotice("Place the cursor in the document before pasting an image.", "warning");
+    documentNotice("No cursor in document", "warning");
     return;
   }
   const current = collaborationState.collaboration;
@@ -177,20 +171,16 @@ export async function insertImages(
       if (result.warning) warnings.add(result.warning);
     }
     if (operation.id !== documentSession.id || operation.project !== projectModel.active?.id || !projectWritable()) {
-      throw new Error(
-        `Images were saved, but the open page or its permissions changed. Insert them manually: ${links.join(" ")}`,
-      );
+      throw new Error("Page changed after upload");
     }
     if (!current && operation.revision !== documentSession.revision) {
-      throw new Error(
-        `Images were saved while you edited. Paste these references at the desired position: ${links.join(" ")}`,
-      );
+      throw new Error("Document edited during upload");
     }
     const range =
       relative && current === collaborationState.collaboration
         ? requireValue(current).shared.resolve(relative)
         : selection;
-    if (!range) throw new Error(`The original insertion position is unavailable. Insert manually: ${links.join(" ")}`);
+    if (!range) throw new Error("Insert position lost");
     const from = Math.min(range.from, range.to);
     const to = Math.max(range.from, range.to);
     const insertion = links.join(blockInsertion ? "\n\n" : "\n");
@@ -212,7 +202,7 @@ export async function insertImages(
   } catch (errorCause) {
     const error = errorContext(errorCause);
     documentNotice(
-      `Could not insert image: ${error.message}${links.length ? ` Already saved; insert these references manually: ${links.join(" ")}` : ""}`,
+      `Image insert failed: ${error.message}${links.length ? `; saved as ${links.join(" ")}` : ""}`,
       "error",
     );
   } finally {

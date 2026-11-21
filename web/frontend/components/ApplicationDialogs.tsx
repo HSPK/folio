@@ -14,7 +14,7 @@ export function ApplicationDialogs() {
             <input
               id="command-query"
               type="search"
-              placeholder="Search commands"
+              placeholder="Search notes and commands"
               autocomplete="off"
               spellcheck="false"
             />
@@ -24,13 +24,13 @@ export function ApplicationDialogs() {
           </div>
           <div id="command-list" class="command-list" role="listbox" aria-label="Commands"></div>
           <p id="command-empty" class="command-empty" hidden>
-            No matching commands
+            No matching notes or commands
           </p>
         </form>
       </AppDialog>
       <AppDialog id="about-dialog" class="about-dialog" aria-labelledby="about-title">
         <h2 id="about-title">Folio</h2>
-        <p>A local-first Markdown workspace for writing, organizing notes, and collaborating.</p>
+        <p>Local-first Markdown workspace</p>
         <p>
           <a href="/THIRD-PARTY-LICENSES.txt" target="_blank" rel="noopener noreferrer">
             Third-party licenses

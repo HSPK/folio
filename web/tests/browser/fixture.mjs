@@ -52,8 +52,7 @@ export async function confirmDialog(page, { accept = true } = {}) {
 }
 
 export async function chooseView(page, id) {
-  await page.locator("#view-menu > summary").click();
-  await page.locator(`#view-${id}`).click();
+  await openMoreAction(page, `view-${id}`);
 }
 
 /** Open the independent heading navigator without changing the sidebar section. */
@@ -184,9 +183,7 @@ export async function metadataField(page) {
   const panel = page.locator(".folio-metadata > details");
   await expect(panel).toBeVisible();
   if (await panel.getAttribute("open") === null) await panel.locator(":scope > summary").click();
-  const advanced = panel.locator(".folio-metadata-advanced");
-  if (await advanced.getAttribute("open") === null) await advanced.locator("summary").click();
-  return panel.locator("textarea");
+  return panel.getByRole("textbox", { name: "Document title", exact: true });
 }
 
 test.beforeAll(async () => {

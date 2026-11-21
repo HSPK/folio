@@ -42,29 +42,24 @@ export function initializeDocumentsHistory(): void {
   });
   listen(appState.element("history-copy"), "click", async () => {
     try {
-      await navigator.clipboard.writeText(requireValue(requireValue(historyState.historyView).selected).content);
+      await copyPlainText(requireValue(requireValue(historyState.historyView).selected).content);
       documentNotice("");
     } catch (errorCause) {
       const error = errorContext(errorCause);
-      notice(appState.element("history-message"), `Could not copy this version: ${error.message}`, "error");
+      notice(appState.element("history-message"), `Copy failed: ${error.message}`, "error");
     }
   });
   listen(appState.element("history-restore"), "click", async () => {
     const view = historyState.historyView;
     if (!view?.selected || historyState.historyBusy) return;
-    if (
-      !(await confirmAction(
-        "Restore this version? Connected editors must reopen the document. Existing sharing permissions stay in effect.",
-        { label: "Restore version" },
-      ))
-    )
+    if (!(await confirmAction("Restore this version? Editors must reopen the note", { label: "Restore version" })))
       return;
     historyState.historyBusy = true;
     appState.element("history-restore").disabled = true;
     notice(appState.element("history-message"), "Restoring version…");
     try {
       if (view.project !== projectModel.active?.id || view.document !== documentSession.id)
-        throw new Error("The open document changed.");
+        throw new Error("Document changed");
       const document = await api("/api/history/restore", {
         decode: decodedDocument,
         method: "POST",
@@ -91,10 +86,9 @@ export function initializeDocumentsHistory(): void {
     closeMenus();
     if (!documentSession.current || !projectModel.active?.owned) return;
     if (
-      !(await confirmAction(
-        `Move “${documentSession.current.path}” to the recycle bin for 30 days? Its public links will be revoked.`,
-        { label: "Recycle note" },
-      ))
+      !(await confirmAction(`Recycle “${documentSession.current.path}”? Public links are revoked`, {
+        label: "Recycle note",
+      }))
     )
       return;
     const id = documentSession.id;
@@ -113,7 +107,7 @@ export function initializeDocumentsHistory(): void {
       await refreshFiles();
     } catch (errorCause) {
       const error = errorContext(errorCause);
-      documentNotice(`Could not delete the note: ${error.message}`, "error");
+      documentNotice(`Delete failed: ${error.message}`, "error");
     }
   });
 }
@@ -155,10 +149,7 @@ export async function openHistory(): Promise<void> {
         return button;
       }),
     );
-    notice(
-      appState.element("history-message"),
-      result.revisions.length ? "" : "No earlier versions have been recorded.",
-    );
+    notice(appState.element("history-message"), result.revisions.length ? "" : "No earlier versions");
     if (result.revisions.length) await selectHistoryVersion(result.revisions[0].id);
   } catch (errorCause) {
     const error = errorContext(errorCause);
@@ -185,8 +176,7 @@ export async function selectHistoryVersion(id: number): Promise<void> {
     requireValue(view).selected = result;
     for (const button of htmlChildren(appState.element("history-list")))
       button.setAttribute("aria-pressed", String(Number(button.dataset.id) === id));
-    appState.element("history-detail").textContent =
-      "Selected version compared with the open document. Red is removed; green is current.";
+    appState.element("history-detail").textContent = "Red removed, green current";
     const changes = diffLines(result.content, requireValue(requireValue(view).current), { timeout: 200 });
     const diff = appState.element("history-diff");
     diff.replaceChildren();
@@ -201,11 +191,7 @@ export async function selectHistoryVersion(id: number): Promise<void> {
     }
     notice(
       appState.element("history-message"),
-      !changes
-        ? "The diff is too large. Showing the selected version; Copy version retains all text."
-        : remaining <= 0
-          ? "The preview is truncated. Copy version retains all text."
-          : "",
+      !changes ? "Diff too large, showing version" : remaining <= 0 ? "Preview truncated" : "",
       "warning",
     );
     appState.element("history-copy").disabled = false;
@@ -256,9 +242,10 @@ export async function openTrash(): Promise<void> {
         return row;
       }),
     );
-    notice(appState.element("trash-message"), entries.length ? "" : "The recycle bin is empty.");
+    notice(appState.element("trash-message"), entries.length ? "" : "Recycle bin empty");
   } catch (errorCause) {
     const error = errorContext(errorCause);
     notice(appState.element("trash-message"), error.message, "error");
   }
 }
+import { copyPlainText } from "../../../shared/clipboard";

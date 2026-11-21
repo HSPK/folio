@@ -37,7 +37,7 @@ function createImagePreview(lifetime: Lifetime) {
   return {
     open(next: ImageToolHandle) {
       const source = next.image_fn();
-      if (!source?.getAttribute("src")) throw new Error("This image is not available for preview.");
+      if (!source?.getAttribute("src")) throw new Error("Image unavailable");
       target = next;
       image.src = source.src;
       image.alt = source.alt;
@@ -262,7 +262,7 @@ export function createImageTools({
   }
   function requireTarget() {
     const target = hover.target();
-    if (!target) throw new Error("This image is no longer open.");
+    if (!target) throw new Error("Image no longer open");
     return target;
   }
   async function run(action_fn: () => unknown | Promise<unknown>) {
@@ -270,7 +270,7 @@ export function createImageTools({
       await action_fn();
       onNotice?.("");
     } catch (error) {
-      onNotice?.(`Could not update image: ${errorMessage(error)}`, "error");
+      onNotice?.(`Image update failed: ${errorMessage(error)}`, "error");
     }
   }
   const save = toolButton({
@@ -280,7 +280,7 @@ export function createImageTools({
       run(() => {
         const target = requireTarget();
         const image = target.image_fn();
-        if (!image?.getAttribute("src")) throw new Error("Only available local images can be downloaded.");
+        if (!image?.getAttribute("src")) throw new Error("Only local images can be saved");
         const link = document.createElement("a");
         link.href = image.src;
         link.download = target.attributes_fn().src.split(/[/?#]/).filter(Boolean).at(-1) || "image";
@@ -318,14 +318,13 @@ export function createImageTools({
         const captured = replacement;
         replacement = null;
         try {
-          if (!captured?.valid_fn()) throw new Error("The image changed before the replacement was selected.");
-          if (!upload_fn) throw new Error("Image uploads are unavailable.");
+          if (!captured?.valid_fn()) throw new Error("Image changed");
+          if (!upload_fn) throw new Error("Image upload unavailable");
           replacing = true;
           toolbar.setAttribute("aria-busy", "true");
           hover.refresh();
           const url = await upload_fn(image);
-          if (!captured.replace_fn(url))
-            throw new Error(`The image changed while uploading. The new file is kept at ${url}.`);
+          if (!captured.replace_fn(url)) throw new Error(`Image changed; file at ${url}`);
         } finally {
           replacing = false;
           file.value = "";
@@ -356,7 +355,7 @@ export function createImageTools({
     label: "Copy image Markdown",
     icon: "copy",
     text: "Copy reference",
-    onClick: () => run(() => navigator.clipboard.writeText(requireTarget().markdown_fn())),
+    onClick: () => run(() => copyPlainText(requireTarget().markdown_fn())),
   });
   const remove = toolButton({
     label: "Remove image",
@@ -467,3 +466,4 @@ export function createImageTools({
     },
   };
 }
+import { copyPlainText } from "../../shared/clipboard";

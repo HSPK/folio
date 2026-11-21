@@ -3,7 +3,6 @@ import { projectModel } from "../../state/projects";
 import { createIcon } from "@folio/editor-runtime";
 import type { Project } from "../../types/domain";
 import { requireValue } from "../../types/elements";
-import { setSidebar } from "../accounts/authentication";
 import { appState } from "../core/bootstrap";
 import { notice, setText } from "../core/dom";
 import { confirmAction, hasDialogConfirmation, settleDialogConfirmation, showDialog } from "../dialogs/dialogs";
@@ -83,6 +82,7 @@ export function initializeProjectsDialog(ports: ProjectDialogActions): void {
       void backProjectView();
   });
   listen(projectDialogState.projectDialog, "close", () => {
+    if (projectManagerOpen()) return;
     settleDialogConfirmation(projectDialogState.projectDialog, false);
     showProjectBrowse();
   });
@@ -109,6 +109,7 @@ export function initializeProjectsDialog(ports: ProjectDialogActions): void {
 }
 export function positionProjectDialog(): void {
   if (!projectManagerOpen() || !projectDialogState.projectAnchor) return;
+  // Browsing, creating and configuring share one compact surface beside the trigger.
   const bounds = projectDialogState.projectDialog.getBoundingClientRect();
   const desiredLeft = projectDialogState.projectAnchor.alignRight
     ? projectDialogState.projectAnchor.right - bounds.width
@@ -144,7 +145,6 @@ export function openProjectManager(): void {
       }
     : { left: 12, right: innerWidth - 12, top: 12, bottom: 44, alignRight };
   appState.inlineEditor.dismissMenus();
-  if (appState.compactLayout.matches) setSidebar(false);
   showDialog(projectDialogState.projectDialog);
   positionProjectDialog();
 }
@@ -205,6 +205,7 @@ export function setProjectView(view: string): void {
   );
   notice(appState.element("project-error"), "");
   refreshProjectBusy();
+  positionProjectDialog();
 }
 
 export function showProjectBrowse(): void {
@@ -214,7 +215,17 @@ export function showProjectBrowse(): void {
   projectDialogState.projectSessionOrigin = "browse";
   setProjectView("browse");
   renderProjects();
-  if (projectManagerOpen()) appState.element("projects-filter").focus();
+  if (projectManagerOpen()) focusProjectList();
+}
+
+/** Opening the switcher lands on the project in use, never in the search field. */
+export function focusProjectList(): void {
+  const list = appState.element("projects-list");
+  (
+    list.querySelector<HTMLElement>('.project-open[aria-current="true"]') ??
+    list.querySelector<HTMLElement>(".project-open") ??
+    appState.element("projects-close")
+  ).focus({ preventScroll: true });
 }
 
 export function confirmProjectAction(message: string, label = "Continue", signal?: AbortSignal) {
@@ -292,29 +303,27 @@ export function renderProjects(): void {
     text.className = "project-label";
     const name = document.createElement("strong");
     name.textContent = project.name;
-    const detail = document.createElement("small");
-    detail.textContent = project.owned ? "Owned by you" : project.owner ? `By ${project.owner}` : "Shared project";
-    detail.hidden = project.owned;
-    text.append(name, detail);
     const access = project.owned ? project.shared : project.access;
-    const badge = document.createElement("span");
-    badge.className = "project-access";
-    badge.append(
-      document.createTextNode(
-        access === "private"
-          ? project.owned
-            ? "Private"
-            : "Shared pages"
-          : project.owned
-            ? access === "edit"
-              ? "Shared · edit"
-              : "Shared · read"
-            : access === "edit"
-              ? "Can edit"
-              : "Read only",
-      ),
-    );
-    open.append(symbol, text, badge);
+    const accessLabel =
+      access === "private"
+        ? project.owned
+          ? "Private"
+          : "Shared pages"
+        : project.owned
+          ? access === "edit"
+            ? "Shared · edit"
+            : "Shared · read"
+          : access === "edit"
+            ? "Can edit"
+            : "Read only";
+    // One quiet line carries who owns the project and what the reader may do with it.
+    const detail = document.createElement("small");
+    detail.className = "project-access";
+    detail.textContent = project.owned
+      ? accessLabel
+      : `${accessLabel} · ${project.owner ? `by ${project.owner}` : "shared with you"}`;
+    text.append(name, detail);
+    open.append(symbol, text);
     if (project.id === projectModel.active?.id) {
       const current = createIcon("check");
       current.classList.add("project-current");
@@ -337,7 +346,10 @@ export function renderProjects(): void {
     }
     return row;
   });
-  appState.element("projects-list").replaceChildren(...rows);
+  const list = appState.element("projects-list");
+  // A background catalog refresh with the same rows must not detach the focused project.
+  if (list.children.length !== rows.length || rows.some((row, i) => !row.isEqualNode(list.children[i])))
+    list.replaceChildren(...rows);
   appState.element("projects-empty").hidden = visible.length > 0;
   setText(appState.element("projects-empty"), query ? "No matching projects" : "No projects");
 }

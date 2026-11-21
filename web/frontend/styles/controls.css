@@ -1,19 +1,28 @@
 :root {
   --control-radius: 6px;
-  --control-hover-background: color-mix(in srgb, var(--text) 4%, transparent);
+  --control-hover-background: color-mix(in srgb, var(--text) 7%, transparent);
   --control-selected-background: color-mix(in srgb, var(--text) 8%, transparent);
   --control-focus-background: color-mix(in srgb, var(--text) 8%, transparent);
   --control-focus-ring: inset 0 0 0 var(--focus-width) var(--focus);
-  --menu-radius: 10px;
-  --menu-padding: 6px;
-  --menu-item-height: 32px;
-  --menu-shadow: 0 6px 24px #00000014;
-  --motion-hover-duration: 120ms;
+  --field-border: color-mix(in srgb, var(--text) 13%, transparent);
+  --field-hover-border: color-mix(in srgb, var(--text) 24%, transparent);
+  --field-fill: var(--surface);
+  --field-quiet-fill: color-mix(in srgb, var(--text) 5%, transparent);
+  --menu-radius: var(--panel-small-radius);
+  --menu-padding: 5px;
+  --menu-item-height: 30px;
+  --icon-button-size: 28px;
+  --dialog-control-height: 32px;
+  --menu-shadow: var(--float-shadow);
+  --motion-hover-duration: 160ms;
+  --motion-panel-duration: 180ms;
+  --motion-layout-duration: 240ms;
+  --motion-easing: cubic-bezier(.22, 1, .36, 1);
   --table-header-background: color-mix(in srgb, var(--text) 6%, var(--surface));
 }
-:root[data-reduced-motion="true"] { --motion-hover-duration: 0ms; }
+:root[data-reduced-motion="true"] { --motion-hover-duration: 0ms; --motion-panel-duration: 0ms; --motion-layout-duration: 0ms; }
 @media (prefers-reduced-motion: reduce) {
-  :root { --motion-hover-duration: 0ms; }
+  :root { --motion-hover-duration: 0ms; --motion-panel-duration: 0ms; --motion-layout-duration: 0ms; }
 }
 :root[data-strong-focus="true"] {
   --control-focus-background: color-mix(in srgb, var(--text) 12%, transparent);
@@ -26,9 +35,86 @@ button, summary, a { -webkit-tap-highlight-color: transparent; }
   color: var(--control-color, inherit);
   text-decoration: none;
   cursor: pointer;
-  transition: background-color 80ms ease-out;
+  /* Text color switches at once so a theme change never leaves labels mid-fade over a new surface. */
+  transition: background-color var(--motion-hover-duration) ease-out, opacity var(--motion-hover-duration) ease-out;
+}
+input, select, textarea {
+  transition: border-color var(--motion-hover-duration) ease-out, box-shadow var(--motion-hover-duration) ease-out;
 }
 button { padding: 6px 10px; border: 0; }
+:is(input, textarea):hover:not(:disabled, :focus-visible) { border-color: var(--field-hover-border); }
+:is(input, select, textarea):disabled { opacity: .55; }
+select {
+  appearance: none; min-height: var(--dialog-control-height); padding: 5px 30px 5px 10px;
+  border-color: transparent; background-color: transparent; color: var(--text); font: 13px/1.5 var(--font-ui);
+  text-overflow: ellipsis; cursor: pointer;
+  /* A stroked chevron matching the icon set; gradients keep it inside the image policy. */
+  background-image:
+    linear-gradient(45deg, transparent 41%, var(--muted) 41%, var(--muted) 59%, transparent 59%),
+    linear-gradient(135deg, transparent 41%, var(--muted) 41%, var(--muted) 59%, transparent 59%);
+  background-position: calc(100% - 16.5px) calc(50% + 1px), calc(100% - 11.5px) calc(50% + 1px);
+  background-size: 5px 5px; background-repeat: no-repeat;
+}
+select:hover:not(:disabled) { background-color: var(--control-hover-background); }
+select:disabled { cursor: default; }
+/* Keep native selection and keyboard handling; style the picker where the browser supports it. */
+@supports (appearance: base-select) and selector(::picker(select)) {
+  select, ::picker(select) { appearance: base-select; }
+  select::picker-icon { display: none; }
+  select:open { background-color: var(--control-selected-background); }
+  ::picker(select) {
+    box-sizing: border-box; max-width: calc(100vw - 24px); max-height: min(360px, 55dvh);
+    margin-block: 4px; padding: var(--menu-padding); overflow: auto; overscroll-behavior: contain;
+    border: 1px solid var(--panel-border); border-radius: var(--menu-radius);
+    background: var(--float-fill); box-shadow: var(--menu-shadow); color: var(--text); font: 13px/1.5 var(--font-ui);
+  }
+  select option {
+    gap: 10px; min-height: var(--menu-item-height); padding: 5px 10px; border-radius: var(--control-radius);
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  select option:checked { color: var(--accent-text); font-weight: 550; }
+  select option::checkmark { order: 1; margin-inline-start: auto; color: var(--accent-text); }
+  select option:hover:not(:disabled) { background-color: var(--control-hover-background); }
+  select option:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; background-color: var(--control-focus-background); }
+  select option:disabled { opacity: .55; }
+  @media (pointer: coarse) { select option { min-height: 44px; } }
+}
+input[type="checkbox"] {
+  appearance: none; display: inline-grid; place-content: center; flex: none; width: 16px; min-width: 16px; height: 16px;
+  margin: 0; padding: 0; border: 1.5px solid color-mix(in srgb, var(--text) 34%, transparent); border-radius: 4.5px;
+  background: var(--surface); vertical-align: -3px; cursor: pointer;
+  transition: background-color var(--motion-hover-duration) ease-out, border-color var(--motion-hover-duration) ease-out;
+}
+input[type="checkbox"]::before {
+  content: ""; width: 9px; height: 5px; margin-top: -2px; border: solid var(--surface); border-width: 0 0 2px 2px;
+  border-radius: 1px; opacity: 0; transform: rotate(-45deg) scale(.6);
+  transition: opacity var(--motion-hover-duration) ease-out, transform var(--motion-hover-duration) var(--motion-easing);
+}
+input[type="checkbox"]:checked { border-color: var(--accent); background: var(--accent); }
+input[type="checkbox"]:checked::before { opacity: 1; transform: rotate(-45deg) scale(1); }
+input[type="checkbox"]:disabled { cursor: default; opacity: .55; }
+input[type="checkbox"]:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 calc(2px + var(--focus-width)) var(--focus); }
+input[type="range"] { appearance: none; height: 18px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text) 14%, transparent); }
+input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text) 14%, transparent); }
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 16px; height: 16px; margin-top: -6px; border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
+  border-radius: 50%; background: var(--elevated); box-shadow: 0 1px 3px color-mix(in srgb, var(--shadow-color) 22%, transparent);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px; height: 14px; border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
+  border-radius: 50%; background: var(--elevated); box-shadow: 0 1px 3px color-mix(in srgb, var(--shadow-color) 22%, transparent);
+}
+input[type="range"]:focus-visible { box-shadow: none; }
+/* Clearing a search uses the same stroked cross as every other close control. */
+input[type="search"]::-webkit-search-cancel-button {
+  appearance: none; width: 12px; height: 12px; margin-inline-start: 6px; cursor: pointer; opacity: .75;
+  background:
+    linear-gradient(45deg, transparent 44%, var(--muted) 44%, var(--muted) 56%, transparent 56%),
+    linear-gradient(135deg, transparent 44%, var(--muted) 44%, var(--muted) 56%, transparent 56%);
+}
+input[type="search"]::-webkit-search-cancel-button:hover { opacity: 1; }
+input[type="range"]:focus-visible::-webkit-slider-thumb { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 30%, transparent); }
 :is(button, summary, .popup-panel a):hover:not(:disabled) {
   background: var(--control-hover-background);
   color: var(--control-color, inherit);
@@ -42,23 +128,20 @@ button { padding: 6px 10px; border: 0; }
   background: var(--control-selected-background);
 }
 :focus-visible { outline: none; }
-:is(button, summary, .popup-panel a):focus-visible {
+/* Focus is a quiet surface, never a frame, and only while the keyboard is driving navigation. */
+:root[data-input="keyboard"] :is(button, summary, .popup-panel a):focus-visible {
   background: var(--control-focus-background);
   color: var(--control-color, var(--text));
   box-shadow: none;
-  outline: var(--focus-width) solid var(--focus);
-  outline-offset: -2px;
+  transition-duration: 0s !important;
 }
-:is(input, textarea, select, a):focus-visible { box-shadow: var(--control-focus-ring); }
+:is(input, textarea, a):focus-visible, :root[data-input="keyboard"] select:focus-visible { box-shadow: var(--control-focus-ring); }
 .popup-panel a:focus-visible { box-shadow: none; }
 button:disabled { opacity: .4; cursor: default; }
 .button-primary {
-  --control-background: var(--text);
-  --control-color: var(--surface);
-  --control-hover-background: color-mix(in srgb, var(--text) 96%, var(--surface));
-  --control-focus-background: color-mix(in srgb, var(--text) 92%, var(--surface));
+  --control-color: var(--accent-text);
+  font-weight: 600;
 }
-.compact-layout-menu { display: none; }
 .file-filter-context { display: grid; flex: none; gap: 5px; margin: -4px 12px 10px; padding: 8px; border-radius: 6px; background: var(--subtle-surface); color: var(--muted); font-size: 11px; line-height: 1.5; }
 .file-filter-context button { justify-self: start; padding: 3px 6px; font-size: 11px; color: var(--text); }
 .file-button.has-duplicate-title { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-content: center; column-gap: 8px; row-gap: 1px; padding-block: 4px; }
@@ -67,15 +150,16 @@ button:disabled { opacity: .4; cursor: default; }
 .file-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; font-weight: 400; }
 .preview-source-anchor { display: block; height: 0; overflow: hidden; pointer-events: none; }
 .projects-dialog #sharing-error { margin: 10px 0 0; border-radius: 6px; }
-.menu-context-label { display: block; max-width: 240px; padding: 5px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.menu-context-label { display: block; contain: inline-size; padding: 5px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
 .form-hint:has(> input[type="checkbox"]) { display: flex; align-items: flex-start; gap: 8px; }
 .form-hint > input[type="checkbox"] { width: auto; flex: none; margin-top: 3px; }
 @media (max-width: 650px) {
-  #collaboration-people, #layout-menu { display: none; }
-  .compact-layout-menu { display: block; }
+  #collaboration-people { display: none; }
 }
 
 @media (forced-colors: active) {
+  select { appearance: auto; background-image: none; border-color: ButtonText; }
+  ::picker(select) { appearance: auto; }
   :is(button, .popup-panel a):is([aria-pressed="true"], [aria-selected="true"], [aria-current="page"], [aria-current="location"], [aria-current="true"]) {
     background: Highlight;
     color: HighlightText;

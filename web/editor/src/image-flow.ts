@@ -17,6 +17,33 @@ import {
   isImageNode,
 } from "./image-model.ts";
 
+interface ImageRow {
+  offset: number;
+  size: number;
+  count: number;
+}
+const noRows: readonly ImageRow[] = [];
+const blockRows = new WeakMap<ProseNode, readonly ImageRow[]>();
+
+/** Image rows inside one top-level block, remembered while that block is unchanged. */
+function rowsIn(block: ProseNode) {
+  let rows = blockRows.get(block);
+  if (rows) return rows;
+  const found: ImageRow[] = [];
+  const own = imageRowCount(block);
+  if (own) found.push({ offset: 0, size: block.nodeSize, count: own });
+  // Rows are text blocks; their inline content never holds another row.
+  if (!block.isTextblock && !block.isLeaf)
+    block.descendants((node, position) => {
+      const count = imageRowCount(node);
+      if (count) found.push({ offset: position + 1, size: node.nodeSize, count });
+      return !node.isTextblock;
+    });
+  rows = found.length ? found : noRows;
+  blockRows.set(block, rows);
+  return rows;
+}
+
 export function imageKeyTransaction(state: EditorState, key: string) {
   const selection = state.selection;
   const selected = selection instanceof NodeSelection && isImageNode(selection.node);
@@ -198,13 +225,13 @@ export function createImageFlowPlugins({ active_fn, editable_fn }: NodeActivity)
         decorations(state) {
           if (rows.has(state.doc)) return rows.get(state.doc);
           const decorations: Decoration[] = [];
-          state.doc.descendants((node, position) => {
-            const count = imageRowCount(node);
-            if (count)
+          // An edit replaces one top-level block; the others answer from their remembered rows.
+          state.doc.forEach((block, offset) => {
+            for (const row of rowsIn(block))
               decorations.push(
-                Decoration.node(position, position + node.nodeSize, {
+                Decoration.node(offset + row.offset, offset + row.offset + row.size, {
                   class: "folio-image-row",
-                  style: `--folio-image-row-count:${count}`,
+                  style: `--folio-image-row-count:${row.count}`,
                 }),
               );
           });

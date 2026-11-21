@@ -107,7 +107,7 @@ export function createSlashMenu(
   let placement: string | null = null;
   const empty = document.createElement("p");
   empty.className = "folio-slash-empty";
-  empty.textContent = "No matching block. Keep typing as text, or press Escape.";
+  empty.textContent = "No matching block";
   empty.hidden = true;
   const file = document.createElement("input");
   file.type = "file";
@@ -129,12 +129,12 @@ export function createSlashMenu(
     try {
       const { state, range, document } = captured;
       if (!active(state) || !state.view.editable || state.view.state.doc !== document)
-        throw new Error("The insertion position changed.");
-      if (!upload_fn) throw new Error("Image uploads are unavailable.");
+        throw new Error("Insert position changed");
+      if (!upload_fn) throw new Error("Image upload unavailable");
       onNotice?.("Saving image…");
       url = await upload_fn(file.files[0]);
       if (!active(state) || !state.view.editable || state.view.state.doc !== document)
-        throw new Error("The document changed while uploading.");
+        throw new Error("Document changed during upload");
       const image = state.view.state.schema.nodes.image_block.create({ src: url, alt: "Image", layout: "left" });
       const selection = range ? TextSelection.create(document, range.from, range.to) : state.view.state.selection;
       state.view.dispatch(
@@ -143,10 +143,7 @@ export function createSlashMenu(
       state.view.focus();
       onNotice?.("");
     } catch (error) {
-      onNotice?.(
-        `Could not insert image: ${errorMessage(error)}${url ? ` The saved image is available at ${url}.` : ""}`,
-        "error",
-      );
+      onNotice?.(`Image insert failed: ${errorMessage(error)}${url ? `; saved as ${url}` : ""}`, "error");
     } finally {
       file.value = "";
     }
@@ -257,7 +254,7 @@ export function createSlashMenu(
       tr.setSelection(Selection.fromJSON(tr.doc, next.selection.toJSON()));
     });
     if (!accepted && !item.task) {
-      onNotice?.("This block cannot be inserted at the current position.", "warning");
+      onNotice?.("Cannot insert block here", "warning");
       return;
     }
     if (item.task) {
@@ -270,7 +267,7 @@ export function createSlashMenu(
         break;
       }
       if (!found) {
-        onNotice?.("Place the cursor in a paragraph to create a task.", "warning");
+        onNotice?.("No paragraph at cursor", "warning");
         return;
       }
     }

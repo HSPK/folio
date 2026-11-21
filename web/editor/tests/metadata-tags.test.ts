@@ -7,7 +7,7 @@ test("tags accept scalar/list metadata and legacy tag without duplicate case var
   assert.deepEqual(readMetadataTags("---\ntag: notes\n---\nBody"), ["notes"]);
   assert.deepEqual(readMetadataTags("# Body"), []);
   assert.throws(() => normalizeTags(["x", 123]), /strings/);
-  assert.throws(() => normalizeTags(["bad\ntag"]), /control/);
+  assert.throws(() => normalizeTags(["bad\ntag"]), /1-80/);
 });
 
 test("tag updates preserve unrelated YAML spelling, comments and body bytes", () => {
@@ -26,6 +26,6 @@ test("new tags create a header without changing the body and unsafe edits fail e
   const next = updateMetadataTags(body, ["notes"]);
   assert.equal(next, '\uFEFF---\r\ntags: ["notes"]\r\n---\r\n\r\n# Exact\r\n\r\nBody\n');
   assert.equal(updateMetadataTags(body, []), body);
-  assert.throws(() => replaceYamlTags("tags:\n  - old # keep this\n", ["new"]), /commented tag list/);
-  assert.throws(() => replaceYamlTags("tags: [broken", ["new"]), /Fix the YAML/);
+  assert.throws(() => replaceYamlTags("tags:\n  - old # keep this\n", ["new"]), /commented tags/);
+  assert.throws(() => replaceYamlTags("tags: [broken", ["new"]), /Invalid YAML/);
 });

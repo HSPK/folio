@@ -75,7 +75,7 @@ export function initializeSettingsSaving(ports: SettingsUiPorts): void {
     const scope = authenticationSession.scope;
     const current = () => !owner.aborted && authenticationSession.isCurrent(scope);
     if (opened.selection !== projectModel.selection) {
-      notice(appState.ui.settingsError, "The active project changed. Reopen Settings before saving.", "error");
+      notice(appState.ui.settingsError, "Project changed, reopen Settings", "error");
       return;
     }
     const saving = Symbol("settings-save");
@@ -119,19 +119,15 @@ export function initializeSettingsSaving(ports: SettingsUiPorts): void {
       } else if (appState.ui.settingsDialog.open) {
         notice(
           appState.ui.settingsError,
-          opened.selection === projectModel.selection
-            ? "Submitted settings were saved. Newer edits remain unsaved."
-            : "Settings for the original project were saved. Reopen Settings for the active project.",
+          opened.selection === projectModel.selection ? "Saved; newer edits unsaved" : "Saved for the original project",
           "warning",
         );
-      } else documentNotice("Settings saved.");
+      } else documentNotice("Saved");
     } catch (cause) {
       if (!current() || isAbortError(cause)) return;
       const error = errorContext(cause);
       const message =
-        cause instanceof SettingsSaveError && cause.projectSaved
-          ? `The project image directory was saved, but other settings could not be confirmed. ${error.message} Retry to save the remaining settings.`
-          : error.message;
+        cause instanceof SettingsSaveError && cause.projectSaved ? `Partly saved: ${error.message}` : error.message;
       if (view === opened && appState.ui.settingsDialog.open) notice(appState.ui.settingsError, message, "error");
       else documentNotice(message, "error");
     } finally {

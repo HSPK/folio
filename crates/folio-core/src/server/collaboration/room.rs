@@ -248,7 +248,7 @@ pub(super) async fn save(
                 room.failed = false;
                 if let Err(error) = room.checkpoint() {
                     eprintln!("Could not checkpoint collaboration: {}", error.message);
-                    let _ = room.events.send(Event::Error("The Markdown was saved, but collaboration recovery could not be checkpointed.".into()));
+                    let _ = room.events.send(Event::Error("Note saved. Collaboration backup failed.".into()));
                 }
                 room.actors.clear();
                 let _ = room.events.send(Event::Saved(saved.clone()));
@@ -257,7 +257,7 @@ pub(super) async fn save(
             Err(error) => {
                 room.failed = true;
                 let _ = room.events.send(Event::Error(format!(
-                    "Collaborative save failed: {} Your shared edits are kept; copy them before reloading.",
+                    "Shared save failed: {} Copy your edits before reloading.",
                     error.message
                 )));
                 Err(error)

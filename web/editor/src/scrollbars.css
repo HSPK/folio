@@ -25,13 +25,13 @@
 
 /* Hide native gutters before initialization as well as while the controls update. */
 :is(.file-nav, #outline-scroll, .folio-live-scroll, textarea.editor, .preview-body,
-  .folio-metadata-source, .folio-code-block pre) {
+  .folio-code-block pre) {
   scrollbar-width: none;
   scrollbar-gutter: auto;
 }
 
 :is(.file-nav, #outline-scroll, .folio-live-scroll, textarea.editor, .preview-body,
-  .folio-metadata-source, .folio-code-block pre)::-webkit-scrollbar {
+  .folio-code-block pre)::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -40,8 +40,6 @@
 .scroll-frame { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .scroll-frame > [data-overlayscrollbars-viewport] { flex: 1; min-height: 0; min-width: 0; }
 #outline-scroll { overflow: auto; }
-.folio-metadata-scroll { position: relative; min-width: 0; margin-top: .4em; }
-.folio-metadata-scroll .folio-metadata-source { margin-top: 0; }
 .folio-code-scroll { position: relative; min-width: 0; overflow: hidden; }
 .folio-code-scroll > .os-scrollbar-horizontal {
   --os-size: 8px;
@@ -56,16 +54,16 @@
 .editor-pane, .preview-pane {
   --scroll-pad-start: var(--document-top);
   --scroll-pad-inline: max(var(--document-gutter), calc((100% - var(--document-width)) / 2));
-  --scroll-pad-end: 140px;
+  --scroll-pad-end: var(--document-end, 140px);
 }
 
 :is(textarea.editor, .preview-body)[data-overlayscrollbars-viewport] {
   padding: var(--scroll-pad-start) var(--scroll-pad-inline) var(--scroll-pad-end) !important;
 }
 
-.document-panes[data-view="split"] .editor-pane {
-  --scroll-pad-start: 35px;
-  --scroll-pad-inline: 25px;
+.document-panes[data-view="split"] :is(.editor-pane, .preview-pane) {
+  --scroll-pad-start: 40px;
+  --scroll-pad-inline: 36px;
   --scroll-pad-end: 100px;
 }
 

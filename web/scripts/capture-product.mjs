@@ -130,7 +130,7 @@ try {
   await api("PUT", "/api/preferences", preferences);
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.locator("#view-menu > summary").click();
+  await page.locator("#more-menu > summary").click();
   await page.locator("#view-split").click();
   await expect(page.locator("#editor")).toBeVisible();
   await expect(page.locator("#preview")).toBeVisible();

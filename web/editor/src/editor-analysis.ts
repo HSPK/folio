@@ -1,7 +1,7 @@
 import type { Node as ProseNode } from "@milkdown/prose/model";
 import type { EditorView } from "@milkdown/prose/view";
-import { documentHeadings, sourceOffset } from "./markdown.ts";
-import { sessionPositionMap, sessionSource } from "./editor-session.ts";
+import { documentHeadings } from "./markdown.ts";
+import { sessionSource, sessionSourceOffset } from "./editor-session.ts";
 import { lineColumn } from "./cursor-coordinates.ts";
 import type { EditorSession, InlineEditorOptions, OutlineExtractor } from "./types/editor.ts";
 
@@ -31,11 +31,25 @@ export function createEditorAnalysis({
     return items;
   }
   function sourcePosition(state: EditorSession, view: EditorView, position: number) {
-    return state.parts.bodyStart + sourceOffset(sessionPositionMap(state, view), position);
+    return state.parts.bodyStart + sessionSourceOffset(state, view, position);
   }
-  return {
+  let outlineTimer: ReturnType<typeof setTimeout> | null = null;
+  const publishOutline = (state: EditorSession) => analysis.publishOutline(state);
+  const analysis = {
     headingsFor,
     sourcePosition,
+    /** Typing re-reads the outline once the writer pauses instead of on every keystroke. */
+    scheduleOutline(state: EditorSession) {
+      if (outlineTimer !== null) clearTimeout(outlineTimer);
+      // A longer note takes longer to re-read, so it waits for a longer pause.
+      outlineTimer = setTimeout(
+        () => {
+          outlineTimer = null;
+          publishOutline(state);
+        },
+        120 + Math.min(1500, state.bodySource.length / 4096),
+      );
+    },
     publishOutline(state: EditorSession) {
       if (!active(state) || !onOutline || !trackOutline()) return;
       const items = outlineExtractor.extract(sessionSource(state));
@@ -54,4 +68,5 @@ export function createEditorAnalysis({
       onSelection?.(lineColumn(sessionSource(state), sourcePosition(state, view, view.state.selection.head)));
     },
   };
+  return analysis;
 }

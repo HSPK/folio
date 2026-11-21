@@ -181,7 +181,7 @@ pub(super) fn process(
     }
     if output.len() > 16 * 1024 * 1024 {
         return Err(ApiError::too_large(
-            "The processed image exceeds 16 MiB. Choose a smaller maximum size or lower quality.",
+            "Image exceeds 16 MiB. Reduce its size or quality.",
         ));
     }
     Ok(Processed {

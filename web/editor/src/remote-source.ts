@@ -32,7 +32,6 @@ export function replaceRemoteSource(state: EditorSession, source: string) {
       );
     }
     if (state.metadata && parts.hasMetadata) {
-      state.metadata.textarea.value = parts.raw.replace(/\r\n?/g, "\n");
       if (!state.refreshMetadata) throw new Error("The metadata editor is missing its refresh callback.");
       state.refreshMetadata();
     }

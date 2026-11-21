@@ -13,9 +13,14 @@ async function expectQuietFocus(page, target, feedback = "surface") {
     top: getComputedStyle(node).borderTopWidth,
     bottom: getComputedStyle(node).borderBottomWidth,
   }));
+  if (await target.getAttribute("aria-controls") === "more-actions-panel") {
+    expect(style.outline).toBe("solid");
+    expect(style.radius).toBe("50%");
+    return;
+  }
   expect(style.outline).toBe("none");
   if (feedback === "ring") {
-    expect(style.shadow).toMatch(/0px 0px 0px [12]px inset/);
+    await expect(target).toHaveCSS("box-shadow", /0px 0px 0px [12]px inset/);
   } else {
     expect(style.shadow).toBe("none");
     if (feedback === "surface") {
@@ -41,8 +46,8 @@ test("keyboard focus uses shared rounded surfaces across menus, lists and settin
         node.dataset.strongFocus = value;
       }, strength);
       for (const selector of [
-        "#sidebar-toggle", "#more-menu > summary", "#view-menu > summary",
-        "#files-tab", "#refresh-files", "#file-list .file-button",
+        "#sidebar-hide", "#more-menu > summary",
+        "#new-menu > summary", "#file-list .file-button",
       ]) {
         await expectQuietFocus(page, page.locator(selector).first());
       }
@@ -65,7 +70,6 @@ test("keyboard focus uses shared rounded surfaces across menus, lists and settin
     await page.keyboard.press("Escape");
     await expect(page.locator("#settings-dialog")).toBeHidden();
     await expectQuietFocus(page, page.locator("#more-menu > summary"));
-    await page.locator("#files-tab").click();
   }
 });
 

@@ -25,7 +25,7 @@ import { deferScrollbars } from "./scrollbars.ts";
 import { createSlashMenu } from "./slash-menu.ts";
 import { math } from "./math.ts";
 import { replaceRemoteSource } from "./remote-source.ts";
-import { currentViewSelection, jumpToHeading, rawOffset, textareaCursorRect } from "./cursor-coordinates.ts";
+import { currentViewSelection, jumpToHeading } from "./cursor-coordinates.ts";
 import { createLiveCaret } from "./live-caret.ts";
 import { mountMetadata } from "./metadata.ts";
 import { wiki } from "./wiki.ts";
@@ -35,6 +35,8 @@ import { createTableTools } from "./tables.ts";
 import { createBlockTools } from "./block-tools.ts";
 import { nodeMarkdown } from "./node-toolbar.ts";
 import { handleListKeyDown } from "./list-commands.ts";
+import { continueWritingFromBlankSpace, handleCodeExitKeyDown } from "./writing-continuity.ts";
+import { handleDeferredKey, handlePlainKeyPress } from "./deferred-input.ts";
 import { lineKeymap } from "./line-keymap.ts";
 import { createImageFlowPlugins, imageSelectionAtPoint } from "./image-flow.ts";
 import { createImageInsertion, imageBoundarySelection, isImageNode } from "./image-model.ts";
@@ -128,7 +130,7 @@ function createOwnedEditor(
     onCreate_fn: onCreateLink,
   });
   const parsedBodies = createBodyCache();
-  const { headingsFor, sourcePosition, publishOutline, publishSelection } = createEditorAnalysis({
+  const { headingsFor, sourcePosition, publishOutline, scheduleOutline, publishSelection } = createEditorAnalysis({
     active,
     trackOutline,
     trackSelection,
@@ -205,15 +207,12 @@ function createOwnedEditor(
     state.scrollbars.push(scrollbars);
     scrollbars.attach({ host: surface, viewport: scroll });
     mountMetadata(state, page, {
-      readOnly,
-      styleNonce,
+      readOnly: () => readOnly,
       active,
       fullSource,
       onTitle,
       onChange,
       publishOutline,
-      onSelection,
-      onHeadingSelection,
       onTag,
       onNotice,
     });
@@ -236,6 +235,9 @@ function createOwnedEditor(
     const imageFlow = createImageFlowPlugins({ active_fn: nodeActive_fn, editable_fn }).map((plugin) =>
       $prose(() => plugin),
     );
+    scroll.addEventListener("mousedown", (event) => {
+      if (state.view && editable_fn()) continueWritingFromBlankSpace(state.view, event, [scroll, page, mount]);
+    });
     const serializeNode_fn = (node: ProseNode) => {
       if (!isReadySession(state)) throw new Error("The formatted editor is not ready to serialize this node.");
       return state.editor.action((ctx) =>
@@ -264,8 +266,13 @@ function createOwnedEditor(
               spellcheck: String(spellcheck),
             },
             ...slash,
+            handleKeyPress: handlePlainKeyPress,
             handleKeyDown: (view, event) =>
-              handleListKeyDown(view, event) || wikiMenu.key(state, event) || slash.handleKeyDown(view, event),
+              handleDeferredKey(view, event) ||
+              handleListKeyDown(view, event) ||
+              wikiMenu.key(state, event) ||
+              slash.handleKeyDown(view, event) ||
+              handleCodeExitKeyDown(view, event),
             ...createEditorViews({
               ctx,
               path,
@@ -316,7 +323,7 @@ function createOwnedEditor(
                     ? state.originalBody
                     : state.bodySerializer.serialize(view.state.doc);
                   onChange(fullSource(state));
-                  publishOutline(state);
+                  scheduleOutline(state);
                 }
                 if (!view.state.doc.eq(previous.doc) || !view.state.selection.eq(previous.selection))
                   publishSelection(state, view);
@@ -383,9 +390,7 @@ function createOwnedEditor(
       ) {
         await instance.destroy();
         state.editor = null;
-        onFallback(
-          "This body contains Markdown that formatted editing cannot safely round-trip. Use Source mode; the original text is kept.",
-        );
+        onFallback("Unsupported Markdown, use Source mode");
         root.setAttribute("aria-busy", "false");
         return;
       }
@@ -412,9 +417,7 @@ function createOwnedEditor(
       if (instance) await instance.destroy().catch(console.error);
       if (!active(state)) return;
       root.setAttribute("aria-busy", "false");
-      onFallback(
-        `The formatted editor could not open this body. Its original source is preserved. ${errorMessage(error)}`,
-      );
+      onFallback(`Live editor failed: ${errorMessage(error)}`);
     }
   }
 
@@ -426,12 +429,9 @@ function createOwnedEditor(
     to = Math.max(0, Math.min(source.length, to));
     if (state.metadata && hasMetadata(state) && from < state.parts.bodyStart) {
       state.metadata.details.open = true;
-      state.metadata.advanced.open = true;
-      const normalized = (offset: number) =>
-        state.parts.raw.slice(0, Math.max(0, offset - state.parts.metadataStart)).replace(/\r\n?/g, "\n").length;
-      if (focus) state.metadata.textarea.focus();
-      state.metadata.textarea.setSelectionRange(normalized(from), normalized(to));
-      if (scroll) state.metadata.textarea.scrollIntoView({ block: "nearest" });
+      state.metadata.navigation = { from, to };
+      if (focus) state.metadata.summary.focus({ preventScroll: true });
+      if (scroll) state.metadata.summary.scrollIntoView({ block: "nearest" });
       return true;
     }
     if (!isReadySession(state)) return false;
@@ -499,7 +499,7 @@ function createOwnedEditor(
         if (node.tagName === "A")
           node.title = url
             ? "Ctrl/Cmd+click to open; use Link actions to edit"
-            : "Link unavailable. Use Link actions to inspect its target.";
+            : "Link unavailable. Check its target in Link actions.";
       }
       linkTools.refresh();
     },
@@ -512,21 +512,13 @@ function createOwnedEditor(
       blockTools.refresh();
       linkTools.refresh();
       for (const checkbox of root.querySelectorAll<HTMLInputElement>(".folio-task-checkbox")) checkbox.disabled = value;
-      if (session?.metadata) session.metadata.textarea.disabled = value;
-      session?.metadata?.tags.setReadOnly(value);
       if (changed) session?.refreshMetadata?.();
       if (session?.view) session.view.setProps({ editable: () => Boolean(session?.ready && !readOnly) });
     },
     getSelection({ navigation = false } = {}) {
       if (!isReadySession(session)) return null;
       if (navigation && session.metadata?.navigation) return session.metadata.navigation;
-      if (document.activeElement?.closest(".folio-property, .folio-tags")) return null;
-      const meta = session.metadata?.textarea;
-      if (meta && meta === document.activeElement && hasMetadata(session))
-        return {
-          from: session.parts.metadataStart + rawOffset(session.parts.raw, meta.selectionStart),
-          to: session.parts.metadataStart + rawOffset(session.parts.raw, meta.selectionEnd),
-        };
+      if (document.activeElement?.closest(".folio-metadata")) return null;
       const selection = currentViewSelection(session.view);
       return {
         from: sourcePosition(session, session.view, selection.anchor),
@@ -535,11 +527,7 @@ function createOwnedEditor(
     },
     cursorRect(offset: number) {
       if (!isReadySession(session)) return null;
-      if (offset < session.parts.bodyStart && session.metadata && hasMetadata(session)) {
-        return session.metadata.details.open && session.metadata.advanced.open
-          ? textareaCursorRect(session.metadata.textarea, offset - session.parts.metadataStart)
-          : null;
-      }
+      if (offset < session.parts.bodyStart) return null;
       const position = documentOffset(positionMap(session, session.view), offset - session.parts.bodyStart);
       return session.view.coordsAtPos(Math.min(session.view.state.doc.content.size, position));
     },

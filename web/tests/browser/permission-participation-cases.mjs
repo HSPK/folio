@@ -1,4 +1,4 @@
-import { test, expect, fs, path, userDocumentUrl, userResourceId, confirmDialog } from "./fixture.mjs";
+import { test, expect, fs, path, userDocumentUrl, userResourceId, confirmDialog, openMoreAction } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
 async function loginPage(browser, library, username) {
@@ -102,7 +102,7 @@ test("a conflicting solo draft blocks activation without overwriting disk and pr
     await expect(alice.locator("#editor")).toHaveValue("# Keep my local draft\n");
     await expect(alice.locator("#editor")).toBeEnabled();
     await expect(other.page.locator("#collaboration-join")).toHaveText("Preparing");
-    await other.page.locator("#collaboration-join").click();
+    await openMoreAction(other.page, "collaboration-join");
     await expect(other.page.locator("#editor")).toBeEnabled();
     expect(joins).toBe(0);
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe("# External version\n");

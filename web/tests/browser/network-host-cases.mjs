@@ -32,7 +32,7 @@ test("network HTTP binding supports login and online editing without plaintext r
     await expect(page.locator("#document-message")).toBeHidden();
     expect(await page.evaluate(async () => (await indexedDB.databases()).some(db => db.name === "folio-private-drafts"))).toBe(false);
     await openMoreAction(page, "drafts-open");
-    await expect(page.locator("#document-message")).toContainText("Local recovery is unavailable:");
+    await expect(page.locator("#document-message")).toContainText("Recovery unavailable:");
     await expect(page.locator("#document-message")).toHaveClass(/is-error/);
     expect(errors).toEqual([]);
   } finally { await context.close(); await library.close(); }

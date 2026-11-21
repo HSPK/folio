@@ -61,7 +61,7 @@ export function createTableNodeView(
     let closeBlock_fn: (() => void) | undefined;
     const position = () => {
       const value = getPos();
-      if (typeof value !== "number") throw new Error("This table is no longer in the document.");
+      if (typeof value !== "number") throw new Error("Table no longer in document");
       return value;
     };
     const dom = document.createElement("div");
@@ -114,7 +114,7 @@ export function createTableNodeView(
         icon: "plus",
         onClick: () => {
           try {
-            if (!active_fn() || !editable_fn()) throw new Error("This table is no longer editable.");
+            if (!active_fn() || !editable_fn()) throw new Error("Table not editable");
             const last = value === "row" ? node.childCount - 1 : TableMap.get(node).width - 1;
             view.dispatch(
               tableAxisTransaction(view.state, { position: position(), axis: value, index: last, action: "after" }),
@@ -123,7 +123,7 @@ export function createTableNodeView(
             view.focus();
             onNotice?.("");
           } catch (error) {
-            onNotice?.(`Could not edit table: ${errorMessage(error)}`, "error");
+            onNotice?.(`Table edit failed: ${errorMessage(error)}`, "error");
           }
         },
       });
@@ -197,14 +197,14 @@ export function createTableNodeView(
           : inside() && view.state.selection instanceof CellSelection,
       alignment_fn() {
         const header = node.firstChild;
-        if (!header) throw new Error("This table has no header row.");
+        if (!header) throw new Error("Table has no header row");
         if (axis !== "table") return header.child(Math.min(index, header.childCount - 1)).attrs.alignment ?? "left";
         const values: string[] = [];
         header.forEach((cell) => values.push(cell.attrs.alignment ?? "left"));
         return values.every((value) => value === values[0]) ? values[0] : null;
       },
       run_fn(action) {
-        if (!editable_fn()) throw new Error("This table is no longer editable.");
+        if (!editable_fn()) throw new Error("Table not editable");
         view.dispatch(
           axis === "table"
             ? tableActionTransaction(view.state, { position: position(), action })

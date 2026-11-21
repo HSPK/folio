@@ -14,7 +14,7 @@ test("library rows retain UUID identity when a different file appears at the cur
   });
   expect(moved.ok(), await moved.text()).toBe(true);
   await fs.writeFile(path.join(root, "Reused-location.md"), "# A different resource\n");
-  await page.locator("#refresh-files").click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   const replacement = page.locator('button[data-path="Reused-location.md"]');
   await expect(replacement).toHaveAttribute("data-resource-id", uuid);
   await expect(replacement).not.toHaveAttribute("data-resource-id", original);
@@ -43,7 +43,7 @@ test("an upload crossing a document move retains the image without inserting a s
     });
     expect(moved.ok(), await moved.text()).toBe(true);
     release();
-    await expect(page.locator("#document-message")).toContainText("document moved while uploading");
+    await expect(page.locator("#document-message")).toContainText("Document moved; image at");
     expect(await fs.readFile(path.join(library.notes, "Moved.md"), "utf8")).toBe(source);
     expect(await fs.readdir(path.join(library.notes, "assets/images"))).toHaveLength(1);
     await expect(page.locator("#editor")).toHaveValue(source);

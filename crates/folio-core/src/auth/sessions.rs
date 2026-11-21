@@ -153,7 +153,7 @@ impl SessionStore {
     ) -> Result<(), String> {
         let key = token_hash(token);
         if self.sessions.len() >= MAX_SESSIONS && !self.sessions.contains_key(&key) {
-            return Err("The login session limit has been reached. Log out of an existing session or reset your password before logging in again.".into());
+            return Err("Session limit reached. Log out elsewhere or reset your password.".into());
         }
         let mut sessions = self.sessions.clone();
         let session = Session {

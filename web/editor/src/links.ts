@@ -79,7 +79,7 @@ export function linkMarkView(mark: Mark, path: string, transformUrl: MarkdownUrl
   dom.rel = "noopener noreferrer";
   dom.title = href
     ? "Ctrl/Cmd+click to open; use Link actions to edit"
-    : "Link unavailable. Use Link actions to inspect its target.";
+    : "Link unavailable. Check its target in Link actions.";
   return {
     dom,
     contentDOM: dom,
@@ -162,13 +162,13 @@ export function createLinkTools({
     return button;
   };
   const previewOpen = action("Open link", "Open", (info) => {
-    if (!info.url) throw new Error("This link is unavailable. Inspect its target before opening it.");
+    if (!info.url) throw new Error("Link unavailable");
     hideActions();
     onOpen_fn(info.url);
   });
   const previewEdit = action("Edit link", "Edit", (_info, anchor) => edit(anchor));
   const previewCopy = action("Copy link", "Copy", async (info, anchor) => {
-    await navigator.clipboard.writeText(info.url || info.link.href);
+    await copyPlainText(info.url || info.link.href);
     if (previewAnchor === anchor && !preview.hidden) previewCopy.textContent = "Copied";
   });
   preview.append(previewMessage);
@@ -335,23 +335,23 @@ export function createLinkTools({
     }
   };
   function requireTarget() {
-    if (!target) throw new Error("This link is no longer open.");
+    if (!target) throw new Error("Link no longer open");
     return target;
   }
   const open = button("Open", () => {
     const { url } = requireTarget();
-    if (!url) throw new Error("This link is unavailable.");
+    if (!url) throw new Error("Link unavailable");
     dialog.close();
     onOpen_fn(url);
   });
   const copy = button("Copy link", async () => {
     const current = requireTarget();
-    await navigator.clipboard.writeText(current.url || current.link.href);
+    await copyPlainText(current.url || current.link.href);
     if (target === current && dialog.open) copy.textContent = "Copied";
   });
   const create = button("Create note", async () => {
     const { path } = requireTarget();
-    if (!path || !onCreate_fn) throw new Error("This link cannot be created.");
+    if (!path || !onCreate_fn) throw new Error("Cannot create this link");
     dialog.close();
     await onCreate_fn(path);
   });
@@ -379,11 +379,7 @@ export function createLinkTools({
     open.disabled = !target.url || changed;
     copy.disabled = changed;
     create.hidden = changed || Boolean(target.url) || !target.path || !canCreate_fn?.(target.path);
-    status.textContent = changed
-      ? "Apply your changes before opening or copying this link."
-      : target.url
-        ? "Click Open to follow this link."
-        : "This note is unavailable. Check its path or your access permissions.";
+    status.textContent = changed ? "Apply changes first" : target.url ? "" : "Note unavailable";
   };
   lifetime.listen(form, "input", () => {
     error.hidden = true;
@@ -393,17 +389,17 @@ export function createLinkTools({
   lifetime.listen(form, "submit", (event) => {
     event.preventDefault();
     void run(() => {
-      if (!target || target.owner !== state_fn() || !editable_fn()) throw new Error("This note is no longer editable.");
+      if (!target || target.owner !== state_fn() || !editable_fn()) throw new Error("Note not editable");
       const { view } = target.owner;
       const current = linkRangeAt(view.state, target.link.from);
       if (!current || current.href !== target.link.href || current.label !== target.link.label)
-        throw new Error("This link changed. Close these options and select it again.");
+        throw new Error("Link changed, reselect it");
       const raw = fields.href.value.trim();
       const label = fields.label.value.trim();
       const href = current.wiki ? raw : autoLinkDestination(raw) || raw;
       const destination = current.wiki ? wikiDestination(href) : href;
       if (!label || !destination || !resolveMarkdownUrl(destination, target.owner.path))
-        throw new Error("Enter a valid link target and display text.");
+        throw new Error("Invalid link target or text");
       const tr = closeHistory(view.state.tr).setMeta("folio-link-edit", true);
       if (current.wiki) tr.setNodeMarkup(current.from, undefined, { ...current.attrs, target: href, label });
       else {
@@ -460,3 +456,4 @@ export function createLinkTools({
     open: edit,
   };
 }
+import { copyPlainText } from "../../shared/clipboard";

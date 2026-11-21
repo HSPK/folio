@@ -174,6 +174,25 @@ test("structural or unrepresented empty blocks use full serialization before res
   assert.deepEqual(calls, [2, 2, 1]);
 });
 
+test("typing inside an existing quote serializes only that block", () => {
+  const quote = (text: string) => schema.node("blockquote", null, paragraph(text));
+  const original = document(paragraph("First"), quote("Quoted"), paragraph("Last"));
+  const calls: number[] = [];
+  const serializer = createBodySerializer({
+    document: original,
+    source: serialize(original),
+    serialize_fn: (doc) => {
+      calls.push(doc.childCount);
+      return serialize(doc);
+    },
+  });
+  const edited = document(original.child(0), quote("Quoted more"), original.child(2));
+  assert.equal(serializer.serialize(edited), serialize(edited));
+  const again = document(edited.child(0), quote("Quoted more text"), edited.child(2));
+  assert.equal(serializer.serialize(again), serialize(again));
+  assert.deepEqual(calls, [1, 1]);
+});
+
 test("replacing a remote baseline drops the previous document's block ranges", () => {
   const original = document(heading("Old"), paragraph("Old body"));
   const serializer = createBodySerializer({ document: original, source: serialize(original), serialize_fn: serialize });

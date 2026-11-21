@@ -1,4 +1,4 @@
-import { test, expect, fs, path, root, openFixture, chooseView, primaryModifier, metadataField, openLinkOptions, openTableTools } from "./fixture.mjs";
+import { test, expect, fs, path, root, openFixture, chooseView, primaryModifier, openLinkOptions, openTableTools } from "./fixture.mjs";
 import { imageFixture } from "./node-tools-cases.mjs";
 
 async function capture(page, name, browserName) {
@@ -40,7 +40,7 @@ test("file menus keep keyboard navigation on the selected object and unchanged r
   await capture(page, "file-menu-target-focus", browserName);
   await page.keyboard.press("Enter");
   await expect(page.locator("#rename-title")).toHaveText("Rename file");
-  await expect(page.locator("#rename-hint")).toContainText("not the display title");
+  await expect(page.locator("#rename-hint")).toContainText("not the title");
   await expect(page.locator("#confirm-rename")).toBeDisabled();
   await page.locator("#rename-path").fill("Other-name.md");
   await expect(page.locator("#confirm-rename")).toBeEnabled();
@@ -48,7 +48,7 @@ test("file menus keep keyboard navigation on the selected object and unchanged r
   await page.locator("#confirm-rename").click();
   await expect(page.locator('[data-path="Other-name.md"]')).toHaveText("Display title");
   await fs.mkdir(path.join(root, "A folder"));
-  await page.locator("#refresh-files").click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.locator('summary[data-entry-path="A folder"]').click({ button: "right" });
   await expect(page.locator("#file-rename")).toBeFocused();
   await page.keyboard.press("Escape");
@@ -202,11 +202,13 @@ test("slash image insertion preserves its query until a file is chosen and suppo
 test("view switching retains an active YAML selection", async ({ page }) => {
   const source = "---\ntitle: Properties\nstatus: draft\n---\n\nBody.\n";
   await openFixture(page, "Metadata-location.md", source, "Properties");
-  const raw = await metadataField(page);
+  await chooseView(page, "editor");
+  const raw = page.locator("#editor");
   await raw.focus();
   await raw.evaluate(node => { const at = node.value.indexOf("draft"); node.setSelectionRange(at, at + 5); node.dispatchEvent(new Event("select")); });
-  await chooseView(page, "editor");
-  expect(await page.locator("#editor").evaluate(node => node.value.slice(node.selectionStart, node.selectionEnd))).toBe("draft");
   await chooseView(page, "rich");
-  await expect(raw).toBeFocused();
+  await expect(page.locator(".folio-metadata > details > summary")).toBeFocused();
+  await expect(page.locator(".folio-metadata textarea")).toHaveCount(0);
+  await chooseView(page, "editor");
+  expect(await raw.evaluate(node => node.value.slice(node.selectionStart, node.selectionEnd))).toBe("draft");
 });

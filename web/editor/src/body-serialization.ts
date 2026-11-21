@@ -9,6 +9,17 @@ import { childFragment } from "./prose-content.ts";
 
 // Other block types can depend on document-level serialization context.
 const independentBlock = (node: ProseNode) => ["paragraph", "heading", "image_block"].includes(node.type.name);
+const listBlock = (node: ProseNode | null | undefined) =>
+  node?.type.name === "bullet_list" || node?.type.name === "ordered_list";
+// Typing inside an existing fenced block, quote or table changes only that block's text. The same holds
+// for a list unless it touches another list, where the serializer alternates markers to keep the two
+// apart. Creating, removing or converting such a block still takes the full pass.
+const editedInPlace = (previous: ProseNode, next: ProseNode, index: number) => {
+  const node = next.child(index);
+  if (previous.child(index).type !== node.type) return false;
+  if (["code_block", "blockquote", "table"].includes(node.type.name)) return true;
+  return listBlock(node) && !listBlock(next.maybeChild(index - 1)) && !listBlock(next.maybeChild(index + 1));
+};
 
 export function createBodyCache() {
   // Keep only pure parse/proof data; node weights include their source positions.
@@ -127,6 +138,10 @@ export function createBodySerializer({
   reset(document, source, tree);
   return {
     reset,
+    /** Where one top-level block sits in `source`, when that is the text this serializer last produced. */
+    blockRange(document: ProseNode, source: string, index: number) {
+      return ranges && document === previous && source === current ? (ranges[index] ?? null) : null;
+    },
     serialize(next: ProseNode) {
       if (next === previous) return current;
       let from = 0;
@@ -141,8 +156,14 @@ export function createBodySerializer({
         ranges &&
         from < endA &&
         from < endB &&
-        Array.from({ length: endA - from }, (_, index) => previous.child(from + index)).every(independentBlock) &&
-        Array.from({ length: endB - from }, (_, index) => next.child(from + index)).every(independentBlock);
+        ((Array.from({ length: endA - from }, (_, index) => previous.child(from + index)).every(independentBlock) &&
+          Array.from({ length: endB - from }, (_, index) => next.child(from + index)).every(independentBlock)) ||
+          (endA === endB &&
+            Array.from({ length: endB - from }, (_, index) => from + index).every(
+              (index) =>
+                (independentBlock(previous.child(index)) && independentBlock(next.child(index))) ||
+                editedInPlace(previous, next, index),
+            )));
       if (isolated && ranges) {
         const fragment = next.copy(childFragment(next, from, endB));
         const replacement = normalizeSerializedBody(serialize_fn(fragment)).replace(/\n+$/, "");
@@ -152,11 +173,18 @@ export function createBodySerializer({
           const end = ranges[endA - 1].to;
           const delta = replacement.length - (end - start);
           current = current.slice(0, start) + replacement + current.slice(end);
-          ranges = [
-            ...ranges.slice(0, from),
+          // Shift the untouched tail in place: a long note has tens of thousands of blocks, and
+          // rebuilding their ranges on every keystroke would feed the garbage collector for nothing.
+          if (delta)
+            for (let index = endA; index < ranges.length; index += 1) {
+              ranges[index].from += delta;
+              ranges[index].to += delta;
+            }
+          ranges.splice(
+            from,
+            endA - from,
             ...local.map((range) => ({ from: range.from + start, to: range.to + start })),
-            ...ranges.slice(endA).map((range) => ({ from: range.from + delta, to: range.to + delta })),
-          ];
+          );
           previous = next;
           return current;
         }

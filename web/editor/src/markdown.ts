@@ -27,18 +27,45 @@ const bodyParser = unified()
   .use(remarkImages);
 const markerNames = /^(?:HeaderMark|EmphasisMark|StrikethroughMark|CodeMark|LinkMark|ListMark|QuoteMark)$/;
 
-export function documentHeadings(document: ProseNode) {
-  const headings: { node: ProseNode; position: number; text: string }[] = [];
-  document.descendants((node, position) => {
-    if (node.type.name !== "heading") return;
-    let text = "";
-    node.descendants((child) => {
-      if (child.isText) text += child.text;
-      else if (child.type.name === "image") text += child.attrs.alt ?? "";
-      else if (child.type.name === "wiki_link") text += child.attrs.label || child.attrs.target;
-      else if (child.type.name === "hardbreak") text += " ";
+const noHeadings: readonly { node: ProseNode; offset: number; text: string }[] = [];
+const blockHeadings = new WeakMap<ProseNode, readonly { node: ProseNode; offset: number; text: string }[]>();
+
+function proseHeadingText(node: ProseNode) {
+  let text = "";
+  node.descendants((child) => {
+    if (child.isText) text += child.text;
+    else if (child.type.name === "image") text += child.attrs.alt ?? "";
+    else if (child.type.name === "wiki_link") text += child.attrs.label || child.attrs.target;
+    else if (child.type.name === "hardbreak") text += " ";
+  });
+  return text;
+}
+
+/** Headings inside one top-level block, remembered while that block is unchanged. */
+function headingsIn(block: ProseNode) {
+  let found = blockHeadings.get(block);
+  if (found) return found;
+  if (block.type.name === "heading") found = [{ node: block, offset: 0, text: proseHeadingText(block) }];
+  else if (block.isTextblock || block.isLeaf) found = noHeadings;
+  else {
+    const nested: { node: ProseNode; offset: number; text: string }[] = [];
+    block.descendants((node, position) => {
+      if (node.type.name !== "heading") return !node.isTextblock;
+      nested.push({ node, offset: position + 1, text: proseHeadingText(node) });
+      return false;
     });
-    headings.push({ node, position, text });
+    found = nested.length ? nested : noHeadings;
+  }
+  blockHeadings.set(block, found);
+  return found;
+}
+
+export function documentHeadings(document: ProseNode) {
+  const headings: { node: ProseNode; position: number; text: string; top: boolean }[] = [];
+  // An edit replaces one top-level block; every other block answers from its remembered headings.
+  document.forEach((block, offset) => {
+    for (const { node, offset: inner, text } of headingsIn(block))
+      headings.push({ node, position: offset + inner, text, top: node === block });
   });
   const ids = assignHeadingIds(headings.map((heading) => heading.text));
   return headings.map((heading, index) => ({ ...heading, id: ids[index] }));
@@ -200,8 +227,7 @@ export function readableMarkdown(source: string) {
 export function unsupportedBody(tree: Root, source: string) {
   const unsupported = (node: MarkdownNode): boolean =>
     node.type.startsWith("footnote") || markdownChildren(node).some(unsupported);
-  if (unsupported(tree))
-    return "This body contains footnotes that formatted editing cannot safely preserve. Use Source mode; the original text is kept.";
+  if (unsupported(tree)) return "Footnotes need Source mode";
   const wikiEmbed = (node: MarkdownNode): boolean => {
     const offset = node.position?.start.offset;
     if (node.type === "wikiLink" && typeof offset === "number" && source[offset - 1] === "!") {
@@ -211,8 +237,7 @@ export function unsupportedBody(tree: Root, source: string) {
     }
     return markdownChildren(node).some(wikiEmbed);
   };
-  if (wikiEmbed(tree))
-    return "Embedded wiki images are not supported by Live editing. Use standard Markdown images or Source mode; the original text is kept.";
+  if (wikiEmbed(tree)) return "Wiki image embeds need Source mode";
   const definitions: string[] = [];
   const references = new Set<string>();
   const text: string[] = [];
@@ -228,10 +253,10 @@ export function unsupportedBody(tree: Root, source: string) {
     new Set(definitions).size !== definitions.length ||
     definitions.some((identifier) => !references.has(identifier))
   ) {
-    return "Unused or duplicate link definitions cannot be safely preserved by formatted editing. Use Source mode; the original text is kept.";
+    return "Link definitions need Source mode";
   }
   if (text.some((value) => /^\s*:::/m.test(value))) {
-    return "This body contains an unsupported Markdown extension. Use Source mode to preserve its exact syntax.";
+    return "Unsupported Markdown, use Source mode";
   }
   return "";
 }

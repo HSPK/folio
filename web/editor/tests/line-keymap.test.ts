@@ -252,8 +252,8 @@ test("a nested block menu edits that block rather than the enclosing quote or li
     assert.ok(state.doc.eq(doc));
   }
   const state = stateAt(document(paragraph("Text")), "Text");
-  assert.throws(() => blockActionTransaction(state, { position: 1, action: "duplicate" }), /no longer editable/);
-  assert.throws(() => blockActionTransaction(state, { position: -1, action: "delete" }), /no longer editable/);
+  assert.throws(() => blockActionTransaction(state, { position: 1, action: "duplicate" }), /not editable/);
+  assert.throws(() => blockActionTransaction(state, { position: -1, action: "delete" }), /not editable/);
   assert.throws(() => blockActionTransaction(state, { position: 0, action: "move" }), /unavailable/);
 });
 test("block actions preserve ordered starts, checked tasks, nested content, link marks, formulas and dividers", () => {

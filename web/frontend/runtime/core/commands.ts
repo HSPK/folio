@@ -1,3 +1,4 @@
+import { fileLabel } from "../../models/library";
 import { projectModel } from "../../state/projects";
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
@@ -9,6 +10,7 @@ import { closeMenus, setSidebar, toggleFocusMode } from "../accounts/authenticat
 import { collaborationLocked } from "../collaboration/collaboration";
 import { showDialog } from "../dialogs/dialogs";
 import { openHistory } from "../documents/history";
+import { navigateTo } from "../documents/navigation";
 import { saveDocument } from "../documents/saving";
 import { openNewNote, openRenameDialog, setView } from "../navigation/files";
 import { refreshFiles } from "../navigation/library";
@@ -90,15 +92,14 @@ export function initializeCoreCommands(): void {
     {
       name: "Edit current link",
       action: () => {
-        if (!appState.inlineEditor.editLink()) documentNotice("Place the cursor in a link to edit it.", "warning");
+        if (!appState.inlineEditor.editLink()) documentNotice("No link at cursor", "warning");
       },
       enabled: () => Boolean(documentSession.current && shell.view === "rich"),
     },
     ...["Table", "Task list", "Image", "Formula"].map((name) => ({
       name: `Insert ${name.toLowerCase()}`,
       action: () => {
-        if (!appState.inlineEditor.insertBlock(name))
-          documentNotice("Place the cursor in an editable Live paragraph first.", "warning");
+        if (!appState.inlineEditor.insertBlock(name)) documentNotice("No editable paragraph at cursor", "warning");
       },
       enabled: () =>
         Boolean(documentSession.current && shell.view === "rich" && projectWritable() && !collaborationLocked()),
@@ -122,6 +123,18 @@ export function renderCommandPanel(): void {
         !["New note", "Open settings", "Refresh files", "Toggle sidebar"].includes(command.name)) &&
       (!query || command.name.toLowerCase().includes(query)),
   );
+  // One search reaches notes as well as actions: matching notes follow the commands.
+  if (query)
+    commandState.visibleCommands.push(
+      ...libraryCatalog.files
+        .filter((file) => fileLabel(file).toLowerCase().includes(query) || file.path.toLowerCase().includes(query))
+        .slice(0, 12)
+        .map((file) => ({
+          name: fileLabel(file),
+          key: file.path,
+          action: () => void navigateTo(file.id ?? file.path),
+        })),
+    );
   commandState.commandIndex = Math.min(commandState.commandIndex, Math.max(0, commandState.visibleCommands.length - 1));
   appState.ui.commandList.replaceChildren(
     ...commandState.visibleCommands.map((command, index) => {

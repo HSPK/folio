@@ -32,7 +32,7 @@ test("file switching benchmark measures Markdown readiness and frame opportunity
     preferences.appearance.cjkFont = "sans-serif";
     expect((await page.request.put(preferencesUrl, { data: preferences })).ok()).toBe(true);
     await page.reload();
-    await page.locator("#refresh-files").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(page.locator('[data-path="mixed-B.md"]')).toBeAttached();
     await page.evaluate(targets => {
       const list = document.getElementById("file-list");
@@ -335,7 +335,7 @@ test("runtime benchmark measures cold loading and Live and large Source input", 
     await measureInput(".ProseMirror", "outlineInput");
     await page.keyboard.press("Control+s");
     await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-    await page.locator("#files-tab").click();
+    await page.locator("#outline-tab").click();
     await chooseView(page, "editor");
     await page.locator('#file-list button[data-path="Runtime-source.md"]').click();
     await measureInput(".virtual-source-editor .cm-content", "sourceInput");

@@ -208,7 +208,7 @@ export function createNativeSourceHistory({
         }),
       );
     } catch (error) {
-      onNotice(`Could not edit source line: ${errorMessage(error)}`, "error");
+      onNotice(`Edit failed: ${errorMessage(error)}`, "error");
     }
   };
   textarea.addEventListener("beforeinput", beforeInput);

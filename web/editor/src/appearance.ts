@@ -46,7 +46,7 @@ export function applyAppearance(value: unknown, root = document.documentElement)
       state.face = null;
       state.alias = "";
       const genericCjk = isGenericFontFamily(settings.cjkFont);
-      state.fontResult = Promise.resolve(genericCjk ? "" : "This browser uses a font-stack fallback for Chinese text.");
+      state.fontResult = Promise.resolve(genericCjk ? "" : "Using fallback Chinese font");
       if (!genericCjk && typeof FontFace !== "undefined" && owner.fonts) {
         try {
           // A local, CJK-only face precedes the English family without downloading fonts.
@@ -59,19 +59,14 @@ export function applyAppearance(value: unknown, root = document.documentElement)
           state.fontResult = Promise.race([
             face.load().then(
               () => "",
-              () => `The Chinese font “${settings.cjkFont}” is unavailable. Using a local fallback.`,
+              () => `Font “${settings.cjkFont}” unavailable`,
             ),
             new Promise<string>((resolve) => {
-              timeout = window.setTimeout(
-                () => resolve("The selected Chinese font is taking too long to load. Using a local fallback."),
-                4000,
-              );
+              timeout = window.setTimeout(() => resolve("Chinese font load timed out"), 4000);
             }),
           ]).finally(() => window.clearTimeout(timeout));
         } catch {
-          state.fontResult = Promise.resolve(
-            "The selected Chinese font could not be configured. Using a local fallback.",
-          );
+          state.fontResult = Promise.resolve("Chinese font unavailable");
         }
       }
     }

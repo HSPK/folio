@@ -11,12 +11,14 @@ import { requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { isRecord } from "../../types/guards";
 import { isAbortError } from "../../api/error";
-import { closeMenus, handleAuthenticationFailure } from "../accounts/authentication";
+import { closeMenus, connectionFailure, handleAuthenticationFailure } from "../accounts/authentication";
+import { isConnectionLoss } from "../core/recovery";
 import { api } from "../core/api";
 import { appState } from "../core/bootstrap";
 import { documentNotice, notice, setText } from "../core/dom";
 import { readLayoutPreference, storeLayoutPreference } from "../core/layout";
 import { showDialog } from "../dialogs/dialogs";
+import { createIcon } from "@folio/editor-runtime";
 import { persistCurrentDraft } from "../documents/drafts";
 import { commitUrl, navigateTo } from "../documents/navigation";
 import { applicationSignal, listen, onApplicationDispose } from "../lifecycle";
@@ -52,7 +54,6 @@ export function initializeWorkspaceWorkspace(): void {
     }
   });
   listen(appState.element("workspace-open"), "click", () => void openWorkspace());
-  listen(appState.element("sidebar-workspace-open"), "click", () => void openWorkspace());
   listen(appState.element("workspace-close"), "click", () => dialog.close());
   listen(appState.element("workspace-kind"), "change", renderWorkspaceList);
   listen(appState.element("workspace-filter"), "input", renderWorkspaceList);
@@ -67,7 +68,7 @@ export function initializeWorkspaceWorkspace(): void {
     } catch (errorCause) {
       if (isAbortError(errorCause)) return;
       const error = errorContext(errorCause);
-      documentNotice(`Could not update your workspace: ${error.message}`, "error");
+      documentNotice(`Workspace update failed: ${error.message}`, "error");
     }
   });
   listen(window, "focus", () => {
@@ -91,8 +92,8 @@ export async function loadUserWorkspace(): Promise<void> {
     if (isAbortError(errorCause)) return;
     const error = errorContext(errorCause);
 
-    if (!handleAuthenticationFailure(error))
-      documentNotice(`Could not load your workspace: ${error.message}`, "warning");
+    if (isConnectionLoss(error)) connectionFailure(error);
+    else if (!handleAuthenticationFailure(error)) documentNotice(`Workspace load failed: ${error.message}`, "warning");
   }
 }
 
@@ -105,7 +106,7 @@ export function noteVisited(): void {
   const note = { project: projectModel.active.id, id: documentSession.current.id };
   storeLayoutPreference(activeWorkspaceKey(), JSON.stringify(note));
   void changeWorkspace({ action: "visit", ...note }).catch((error) => {
-    if (!isAbortError(error)) documentNotice(`Could not remember this note: ${error.message}`, "warning");
+    if (!isAbortError(error)) documentNotice(`Recents update failed: ${error.message}`, "warning");
   });
 }
 
@@ -175,14 +176,14 @@ export async function openWorkspaceNote(note: WorkspaceNote): Promise<void> {
   } catch (errorCause) {
     if (!current() || isAbortError(errorCause)) return;
     const error = errorContext(errorCause);
-    documentNotice(`Could not open this note: ${error.message}`, "error");
+    documentNotice(`Open failed: ${error.message}`, "error");
   }
 }
 
 export function renderWorkspaceList(): void {
   const mode = appState.element("workspace-kind").value;
   if (mode !== "favorites" && mode !== "recent") {
-    notice(appState.element("workspace-message"), "Unknown workspace view.", "error");
+    notice(appState.element("workspace-message"), "Unknown workspace view", "error");
     return;
   }
   const notes = workspaceModel.lists[mode];
@@ -194,12 +195,13 @@ export function renderWorkspaceList(): void {
       const open = document.createElement("button");
       open.type = "button";
       open.className = "workspace-item-name";
-      open.textContent = note.title;
+      // Untitled notes are listed by file name; the full path stays on the detail line.
+      open.textContent = note.title === note.path ? (note.path.split("/").at(-1) ?? note.title) : note.title;
       const detail = document.createElement("small");
       detail.textContent = `${projectModel.items.find((project) => project.id === note.project)?.name ?? "Project"} / ${note.path}`;
       open.append(detail);
       open.addEventListener("click", () => void openWorkspaceNote(note));
-      row.append(open);
+      row.append(createIcon("file"), open);
       if (mode === "favorites") {
         const remove = document.createElement("button");
         remove.type = "button";
@@ -216,7 +218,10 @@ export function renderWorkspaceList(): void {
       return row;
     }),
   );
-  notice(appState.element("workspace-message"), matching.length ? "" : "No matching workspace items.");
+  notice(
+    appState.element("workspace-message"),
+    matching.length ? "" : query ? "No matching notes" : mode === "favorites" ? "No favorites yet" : "No recent notes",
+  );
 }
 
 export async function openWorkspace(): Promise<void> {

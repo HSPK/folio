@@ -2,6 +2,7 @@ import * as Dialog from "@kobalte/core/dialog";
 import * as Popover from "@kobalte/core/popover";
 import {
   createContext,
+  createEffect,
   createSignal,
   onCleanup,
   onMount,
@@ -88,15 +89,9 @@ export function AppDialog(props: AppDialogProps) {
   );
 }
 
-interface MenuPanel {
-  host: HTMLElement;
-  panel: HTMLDivElement;
-}
-
 interface MenuContextValue {
   open: Accessor<boolean>;
   setOpen: (next: boolean) => void;
-  panels: Set<MenuPanel>;
   trigger: () => HTMLElement | null;
 }
 
@@ -112,7 +107,6 @@ function menuContext() {
 export function AppMenu(props: JSX.IntrinsicElements["details"]) {
   const [open, setOpen] = createSignal(false);
   const [local, attributes] = splitProps(props, ["children", "ref", "open"]);
-  const panels = new Set<MenuPanel>();
   let details!: HTMLDetailsElement;
   const descriptor = Object.getOwnPropertyDescriptor(HTMLDetailsElement.prototype, "open");
   if (!descriptor?.get || !descriptor.set) throw new Error("Native details state is unavailable.");
@@ -122,13 +116,11 @@ export function AppMenu(props: JSX.IntrinsicElements["details"]) {
   function changeOpen(next: boolean) {
     nativeSet.call(details, next);
     setOpen(next);
-    if (!next) for (const { host, panel } of panels) host.append(panel);
   }
 
   const context: MenuContextValue = {
     open,
     setOpen: changeOpen,
-    panels,
     trigger: () => details.querySelector(":scope > summary"),
   };
 
@@ -203,49 +195,47 @@ function navigateMenu(event: KeyboardEvent, panel: HTMLElement) {
 /** Preserve popup nodes between openings and let Kobalte handle positioning. */
 export function AppMenuContent(props: JSX.IntrinsicElements["div"]) {
   const menu = menuContext();
+  const popover = Popover.usePopoverContext();
   const panel = document.createElement("div");
   const [local, attributes] = splitProps(props, ["children", "ref"]);
   spread(panel, attributes, false, true);
   insert(panel, () => local.children);
   let host!: HTMLDivElement;
-  const registration: MenuPanel = {
-    get host() {
-      return host;
-    },
-    panel,
-  };
-  menu.panels.add(registration);
+  createEffect(() => {
+    panel.inert = !menu.open();
+    if (!popover.contentPresent() && host) host.append(panel);
+  });
   onMount(() => {
     if (!menu.open()) host.append(panel);
-  });
-  onCleanup(() => {
-    menu.panels.delete(registration);
   });
 
   function PanelElement(layer: JSX.IntrinsicElements["div"]) {
     spread(panel, layer, false, true);
+    // The panel outlives each layer, so state attributes from a finished layer must not leak into the next opening.
+    onCleanup(() => {
+      panel.removeAttribute("data-closed");
+      panel.removeAttribute("data-expanded");
+    });
     return panel;
   }
 
   return (
     <div class="menu-panel-host" ref={host}>
-      <Show when={menu.open()}>
-        <Popover.Content
-          as={PanelElement}
-          id={props.id}
-          class={props.class}
-          role={props.role}
-          aria-label={props["aria-label"]}
-          onKeyDown={(event) => navigateMenu(event, panel)}
-          onCloseAutoFocus={(event) => event.preventDefault()}
-          onEscapeKeyDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            menu.setOpen(false);
-            menu.trigger()?.focus({ preventScroll: true });
-          }}
-        />
-      </Show>
+      <Popover.Content
+        as={PanelElement}
+        id={props.id}
+        class={props.class}
+        role={props.role}
+        aria-label={props["aria-label"]}
+        onKeyDown={(event) => navigateMenu(event, panel)}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          menu.setOpen(false);
+          menu.trigger()?.focus({ preventScroll: true });
+        }}
+      />
     </div>
   );
 }

@@ -23,7 +23,7 @@ test("a rejected project route preserves the active note and leaves the project 
     });
     const target = page.locator(`.project-open[data-project="${project.id}"]`);
     await target.click();
-    await expect(page.locator("#document-message")).toContainText("Could not finish switching projects:");
+    await expect(page.locator("#document-message")).toContainText("Switch failed:");
     await expect(page.locator("#editor")).toHaveValue(before);
     await expect(page.locator("#document-title")).toHaveText("Shared");
     expect(page.url()).toBe(url);
@@ -151,15 +151,30 @@ test("project manager uses one lightweight dialog without nested frames or page 
     await expect(page.locator("#editor")).toHaveValue(/Alpha/);
     const initialSource = await page.locator("#editor").inputValue();
     await page.locator("#editor").evaluate(node => { window.editorBeforeProjects = node; });
-    await page.locator("#projects-open").click();
+    const firstFrame = await page.locator("#projects-open").evaluate(button => {
+      button.click();
+      const dialog = document.getElementById("projects-dialog");
+      return { top: dialog.getBoundingClientRect().top, opacity: getComputedStyle(dialog).opacity };
+    });
+    expect(firstFrame.opacity).toBe("1");
     await expect(page.locator("#project-create-form")).toBeHidden();
     await capture("projects-desktop");
+    const firstProject = await page.locator("#projects-list .project-open").first().boundingBox();
+    expect(firstProject.height).toBeGreaterThanOrEqual(40);
     const trigger = await page.locator("#projects-open").boundingBox();
     const picker = await page.locator("#projects-dialog").boundingBox();
+    expect(picker.y).toBe(firstFrame.top);
     expect(Math.abs(picker.x - trigger.x)).toBeLessThan(2);
     expect(picker.y + picker.height).toBeLessThanOrEqual(trigger.y);
     await page.mouse.click(700, 100);
     await expect(page.locator("#projects-dialog")).toBeHidden();
+    // Closing a subview must not briefly paint the reset browse view over the document.
+    await page.locator("#projects-open").click();
+    await page.locator("#project-new").click();
+    expect(await page.locator("#projects-close").evaluate(button => {
+      button.click();
+      return button.closest("dialog").getClientRects().length;
+    })).toBe(0);
     await page.locator("#projects-open").click();
     await page.locator("#projects-filter").fill("missing project");
     await expect(page.locator("#projects-empty")).toHaveText("No matching projects");
@@ -201,7 +216,7 @@ test("project manager uses one lightweight dialog without nested frames or page 
     await capture("project-settings-desktop");
     await page.locator("#sharing-image-directory").press("Control+s");
     await expect(page.locator("#projects-dialog")).toHaveAttribute("data-view", "browse");
-    await expect(page.locator("#projects-filter")).toBeFocused();
+    await expect(page.locator("#projects-filter")).not.toBeFocused();
     await expect(page.locator("#projects-open")).toHaveText("Studio");
     await page.getByRole("button", { name: "Manage Studio", exact: true }).click();
     await page.locator("#sharing-name").fill("Do not save");
@@ -470,17 +485,15 @@ test("loading and warnings float at bottom right without shifting editor or side
     const viewport = page.viewportSize();
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width - 8);
     expect(bounds.x).toBeGreaterThan(viewport.width / 2);
-    const footer = await page.locator(".status-bar").boundingBox();
-    expect(bounds.y + bounds.height).toBeLessThanOrEqual(footer.y - 6);
-    expect(bounds.y + bounds.height).toBeGreaterThan(footer.y - 25);
+    expect(viewport.height - bounds.y - bounds.height).toBeCloseTo(18, 0);
     if (browserName !== "webkit") await page.screenshot({ path: test.info().outputPath("floating-loading.png"), caret: "initial" });
   } finally { release(); }
   await expect(page.locator("#document-title")).toHaveText("Second.md");
   await page.route("**/api/tree", (route) => route.fulfill({
-    status: 503, contentType: "application/json", body: JSON.stringify({ error: "Unavailable for status layout test" }),
+    status: 422, contentType: "application/json", body: JSON.stringify({ error: "Invalid file list for status layout test" }),
   }));
-  await page.locator("#refresh-files").click();
-  await expect(page.locator("#tree-message")).toContainText("Unavailable for status layout test");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.locator("#tree-message")).toContainText("Invalid file list for status layout test");
   expect(await page.locator("#tree-message").evaluate(node => Boolean(node.closest(".status-notices")))).toBe(true);
   expect(await page.locator("#tree-message").evaluate(node => Boolean(node.closest(".status-bar")))).toBe(false);
 });

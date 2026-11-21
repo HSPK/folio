@@ -62,5 +62,5 @@ export function tableFormat({
     });
     return `<table>\n${lines.join("\n")}\n</table>`;
   }
-  throw new RangeError("Choose Markdown, HTML, CSV, TSV, or JSON.");
+  throw new RangeError("Unsupported table format");
 }

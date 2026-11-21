@@ -103,6 +103,9 @@ function replaceMetadataText(parts, value) {
   if (!parts.hasMetadata) return parts;
   let raw = value.replace(/\r\n?|\n/g, parts.lineEnding);
   if (raw && !/[\r\n]$/.test(raw)) raw += parts.lineEnding;
+  return replaceMetadataRaw(parts, raw);
+}
+function replaceMetadataRaw(parts, raw) {
   const prefix = parts.opening + raw + parts.suffix;
   return { ...parts, raw, prefix, metadataEnd: parts.opening.length + raw.length, bodyStart: prefix.length };
 }
@@ -138,11 +141,11 @@ function assignHeadingIds(texts) {
 }
 function validateAppearance(value) {
   if (!value || typeof value !== "object" || !("theme" in value) || value.theme !== "system" && value.theme !== "light" && value.theme !== "dark") {
-    throw new Error("The service returned an invalid appearance theme.");
+    throw new Error("Invalid appearance theme");
   }
   const font = (name, label) => {
     if (typeof name !== "string" || !name.trim() || name.length > 200 || /[\u0000-\u001f\u007f]/u.test(name)) {
-      throw new Error(`The service returned an invalid ${label} font.`);
+      throw new Error(`Invalid ${label} font`);
     }
     return name.trim();
   };
@@ -169,6 +172,7 @@ export {
   headingSlug,
   isGenericFontFamily,
   quoteFontFamily,
+  replaceMetadataRaw,
   replaceMetadataText,
   resolveMarkdownUrl,
   shouldVirtualizeSource,

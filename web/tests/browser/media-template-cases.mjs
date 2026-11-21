@@ -3,7 +3,7 @@ import { collaborativeLibrary } from "./collaboration-cases.mjs";
 import { writeClipboardImage } from "./project-cases.mjs";
 
 test("daily templates create tagged notes and dropped images respect compression settings", async ({ page }) => {
-  await page.locator("#new-note").click();
+  await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
   await page.locator("#new-note-template").selectOption("daily");
   const title = await page.locator("#new-note-title").inputValue();
   expect(title).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -111,7 +111,7 @@ test("attachment cleanup only recycles confirmed unreferenced files and can rest
     await fs.writeFile(path.join(library.notes, "used.png"), Buffer.from(base64, "base64"));
     await fs.writeFile(path.join(library.notes, "Other.md"), "# Other\n\n![Used](used.png)\n");
     await member.close({ runBeforeUnload: false });
-    await owner.locator("#collaboration-join").click();
+    await openMoreAction(owner, "collaboration-join");
     await expect(owner.locator("#collaboration-join")).toHaveText("Collaborate");
     await owner.locator("#more-menu > summary").click();
     await owner.locator("#attachments-open").click();

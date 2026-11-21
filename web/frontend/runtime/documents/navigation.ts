@@ -129,8 +129,8 @@ export function clearDocument(url: URL, mode: RouteMode): void {
   notice(appState.element("rich-warning"), "");
   notice(appState.ui.conflictMessage, "");
   documentNotice("");
-  emptyPreview("A place for your Markdown", "Open a file from the list, or create a new note.");
-  previewStatus("Select a note to begin");
+  emptyPreview("A place for your Markdown", "Open or create a note");
+  previewStatus("Select a note");
   commitUrl(url, mode);
   refreshControls();
   updateFileSelection();
@@ -171,7 +171,7 @@ export async function navigateTo(
     return true;
   }
   if (appState.creating) {
-    documentNotice("Please wait for the current creation to finish before changing notes.");
+    documentNotice("Creation in progress");
     if (mode === "pop") restoreCommittedUrl();
     return false;
   }
@@ -187,10 +187,6 @@ export async function navigateTo(
     return true;
   }
   if (appState.connectionState !== "ready") {
-    documentNotice(
-      "This tab is disconnected. Your current text has been kept. Reconnect or reopen Folio using the app or CLI launch URL.",
-      "error",
-    );
     if (mode === "pop") restoreCommittedUrl();
     return false;
   }
@@ -200,11 +196,8 @@ export async function navigateTo(
   const root = appState.currentRoot;
   const known = resourceState.resourceIndex.get(path)?.path ?? (isResourceId(path) ? null : path);
   const label = known ? `“${known}”` : "the note";
-  notice(
-    appState.ui.loadingMessage,
-    `${reload ? "Reloading" : "Opening"} ${label}…${documentSession.current ? " You can keep typing to cancel." : ""}`,
-  );
-  if (documentSession.current) previewStatus("Waiting for the requested note…");
+  notice(appState.ui.loadingMessage, `${reload ? "Reloading" : "Opening"} ${label}…`);
+  if (documentSession.current) previewStatus("Opening…");
   refreshControls();
   try {
     const resource = await documentResource(path, controller.signal);
@@ -226,17 +219,13 @@ export async function navigateTo(
         })),
     );
     if (!documentSession.isCurrentLoad(loading)) return false;
-    if (root !== appState.currentRoot)
-      throw new ApiError("The notes folder changed while this file was opening. Try opening it again.");
+    if (root !== appState.currentRoot) throw new ApiError("Notes folder changed");
     useDocument(payload, root, targetUrl, mode);
     return true;
   } catch (errorCause) {
     const error = errorContext(errorCause);
     if (!documentSession.isCurrentLoad(loading) || aborted(error)) return false;
-    documentNotice(
-      `Could not ${reload ? "reload" : "open"} ${label}: ${error.message} Your current editor text has been kept.`,
-      "error",
-    );
+    if (!isConnectionLoss(error)) documentNotice(`${reload ? "Reload" : "Open"} failed: ${error.message}`, "error");
     connectionFailure(error);
     if (mode === "pop") restoreCommittedUrl();
     if (documentSession.current) schedulePreview(0);
@@ -289,3 +278,4 @@ export function restoreViewPosition() {
   documentState.pendingViewPosition = null;
   return true;
 }
+import { isConnectionLoss } from "../core/recovery";

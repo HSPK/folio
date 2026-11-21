@@ -35,6 +35,7 @@ import { saveBeforeLeaving } from "../documents/saving";
 import { listen } from "../lifecycle";
 import { projectCanCreate } from "../projects/permissions";
 import { loadUserWorkspace } from "../workspace/workspace";
+import { initializeEntryIcons, renderEntryIconChoices } from "./icons";
 import { refreshFiles } from "./library";
 class FileState {
   suggestedNoteTitle!: string;
@@ -43,6 +44,7 @@ class FileState {
 export const fileState = new FileState();
 export function initializeNavigationFiles(): void {
   fileState.suggestedNoteTitle = "";
+  initializeEntryIcons(() => closeFileContextMenu());
   listen(appState.element("new-note-template"), "change", () => {
     const title = templateTitle(appState.element("new-note-template").value);
     if (!appState.ui.newTitle.value.trim() || appState.ui.newTitle.value === fileState.suggestedNoteTitle)
@@ -101,11 +103,7 @@ export async function createNote(event: SubmitEvent): Promise<void> {
     return;
   }
   if (appState.connectionState !== "ready" || requireValue(appState.newNoteOrigin).root !== appState.currentRoot) {
-    notice(
-      appState.ui.newError,
-      "The connection or notes folder changed. Cancel and reopen New note after reconnecting.",
-      "error",
-    );
+    notice(appState.ui.newError, "Connection changed, reopen New note", "error");
     return;
   }
   if (
@@ -137,16 +135,12 @@ export async function createNote(event: SubmitEvent): Promise<void> {
       if (shell.view === "rich") appState.inlineEditor.focus();
       else appState.ui.editor.focus();
     } else {
-      documentNotice(
-        `Created “${payload.path}”. Your current editor text was kept because the open note or folder changed.`,
-        "warning",
-      );
+      documentNotice(`Created “${payload.path}”`, "warning");
     }
     void refreshFiles();
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    const prefix = error.status === 409 ? "A note with this file name already exists. Choose a different title. " : "";
-    notice(appState.ui.newError, `${prefix}${error.message} No existing note was replaced.`, "error");
+    notice(appState.ui.newError, error.status === 409 ? "Name already exists" : error.message, "error");
     appState.ui.newTitle.setAttribute("aria-invalid", "true");
     connectionFailure(error);
   } finally {
@@ -188,7 +182,7 @@ export async function createFolder(event: SubmitEvent): Promise<void> {
       method: "POST",
       body: { path },
     });
-    if (result?.path !== path) throw new ApiError("The service returned a different folder.");
+    if (result?.path !== path) throw new ApiError("Unexpected folder in response");
     appState.ui.newFolderDialog.close();
     libraryModel.setCollapsed(appState.newItemParent, false);
     libraryModel.setCollapsed(path, false);
@@ -196,7 +190,7 @@ export async function createFolder(event: SubmitEvent): Promise<void> {
     await refreshFiles();
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    notice(appState.ui.newFolderError, `${error.message} No existing file or folder was replaced.`, "error");
+    notice(appState.ui.newFolderError, error.message, "error");
     appState.ui.newFolderPath.setAttribute("aria-invalid", "true");
     connectionFailure(error);
   } finally {
@@ -220,6 +214,7 @@ export function openFileContextMenu(event: MouseEvent, path: string, kind: "file
   appState.ui.fileRename.disabled = !projectCanCreate();
   appState.ui.fileDetails.hidden = kind !== "file";
   appState.element("file-context-name").textContent = path.split("/").at(-1) ?? path;
+  renderEntryIconChoices(kind, path);
   const anchor = requireValue(fileState.fileMenuReturnFocus).getBoundingClientRect();
   const x = event.clientX || anchor.left + 12;
   const y = event.clientY || anchor.bottom;
@@ -245,7 +240,7 @@ export async function showFileDetails(): Promise<void> {
       decode: decodedEntry,
     });
     if (details.path !== selected.path) {
-      throw new ApiError("The service returned incomplete file details.");
+      throw new ApiError("Incomplete file details");
     }
     setText(appState.ui.detailsName, details.name);
     setText(appState.ui.detailsMetadataTitle, details.title || "—");
@@ -258,7 +253,7 @@ export async function showFileDetails(): Promise<void> {
     showDialog(appState.ui.detailsDialog);
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    documentNotice(`Could not read file details: ${error.message}`, "error");
+    documentNotice(`Details failed: ${error.message}`, "error");
     connectionFailure(error);
   }
 }
@@ -270,12 +265,7 @@ export function openRenameDialog(): void {
   const name = requireValue(selected.path.split("/").at(-1), "File name");
   appState.ui.renamePath.value = name;
   setText(appState.element("rename-title"), selected.kind === "file" ? "Rename file" : "Rename folder");
-  setText(
-    appState.element("rename-hint"),
-    selected.kind === "file"
-      ? "This changes the file name, not the display title. Edit the title in Properties."
-      : "This changes the folder name and keeps its contents.",
-  );
+  setText(appState.element("rename-hint"), selected.kind === "file" ? "Changes the file name, not the title" : "");
   appState.ui.confirmRename.disabled = true;
   appState.element("rename-update-links").checked = true;
   appState.ui.renamePath.setAttribute("aria-invalid", "false");
@@ -298,7 +288,7 @@ export async function renameEntry(event: SubmitEvent): Promise<void> {
   if (!renameChanged()) return;
   const name = appState.ui.renamePath.value.trim();
   if (!name || name.includes("/") || name.includes("\\")) {
-    notice(appState.ui.renameError, "Enter one file or folder name without slashes.", "error");
+    notice(appState.ui.renameError, "Name cannot contain slashes", "error");
     appState.ui.renamePath.setAttribute("aria-invalid", "true");
     return;
   }
@@ -333,7 +323,7 @@ export async function moveLibraryEntry(
   const affectsActive =
     activePath === entry.path || (entry.kind === "directory" && activePath?.startsWith(`${entry.path}/`));
   if (affectsActive && dirty()) {
-    documentNotice("Save or discard the open note before moving or renaming it.", "warning");
+    documentNotice("Save the open note first", "warning");
     return false;
   }
   appState.movingEntry = true;
@@ -349,7 +339,7 @@ export async function moveLibraryEntry(
       },
     });
     if (!result || typeof result.path !== "string" || result.kind !== entry.kind || !isResourceId(result.id)) {
-      throw new ApiError("The service returned an incomplete move result.");
+      throw new ApiError("Incomplete move result");
     }
     await refreshFiles();
     destination = result.path;
@@ -369,7 +359,7 @@ export async function moveLibraryEntry(
     return true;
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    const message = `Could not move “${entry.path}”: ${error.message}`;
+    const message = `Move failed: ${error.message}`;
     if (appState.ui.renameDialog.open) notice(appState.ui.renameError, message, "error");
     else documentNotice(message, "error");
     connectionFailure(error);
@@ -428,18 +418,19 @@ export async function copyText(): Promise<void> {
   const id = documentSession.id;
   clearTimer(appState.copyTimer);
   try {
-    await navigator.clipboard.writeText(text);
+    await copyPlainText(text);
     setText(appState.ui.copy, "Copied");
-    setText(appState.ui.copyStatus, "Editor text copied to the clipboard.");
+    setText(appState.ui.copyStatus, "Copied");
   } catch {
     if (id === documentSession.id) {
       setView("editor");
       appState.ui.editor.focus();
       appState.ui.editor.select();
       setText(appState.ui.copy, "Press Ctrl+C");
-      setText(appState.ui.copyStatus, "Clipboard access is unavailable. Editor text selected; press Ctrl+C to copy.");
-      documentNotice("Clipboard access is unavailable. Your text is selected in the editor; press Ctrl+C to copy it.");
+      setText(appState.ui.copyStatus, "Clipboard unavailable, press Ctrl+C");
+      documentNotice("Clipboard unavailable, press Ctrl+C");
     }
   }
   appState.copyTimer = window.setTimeout(() => setText(appState.ui.copy, "Copy Markdown"), 3000);
 }
+import { copyPlainText } from "../../../shared/clipboard";

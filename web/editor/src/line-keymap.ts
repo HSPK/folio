@@ -94,7 +94,7 @@ export function textLineEdit(
     from = to = direction < 0 ? line.from : line.to;
     parts = direction < 0 ? [indent, newline] : [newline, indent];
     anchor = head = from + indentation + (direction < 0 ? 0 : length(newline));
-  } else throw new Error("This line editing action is unavailable.");
+  } else throw new Error("Action unavailable");
   const insert = parts.map((part) => part.text ?? text.slice(part.from, part.to)).join("");
   if (from === to && !insert) return null;
   return { from, to, insert, parts, anchor: anchor + delta, head: head + delta };
@@ -199,8 +199,8 @@ export function blockActionTransaction(state: EditorState, { position, action }:
     Number.isInteger(position) && position >= 0 && position < state.doc.content.size
       ? state.doc.nodeAt(position)
       : null;
-  if (!node?.isBlock) throw new Error("This block is no longer editable.");
-  if (!["duplicate", "delete", "insert"].includes(action)) throw new Error("This block action is unavailable.");
+  if (!node?.isBlock) throw new Error("Block not editable");
+  if (!["duplicate", "delete", "insert"].includes(action)) throw new Error("Action unavailable");
   const selection = NodeSelection.create(state.doc, position);
   const { parent } = selection.$from;
   const first = selection.$from.index();
@@ -211,7 +211,7 @@ export function blockActionTransaction(state: EditorState, { position, action }:
     from: position,
     to: position + node.nodeSize,
   });
-  if (!transaction) throw new Error("This block cannot be edited here.");
+  if (!transaction) throw new Error("Block not editable here");
   return transaction;
 }
 
@@ -300,7 +300,7 @@ export function lineKeymap({
               const transaction = richLineTransaction(view.state, operation);
               if (transaction) view.dispatch(transaction);
             } catch (error) {
-              onNotice?.(`Could not edit line: ${errorMessage(error)}`, "error");
+              onNotice?.(`Edit failed: ${errorMessage(error)}`, "error");
             }
             return true;
           },

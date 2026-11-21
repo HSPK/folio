@@ -55,7 +55,7 @@ export function createSettingsSaver(ports: SettingsSavePorts) {
           current();
           if (intent.project) {
             const project = ports.project(intent.project.id);
-            if (!project) throw new Error("The project is no longer accessible. Reopen Settings before saving.");
+            if (!project) throw new Error("Project unavailable. Reopen Settings.");
             if (project.imageDirectory !== intent.project.imageDirectory)
               await abortable(ports.updateProject(project.id, intent.project.imageDirectory), signal);
             current();

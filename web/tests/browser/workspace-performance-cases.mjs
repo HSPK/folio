@@ -107,7 +107,7 @@ test("workspace interaction benchmark measures project navigation and search res
       historyId = history.revisions.find((revision) => revision.version === version)?.id;
       expect(Number.isSafeInteger(historyId)).toBe(true);
     }
-    await page.locator("#refresh-files").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(page.locator('[data-path="Bench0511.md"]')).toBeAttached();
     const search = async () => {
       await page.locator("#more-menu > summary").click();

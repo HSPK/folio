@@ -3,7 +3,9 @@ import type { Node as ProseNode } from "@milkdown/prose/model";
 import { Decoration, DecorationSet, type EditorProps } from "@milkdown/prose/view";
 import { createMathNodeViews } from "./math.ts";
 import { wikiNodeView } from "./wiki.ts";
-import { codeBlockDecorations, codeBlockNodeView } from "./code-block.ts";
+import { Mapping, StepMap } from "@milkdown/prose/transform";
+import { indexedDecorations } from "./decoration-index.ts";
+import { codeBlockDecorations, codeBlockDecorationsAt, codeBlockNodeView } from "./code-block.ts";
 import { linkMarkView } from "./links.ts";
 import type { createImageTools } from "./images.ts";
 import type { createTableTools } from "./tables.ts";
@@ -38,6 +40,7 @@ export function createEditorViews({
   headingsFor_fn,
 }: EditorViewsOptions): Pick<EditorProps, "nodeViews" | "markViews" | "decorations"> {
   const decorations = new WeakMap<ProseNode, DecorationSet>();
+  let latest: { document: ProseNode; inner: DecorationSet } | null = null;
   const imageView = imageTools.nodeView({ active_fn, editable_fn, path, transformUrl, serialize_fn });
   return {
     nodeViews: {
@@ -75,7 +78,7 @@ export function createEditorViews({
           if (!active_fn() || typeof position !== "number") return;
           if (readOnly_fn()) {
             update();
-            onNotice?.("This document is read-only.", "warning");
+            onNotice?.("Read-only", "warning");
             return;
           }
           view.dispatch(view.state.tr.setNodeMarkup(position, undefined, { ...node.attrs, checked: checkbox.checked }));
@@ -103,17 +106,71 @@ export function createEditorViews({
     decorations(state) {
       const cached = decorations.get(state.doc);
       if (cached) return cached;
-      const items = headingsFor_fn(state.doc).map(({ node, position, id }) =>
-        Decoration.node(position, position + node.nodeSize, { id }),
-      );
-      const first = state.doc.firstChild;
-      if (state.doc.childCount === 1 && first?.type.name === "paragraph" && !first.content.size) {
-        items.push(Decoration.node(0, first.nodeSize, { "data-placeholder": "Start writing, or type / to insert" }));
-      }
-      items.push(...codeBlockDecorations(state.doc));
-      const result = DecorationSet.create(state.doc, items);
+      const inner = (latest && patchInner(latest.document, latest.inner, state.doc)) ?? buildInner(state.doc);
+      const result = combine(state.doc, inner);
       decorations.set(state.doc, result);
+      latest = { document: state.doc, inner };
       return result;
     },
   };
+
+  /** Heading anchors on top-level blocks are cheap to list afresh; they sit beside the inner set. */
+  function combine(document: ProseNode, inner: DecorationSet) {
+    const top = headingsFor_fn(document)
+      .filter((heading) => heading.top)
+      .map(headingDecoration);
+    const first = document.firstChild;
+    if (document.childCount === 1 && first?.type.name === "paragraph" && !first.content.size) {
+      top.push(Decoration.node(0, first.nodeSize, { "data-placeholder": "Start writing, or type / to insert" }));
+    }
+    return indexedDecorations(top, inner) ?? DecorationSet.create(document, [...top, ...inner.find()]);
+  }
+
+  function nestedHeadings(document: ProseNode) {
+    return headingsFor_fn(document).filter((heading) => !heading.top);
+  }
+
+  /** Decorations inside blocks: code highlights, and anchors of headings nested in quotes or lists. */
+  function buildInner(document: ProseNode) {
+    return DecorationSet.create(document, [
+      ...nestedHeadings(document).map(headingDecoration),
+      ...codeBlockDecorations(document),
+    ]);
+  }
+
+  /**
+   * Carry the inner decorations across an edit and redo only the top-level blocks that changed, so a
+   * keystroke in a long note does not re-highlight every code block. Returns null when anchors nested
+   * inside blocks are involved, because those are numbered across the whole note.
+   */
+  function patchInner(before: ProseNode, inner: DecorationSet, document: ProseNode) {
+    if (nestedHeadings(before).length || nestedHeadings(document).length) return null;
+    let from = 0;
+    let endA = before.childCount;
+    let endB = document.childCount;
+    while (from < Math.min(endA, endB) && before.child(from) === document.child(from)) from += 1;
+    while (endA > from && endB > from && before.child(endA - 1) === document.child(endB - 1)) {
+      endA -= 1;
+      endB -= 1;
+    }
+    let start = 0;
+    for (let index = 0; index < from; index += 1) start += document.child(index).nodeSize;
+    let oldSize = 0;
+    for (let index = from; index < endA; index += 1) oldSize += before.child(index).nodeSize;
+    let newSize = 0;
+    for (let index = from; index < endB; index += 1) newSize += document.child(index).nodeSize;
+    const mapped = inner.map(new Mapping([new StepMap([start, oldSize, newSize])]), document);
+    const end = start + newSize;
+    const stale = mapped.find(start, end).filter((decoration) => decoration.from >= start && decoration.to <= end);
+    const fresh: Decoration[] = [];
+    let position = start;
+    for (let index = from; index < endB; index += 1) {
+      codeBlockDecorationsAt(document.child(index), position, fresh);
+      position += document.child(index).nodeSize;
+    }
+    return mapped.remove(stale).add(document, fresh);
+  }
 }
+
+const headingDecoration = ({ node, position, id }: { node: ProseNode; position: number; id: string }) =>
+  Decoration.node(position, position + node.nodeSize, { id });

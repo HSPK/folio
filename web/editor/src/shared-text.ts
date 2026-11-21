@@ -35,7 +35,7 @@ export function createSharedText(onUpdate: (update: Uint8Array) => void) {
       const previous = text.toString();
       if (previous === value) return;
       const changes = diffChars(previous, value, { timeout: 200 });
-      if (!changes) throw new Error("The edit is too large to merge safely. Split it into smaller edits.");
+      if (!changes) throw new Error("Edit too large to merge");
       doc.transact(() => {
         let index = 0;
         for (const change of changes) {

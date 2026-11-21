@@ -19,11 +19,22 @@ export function ProjectDialog() {
             </button>
             <h2 id="projects-title">Projects</h2>
           </div>
-          <div class="project-header-actions">
-            <button id="projects-close" class="icon-button" type="button" aria-label="Close projects">
-              <svg data-icon="x" aria-hidden="true"></svg>
+          <div class="project-toolbar">
+            <div class="search-field project-search">
+              <svg data-icon="search" aria-hidden="true"></svg>
+              <label for="projects-filter" class="visually-hidden">
+                Search projects
+              </label>
+              <input id="projects-filter" type="search" placeholder="Search projects" autocomplete="off" />
+            </div>
+            <button id="project-new" class="icon-button" type="button" title="New project">
+              <svg data-icon="plus" aria-hidden="true"></svg>
+              <span class="visually-hidden">New project</span>
             </button>
           </div>
+          <button id="projects-close" class="icon-button" type="button" aria-label="Close projects" autofocus>
+            <svg data-icon="x" aria-hidden="true"></svg>
+          </button>
         </header>
         <section id="project-confirm" class="project-confirm" role="alert" data-confirmation-region hidden>
           <p id="project-confirm-message" data-confirmation-message></p>
@@ -37,23 +48,10 @@ export function ProjectDialog() {
           </div>
         </section>
         <section id="projects-browser" data-project-view="browse">
-          <div class="search-field project-search">
-            <svg data-icon="search" aria-hidden="true"></svg>
-            <label for="projects-filter" class="visually-hidden">
-              Search projects
-            </label>
-            <input id="projects-filter" type="search" placeholder="Search projects" autocomplete="off" />
-          </div>
           <div id="projects-list" class="projects-list" role="list" aria-label="Projects"></div>
           <p id="projects-empty" class="project-empty" role="status" hidden>
             No projects
           </p>
-          <div class="project-picker-footer">
-            <button id="project-new" class="project-new-action" type="button">
-              <svg data-icon="plus" aria-hidden="true"></svg>
-              <span>New project</span>
-            </button>
-          </div>
         </section>
         <form id="project-create-form" data-project-view="create" hidden>
           <div class="project-field">

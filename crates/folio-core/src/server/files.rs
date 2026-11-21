@@ -499,7 +499,7 @@ fn version(bytes: &[u8]) -> String {
 fn check_version(bytes: &[u8], expected: &str) -> Result<(), ApiError> {
     if !version(bytes).eq_ignore_ascii_case(expected) {
         return Err(ApiError::conflict(
-            "The document changed outside this editor. Reload it before saving.",
+            "File changed on disk. Reload before saving.",
         ));
     }
     Ok(())

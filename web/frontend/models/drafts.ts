@@ -63,8 +63,7 @@ function decodedSelection(value: unknown): DraftSnapshot["selection"] {
 }
 
 export function decodedDraftIdentity(value: DraftIdentity): DraftIdentity {
-  if (!value.scope || !hash(value.secret))
-    throw new Error("The private recovery key is unavailable. Reconnect before closing unsaved work.");
+  if (!value.scope || !hash(value.secret)) throw new Error("Recovery key unavailable. Reconnect before closing.");
   return Object.freeze({ scope: value.scope, secret: value.secret });
 }
 

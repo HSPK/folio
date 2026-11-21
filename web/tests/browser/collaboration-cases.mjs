@@ -171,8 +171,8 @@ test("Live and Compare editors share Markdown and metadata without mixing docume
     await alice.keyboard.insertText(" jointly");
     await expect(bob.locator("#editor")).toHaveValue(/# Shared jointly/);
     const metadata = await metadataField(alice);
-    await metadata.fill("title: Shared together\n");
-    await expect(bob.locator("#editor")).toHaveValue(/title: Shared together/);
+    await metadata.fill("Shared together");
+    await expect(bob.locator("#editor")).toHaveValue(/title: "Shared together"/);
     await expect(bob.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     await expect(alice.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     await bob.goto(await userDocumentUrl(bob.context(), library.url, "Other.md"));
@@ -230,7 +230,8 @@ test("collaborative edits queued during IME and disconnection merge after reconn
     await expect(alice.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     await library.sockets[0].socket.close({ code: 1012, reason: "Connection interrupted for test" });
     await library.sockets[0].server.close();
-    await expect(alice.locator("#collaboration-message")).toContainText("disconnected");
+    await expect(alice.locator("#connection-label")).toHaveText("Disconnected");
+    await expect(alice.locator("#connection-label")).toBeVisible();
     await sourceCaret(alice, "Alpha");
     await alice.keyboard.insertText(" offline");
     await sourceCaret(bob, "Beta remote");

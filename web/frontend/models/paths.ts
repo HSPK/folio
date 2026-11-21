@@ -9,28 +9,26 @@ export function isReservedFileName(name: string) {
 function validatePortablePath(value: string, emptyMessage: string) {
   const path = normalizeNotePath(value.trim());
   if (!path) throw new Error(emptyMessage);
-  if (path.startsWith("/") || /^[a-z]:/i.test(path))
-    throw new Error("Use a path relative to the notes folder, not an absolute path.");
+  if (path.startsWith("/") || /^[a-z]:/i.test(path)) throw new Error("Use a path relative to the notes folder.");
   const parts = path.split("/");
   if (parts.some((part) => !part || part === "." || part === "..")) {
-    throw new Error("Use a file name and existing folders, without empty, . or .. segments.");
+    throw new Error("Remove empty, . or .. path segments.");
   }
   if (parts.some((part) => /[<>:"|?*\u0000-\u001F]/u.test(part) || /[. ]$/.test(part))) {
-    throw new Error("Use portable file and folder names without reserved characters or a trailing space or period.");
+    throw new Error("Remove reserved characters and trailing spaces or periods.");
   }
-  if (parts.some(isReservedFileName))
-    throw new Error("Names such as CON or NUL are reserved for cross-platform compatibility.");
+  if (parts.some(isReservedFileName)) throw new Error("Reserved name, such as CON or NUL.");
   return { path, parts };
 }
 
 export function validateNewNotePath(value: string) {
-  const { path, parts } = validatePortablePath(value, "Enter a relative path for the new note.");
-  if (!/\.(md|markdown)$/i.test(parts.at(-1) ?? "")) throw new Error("The new note must end in .md or .markdown.");
+  const { path, parts } = validatePortablePath(value, "Enter a note path.");
+  if (!/\.(md|markdown)$/i.test(parts.at(-1) ?? "")) throw new Error("Use .md or .markdown.");
   return path;
 }
 
 export function validateNewDirectoryPath(value: string) {
-  const { path, parts } = validatePortablePath(value, "Enter a relative path for the new folder.");
+  const { path, parts } = validatePortablePath(value, "Enter a folder path.");
   const forbidden = new Set(["node_modules", "target", "venv", "__pycache__", "build", "dist"]);
   if (parts.some((part) => part.startsWith(".") || forbidden.has(part.toLowerCase()))) {
     throw new Error("Hidden and dependency folders cannot be created.");

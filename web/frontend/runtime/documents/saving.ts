@@ -84,14 +84,9 @@ export function initializeDocumentsSaving(): void {
     timeoutMs: SAVE_TIMEOUT_MS,
     cancelAutoSave,
     resumeAutoSave: () => scheduleAutoSave(),
-    onEditingCancelled: () => documentNotice("Navigation canceled because you continued editing. Your text is kept."),
+    onEditingCancelled: () => documentNotice("Navigation canceled"),
     onBlocked: (reason) =>
-      documentNotice(
-        reason === "busy"
-          ? "Wait for the current save to finish, then try again."
-          : "The note changed while you were confirming. Review the current text before leaving.",
-        "warning",
-      ),
+      documentNotice(reason === "busy" ? "Save in progress" : "Note changed while confirming", "warning"),
   });
   transitions = flow;
   listen(appState.ui.editor, "input", cancelLeaveForEditing);
@@ -124,7 +119,7 @@ export async function prepareDocumentLeave(action: string, policy: LeavePolicy =
     return await requireValue(transitions, "Document transition coordinator").request(action, policy, signal);
   } catch (cause) {
     const error = errorContext(cause);
-    documentNotice(`Could not prepare to ${action}: ${error.message} Your editor text is kept.`, "error");
+    documentNotice(`Navigation failed: ${error.message}`, "error");
     return false;
   }
 }
@@ -174,27 +169,27 @@ function projectSavedDocument(checkpoint: SaveCheckpoint, payload: DocumentPaylo
 }
 
 function projectSaveProblem(problem: SaveProblem): void {
+  const error = errorContext(problem.error);
+  if (isConnectionLoss(error)) {
+    connectionFailure(error);
+    return;
+  }
   if (problem.kind === "conflict") {
-    notice(
-      appState.ui.conflictMessage,
-      `This file changed on disk: ${problem.error.message} Your editor text has been kept and was not saved. ` +
-        "Copy your changes before choosing Reload from disk. Folio will not overwrite the external changes.",
-      "warning",
-    );
+    notice(appState.ui.conflictMessage, problem.error.message, "warning");
     documentNotice("");
   } else if (problem.kind === "verification") {
-    documentNotice(`Could not verify the previous save: ${problem.error.message} Your editor text is kept.`, "error");
+    documentNotice(`Save check failed: ${problem.error.message}`, "error");
   } else if (problem.kind === "too-large") {
     documentNotice(problem.error.message, "error");
   } else {
-    documentNotice(`Could not save: ${problem.error.message} Your editor text has been kept.`, "error");
+    documentNotice(`Save failed: ${problem.error.message}`, "error");
     connectionFailure(errorContext(problem.error));
   }
 }
 
 export async function saveDocument(automatic = false) {
   if (!projectWritable()) {
-    if (!automatic) documentNotice("This page is read-only.", "warning");
+    if (!automatic) documentNotice("Read-only", "warning");
     return;
   }
   cancelAutoSave();
@@ -202,28 +197,24 @@ export async function saveDocument(automatic = false) {
   if (documentSession.saving) return requireValue(saver, "Document persistence").save({ queue: !automatic });
   if (!documentSession.current || appState.creating || appState.movingEntry) return;
   if (documentSession.loading) {
-    if (!automatic) documentNotice("A note is still opening. Keep typing to cancel that request before saving.");
+    if (!automatic) documentNotice("Note still opening");
     return;
   }
   if (documentSession.conflict) {
-    if (!automatic)
-      documentNotice("Resolve the disk conflict first. Copy your changes before choosing Reload from disk.", "warning");
+    if (!automatic) documentNotice("Resolve disk conflict first", "warning");
     return;
   }
   if (rootChanged() || appState.connectionState !== "ready") {
-    if (!automatic)
-      documentNotice(
-        "Saving is unavailable until this tab is connected to the same notes folder. Your editor text has been kept.",
-        "error",
-      );
+    if (!automatic && rootChanged()) documentNotice("Notes folder changed", "warning");
     return;
   }
   if (!dirty()) return true;
   const snapshot = documentSession.checkpoint(appState.ui.editor.value);
   if (markdownByteLength(snapshot.snapshot.content) > MAX_MARKDOWN_BYTES) {
     refreshControls();
-    if (!automatic) documentNotice("The note exceeds the 4 MiB limit and has not been saved.", "error");
+    if (!automatic) documentNotice("Over 4 MiB, not saved", "error");
     return;
   }
   return requireValue(saver, "Document persistence").save({ queue: !automatic });
 }
+import { isConnectionLoss } from "../core/recovery";

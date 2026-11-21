@@ -22,7 +22,7 @@ test("partial settings saves preserve project patches and retry preferences with
     await page.route("**/api/preferences", rejected);
     await page.locator("#settings-image-directory").fill("media/partial-save");
     await page.locator("#settings-save").click();
-    await expect(page.locator("#settings-error")).toContainText("project image directory was saved");
+    await expect(page.locator("#settings-error")).toContainText("Partly saved:");
     await page.screenshot({ path: test.info().outputPath("partial-settings-save.png"), animations: "disabled" });
     const response = await page.request.get(new URL("/api/projects", library.url).href);
     const current = (await response.json()).find(project => project.id === "default");
@@ -59,7 +59,7 @@ test("settings saves preserve input typed after submission and keep the newer ed
     await requested;
     await page.locator("#settings-latin-font").fill("monospace");
     release();
-    await expect(page.locator("#settings-error")).toContainText("Newer edits remain unsaved");
+    await expect(page.locator("#settings-error")).toContainText("newer edits unsaved");
     await expect(page.locator("#settings-latin-font")).toHaveValue("monospace");
     expect(sent[0].appearance.latinFont).toBe("serif");
     await page.locator("#settings-save").click();

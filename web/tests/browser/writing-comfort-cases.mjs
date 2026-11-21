@@ -41,7 +41,7 @@ test("new notes save the current text first without a discard prompt", async ({ 
   await page.locator(".ProseMirror p").click();
   await page.keyboard.press("End");
   await page.keyboard.insertText(" Keep this edit.");
-  await page.locator("#new-note").click();
+  await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
   await expect(page.locator("#new-note-dialog")).toBeVisible();
   await expect(page.locator("#confirmation-dialog")).toBeHidden();
   await expect(page.locator("#document-modified")).toBeHidden();
@@ -113,7 +113,7 @@ test("failed transition saves offer retry and keep-editing choices without losin
   });
   await page.locator("#editor").fill("# Retry this draft\n");
   await page.locator("#sidebar-toggle").click();
-  await page.locator("#new-note").click();
+  await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
   const confirmation = page.locator("#confirmation-dialog");
   await expect(confirmation).toBeVisible();
   await expect(confirmation.locator("[data-confirmation-message]")).toContainText("Temporary save failure.");
@@ -143,7 +143,7 @@ test("collaborative notes are durably saved before opening note creation", async
     await alice.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End");
     await alice.keyboard.insertText("\nKeep the shared edit.\n");
     await expect(bob.locator("#editor")).toHaveValue(/Keep the shared edit/);
-    await alice.locator("#new-note").click();
+    await alice.locator("#new-menu > summary").click(); await alice.locator("#new-note").click();
     await expect(alice.locator("#new-note-dialog")).toBeVisible();
     await expect(alice.locator("#confirmation-dialog")).toBeHidden();
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toContain("Keep the shared edit.");
@@ -232,13 +232,13 @@ test("filtered navigation explains the hidden current note and duplicate titles 
   await page.locator(".ProseMirror a").click({ modifiers: [primaryModifier] });
   await expect(page.locator("#document-title")).toHaveText("Second.md");
   await expect(page.locator("#file-filter")).toHaveValue("Origin-comfort");
-  await expect(page.locator("#filtered-current-note")).toContainText("outside this filter");
+  await expect(page.locator("#filtered-current-note")).toContainText("filtered out");
   await capture(page, "filtered-current-note-context", browserName);
   await page.getByRole("button", { name: "Show current note", exact: true }).click();
   await expect(page.locator("#file-filter")).toHaveValue("");
   await expect(page.locator('[data-path="Second.md"]')).toHaveAttribute("aria-current", "page");
   for (const name of ["Meeting-a.md", "Meeting-b.md"]) await fs.writeFile(path.join(root, name), "---\ntitle: Meeting notes\n---\n\nBody.\n");
-  await page.locator("#refresh-files").click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   for (const name of ["Meeting-a.md", "Meeting-b.md"]) {
     await expect(page.locator(`.file-button[data-path="${name}"] .file-path`)).toBeVisible();
     await expect(page.locator(`.file-button[data-path="${name}"] .file-path`)).toHaveText(name);

@@ -24,6 +24,7 @@ import { restoreActiveWorkspaceNote } from "../workspace/workspace";
 import { api } from "./api";
 import { refreshAppearance, stopAppearancePolling } from "./appearance";
 import { appState } from "./bootstrap";
+import { clearServiceOutage } from "./recovery";
 import { ApiError, aborted, documentNotice, notice, previewStatus } from "./dom";
 
 export async function connect({ restoreWorkspace = true }: { restoreWorkspace?: boolean } = {}): Promise<void> {
@@ -58,6 +59,7 @@ export async function connect({ restoreWorkspace = true }: { restoreWorkspace?: 
   try {
     if (!(await ensureProject(current))) {
       if (!current()) return;
+      clearServiceOutage();
       refreshControls();
       return;
     }
@@ -65,23 +67,22 @@ export async function connect({ restoreWorkspace = true }: { restoreWorkspace?: 
     selected = projectModel.selection;
     const projectRequest = projectModel.request();
     const [session] = await Promise.all([
-      api("/api/session", { decode: decodedSession, method: "POST", signal }),
+      api("/api/session", { decode: decodedSession, method: "POST", signal, timeoutMs: 15000 }),
       refreshSharedPreferences(signal),
     ]);
     if (!current()) return;
     if (!session || typeof session.root !== "string" || !Number.isInteger(session.port)) {
-      throw new ApiError("The service returned incomplete session settings.");
+      throw new ApiError("Incomplete session settings");
     }
     appState.currentPort = session.port;
     if (session.project) projectModel.acceptSession(projectRequest, session.project);
     appState.connectionState = "ready";
+    clearServiceOutage();
     setRoot(session.root);
     const tokenStorageUnavailable = authenticationSession.mode === "launchToken" && appState.storageUnavailable;
     notice(
       appState.ui.connectionMessage,
-      tokenStorageUnavailable
-        ? "This browser could not store the connection token for this tab. Copy unsaved work before refreshing; you may need to reopen Folio using the app or CLI launch URL."
-        : "",
+      tokenStorageUnavailable ? "Connection token not stored" : "",
       tokenStorageUnavailable ? "warning" : "",
     );
     refreshControls();
@@ -99,7 +100,7 @@ export async function connect({ restoreWorkspace = true }: { restoreWorkspace?: 
         );
         if (!current() || documentSession.current !== retained || documentSession.id !== id) return;
         if (access.id !== retained.id || access.project !== retained.project)
-          throw new ApiError("The service returned a different note while refreshing access.");
+          throw new ApiError("Unexpected note in response");
         acceptDocumentPermissions(access.permissions);
         if (!participationState.documentParticipation) {
           const recovery =
@@ -113,8 +114,7 @@ export async function connect({ restoreWorkspace = true }: { restoreWorkspace?: 
         } else await pollDocumentParticipation();
         if (!current() || documentSession.current !== retained || documentSession.id !== id) return;
         appState.authenticationRecovery = null;
-        if (access.version !== retained.version)
-          documentNotice("The file changed on disk. Local text is kept; saving will check for conflicts.", "warning");
+        if (access.version !== retained.version) documentNotice("File changed on disk", "warning");
         refreshControls();
       }
       scheduleAutoSave();
@@ -122,18 +122,12 @@ export async function connect({ restoreWorkspace = true }: { restoreWorkspace?: 
     } else {
       const route = readNoteRoute(window.location.href);
       if (route.id) void navigateTo(route.id, route.hash, { mode: "replace", url: new URL(window.location.href) });
-      else previewStatus("Select a note to begin");
+      else previewStatus("Select a note");
     }
   } catch (errorCause) {
     const error = errorContext(errorCause);
     if (!current() || aborted(error)) return;
     connectionFailure(error, true);
-    previewStatus(
-      documentSession.current
-        ? "Disconnected. Your editor text and last preview are kept."
-        : "Open Folio using the app or CLI launch URL to connect",
-      true,
-    );
     renderTreeStatus();
   } finally {
     if (current()) {

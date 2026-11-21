@@ -1,4 +1,4 @@
-import { test, expect, fs, path, root, openFixture, openImageOptions, openMoreAction, primaryModifier, metadataField, openSettingsDialog } from "./fixture.mjs";
+import { test, expect, fs, path, root, openFixture, openImageOptions, openMoreAction, primaryModifier, chooseView, openSettingsDialog } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 import { imageFixture } from "./node-tools-cases.mjs";
 
@@ -47,7 +47,7 @@ test("search keeps pending results inactive and presents readable excerpts with 
     const [page] = library.pages;
     await page.setViewportSize({ width: 1440, height: 960 });
     await fs.writeFile(path.join(library.notes, "Zzz.md"), "---\ntitle: Quartz reference\nstatus: review\n---\n\n# Quartz\n\nA **clear** [reference](Other.md).\n");
-    await page.locator("#refresh-files").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(page.locator('[data-path="Zzz.md"]')).toBeVisible();
     await page.locator("#sidebar-search-open").click();
     await expect(page.locator("#search-results button")).toHaveCount(3);
@@ -85,16 +85,18 @@ test("search keeps pending results inactive and presents readable excerpts with 
     await expect(page.locator("#search-results")).toHaveAttribute("aria-busy", "false");
     await expect(page.locator(".search-match-field")).toHaveText("Metadata match");
     await page.locator("#search-query").press("Enter");
-    await expect(page.locator(".folio-metadata-source")).toBeFocused();
+    await expect(page.locator("#editor")).toBeFocused();
+    expect(await page.locator("#editor").evaluate(node => node.value.slice(node.selectionStart))).toMatch(/^review/);
   } finally { release?.(); await library.close(); }
 });
 
 test("properties edit common fields without exposing or rewriting advanced YAML", async ({ page, browserName }) => {
   const source = "---\r\n# Keep the comment\r\ntitle: 'Original'\r\nstatus: draft\r\ntags: [research, UI]\r\ncustom: {x: 1}\r\n---\r\n\r\n# Body\n\nKeep _this spelling_.\r\n";
   await openFixture(page, "Properties.md", source, "Original");
-  await expect(page.locator(".folio-metadata-summary")).toHaveText("draft · research · UI");
+  await expect(page.locator(".folio-property-badge")).toHaveText("draft");
+  await expect(page.locator(".folio-property-preview")).toHaveText("#research #UI");
   await page.locator(".folio-metadata > details > summary").click();
-  await expect(page.locator(".folio-metadata-source")).toBeHidden();
+  await expect(page.locator(".folio-metadata textarea")).toHaveCount(0);
   await page.getByRole("textbox", { name: "Document title", exact: true }).fill("Changed");
   await page.getByRole("textbox", { name: "Document status", exact: true }).fill("review");
   await page.keyboard.press(`${primaryModifier}+s`);
@@ -105,8 +107,12 @@ test("properties edit common fields without exposing or rewriting advanced YAML"
   await page.emulateMedia({ colorScheme: "dark" });
   await page.setViewportSize({ width: 390, height: 680 });
   await capture(page, "properties-narrow-dark", browserName);
-  const raw = await metadataField(page);
+  await chooseView(page, "editor");
+  const raw = page.locator("#editor");
   await raw.fill((await raw.inputValue()).replace('"review"', "published"));
+  await chooseView(page, "rich");
+  if (await page.locator(".folio-metadata > details").getAttribute("open") === null)
+    await page.locator(".folio-metadata > details > summary").click();
   await expect(page.getByRole("textbox", { name: "Document status", exact: true })).toHaveValue("published");
   await expect(page.locator(".folio-metadata-summary")).toContainText("published");
 });
@@ -127,6 +133,25 @@ test("structured properties remain editable only through YAML and property focus
   } finally { await library.close(); }
 });
 
+test("properties hover stays on the rounded control, not the whole summary line", async ({ page }) => {
+  await openFixture(page, "Properties-hover.md", "---\nstatus: Draft\ntags: [design, review]\n---\n\nBody.\n");
+  const summary = page.locator(".folio-metadata > details > summary");
+  const caption = summary.locator(".folio-metadata-caption");
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    await caption.hover();
+    await expect(summary).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(caption).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    expect(await caption.evaluate(node => {
+      const { x, y } = node.getBoundingClientRect();
+      return !node.contains(document.elementFromPoint(x + 1, y + 1));
+    })).toBe(true);
+    await caption.click();
+    await expect(page.getByRole("textbox", { name: "Document status" })).toHaveValue("Draft");
+    await caption.click();
+  }
+});
+
 test("sharing waits for saved permissions and acknowledges copying next to the action", async ({ browser, browserName }) => {
   const library = await uiLibrary(browser, { participants: 1 });
   try {
@@ -144,7 +169,7 @@ test("sharing waits for saved permissions and acknowledges copying next to the a
     }));
     await page.locator("#sharing-copy-link").click();
     await expect(page.locator("#sharing-copy-link")).toHaveText("Copied");
-    await expect(page.locator("#sharing-feedback")).toHaveText("Link copied.");
+    await expect(page.locator("#sharing-feedback")).toHaveText("Link copied");
     expect(await page.evaluate(() => window.copiedSharingLink)).toBe(await page.locator("#sharing-public-url").inputValue());
     await capture(page, "sharing-copied", browserName);
     await page.locator("#sharing-password").fill("example");
@@ -165,18 +190,19 @@ test("compact toolbar prioritizes the title and navigation exposes search and wo
     const [page] = library.pages;
     await page.setViewportSize({ width: 1440, height: 960 });
     await expect(page.locator("#sidebar-search-open")).toBeVisible();
-    await page.locator("#sidebar-workspace-open").click();
+    await page.locator("#more-menu > summary").click();
+    await page.locator("#workspace-open").click();
     await expect(page.locator("#workspace-dialog")).toBeVisible();
     await expect(page.locator("#workspace-close svg")).toBeVisible();
     await page.locator("#workspace-close").click();
     await capture(page, "navigation-desktop", browserName);
     await page.setViewportSize({ width: 390, height: 680 });
     await expect(page.locator("#collaboration-people")).toBeHidden();
-    await expect(page.locator("#layout-menu")).toBeHidden();
+    await expect(page.locator("#layout-menu")).toHaveCount(0);
     await expect(page.locator("#collaboration-join")).toHaveText("2 online");
+    await page.locator("#more-menu > summary").click();
     await expect.poll(async () => (await page.locator("#document-title").boundingBox()).width).toBeGreaterThan(170);
     await capture(page, "toolbar-narrow", browserName);
-    await page.locator("#more-menu > summary").click();
     await page.locator("#compact-layout-menu > summary").click();
     await page.locator("#compact-layout-menu [data-page-width=wide]").click();
     await expect(page.locator("html")).toHaveAttribute("data-page-width", "wide");
@@ -186,7 +212,7 @@ test("compact toolbar prioritizes the title and navigation exposes search and wo
     await cancel.focus();
     await page.keyboard.press("ArrowRight");
     await expect(cancel).toBeFocused();
-    await expect(cancel).toHaveCSS("outline-style", "solid");
+    await expect(cancel).toHaveCSS("outline-style", "none");
     await page.emulateMedia({ colorScheme: "dark" });
     await capture(page, "keyboard-focus-dark", browserName);
   } finally { await library.close(); }

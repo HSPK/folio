@@ -84,7 +84,7 @@ export function SettingsDialog() {
             </label>
             <main class="settings-content">
               <p id="settings-empty" class="settings-empty" hidden>
-                No settings match this search.
+                No matching settings
               </p>
               <section class="settings-panel" data-settings-panel="users" hidden>
                 <h3>Accounts &amp; invitations</h3>
@@ -189,10 +189,7 @@ export function SettingsDialog() {
               </section>
               <section class="settings-panel" data-settings-panel="library" hidden>
                 <h3>Project files</h3>
-                <p class="settings-note">
-                  The image directory belongs to this project. Visibility, refresh, and image-processing defaults use
-                  this local service's shared preferences.
-                </p>
+                <p class="settings-note">Only the image folder varies by project.</p>
                 <div class="setting-card">
                   <span id="settings-library-label">Current folder</span>
                   <output id="settings-library-root"></output>
@@ -201,7 +198,7 @@ export function SettingsDialog() {
                   Projects
                 </button>
                 <div class="setting-card setting-card-block">
-                  <label for="settings-image-directory">Pasted image directory (relative to project)</label>
+                  <label for="settings-image-directory">Pasted image folder (project-relative)</label>
                   <input id="settings-image-directory" maxLength="512" placeholder="assets/images" />
                 </div>
                 <div class="setting-card setting-card-block">
@@ -276,10 +273,6 @@ export function SettingsDialog() {
               </section>
               <section class="settings-panel" data-settings-panel="performance" hidden>
                 <h3>Advanced performance tuning</h3>
-                <p class="settings-note">
-                  Defaults work for most notes. Adjust these options only when you need to tune large documents or
-                  background refresh.
-                </p>
                 <div class="setting-card">
                   <label for="settings-large-threshold">Virtual Source threshold</label>
                   <select id="settings-large-threshold">

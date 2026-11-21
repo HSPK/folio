@@ -80,7 +80,7 @@ function markdownAttributes(node: MarkdownNode) {
     (node.alt != null && typeof node.alt !== "string") ||
     (node.title != null && typeof node.title !== "string")
   )
-    throw new Error("The Markdown image has invalid attributes.");
+    throw new Error("Invalid image attributes");
   return {
     src: node.url,
     alt: node.alt ?? "",
@@ -224,7 +224,7 @@ function insertedImages(transaction: Transaction, start: number) {
 
 function removalRange(document: Node, position: number, { moving = false } = {}) {
   const image = document.nodeAt(position);
-  if (!isImageNode(image)) throw new Error("This image is no longer available.");
+  if (!isImageNode(image)) throw new Error("Image unavailable");
   const resolved = document.resolve(position);
   if (moving && image?.isBlock && resolved.parent.type.name === "list_item" && resolved.parent.childCount === 1) {
     const depth = resolved.depth;
@@ -247,7 +247,7 @@ export function imageLayoutTransaction(
   { position, attrs }: { position: number; attrs: Partial<ImageNodeAttrs> },
 ) {
   const image = state.doc.nodeAt(position);
-  if (!isImageNode(image)) throw new Error("This image is no longer editable.");
+  if (!isImageNode(image)) throw new Error("Image not editable");
   const next = { ...image.attrs, ...attrs };
   if (attrs.layout !== undefined && attrs.explicitInline === undefined) next.explicitInline = next.layout === "inline";
   const type =
@@ -284,9 +284,7 @@ export function imageLayoutTransaction(
     ];
     if (!before.content.size && !parent.canReplace(index, index + 1, Fragment.from(content))) content.unshift(before);
     if (!parent.canReplace(index, index + 1, Fragment.from(content))) {
-      throw new Error(
-        "This location only supports inline images. Move the image into a document paragraph before changing its layout.",
-      );
+      throw new Error("Only inline images allowed here");
     }
     const start = resolved.before();
     selected = start + (content[0] === before ? before.nodeSize : 0);
@@ -315,7 +313,7 @@ export function imageMoveTransaction(
   const start = transaction.mapping.maps.length;
   transaction.replaceRangeWith(position, position, image);
   const inserted = insertedImages(transaction, start).find((item) => item.node.eq(image));
-  if (!inserted) throw new Error("The image could not be moved to this position.");
+  if (!inserted) throw new Error("Cannot move image here");
   return transaction
     .setSelection(NodeSelection.create(transaction.doc, inserted.position))
     .setMeta("uiEvent", "drop")
@@ -362,10 +360,10 @@ export function imageRowTransaction(
     transaction.delete(range.from, range.to);
   }
   const target = imageRowTarget(transaction.doc, transaction.mapping.map(to));
-  if (!target) throw new Error("The target image is no longer available for a side-by-side layout.");
+  if (!target) throw new Error("Target image unavailable");
   const content = isImageNode(target.node) ? Fragment.from(target.node) : target.node.content;
   const targetImage = transaction.doc.nodeAt(transaction.mapping.map(to));
-  if (!isImageNode(targetImage)) throw new Error("The target image is no longer available for a side-by-side layout.");
+  if (!isImageNode(targetImage)) throw new Error("Target image unavailable");
   const offset = target.offset + (after ? targetImage.nodeSize : 0);
   const combined = content.cut(0, offset).append(Fragment.from(source)).append(content.cut(offset));
   let count = 0;
@@ -411,8 +409,7 @@ export function imageInsertionTransaction(
     block?: boolean;
   },
 ) {
-  if (!images.length || images.some((node) => !isImageNode(node)))
-    throw new Error("No insertable images were supplied.");
+  if (!images.length || images.some((node) => !isImageNode(node))) throw new Error("No images to insert");
   const inline =
     !block &&
     images.length === 1 &&
@@ -431,7 +428,7 @@ export function imageInsertionTransaction(
     .setSelection(selection)
     .replaceSelection(new Slice(Fragment.from(content), 0, 0));
   const inserted = insertedImages(transaction, 0).at(-1);
-  if (!inserted) throw new Error("The image could not be inserted at the current position.");
+  if (!inserted) throw new Error("Cannot insert image here");
   const end = inserted.position + inserted.node.nodeSize;
   const next = inline ? TextSelection.create(transaction.doc, end) : imageBoundarySelection(transaction.doc, end);
   return transaction.setSelection(next).setMeta("uiEvent", "paste").scrollIntoView();
@@ -462,7 +459,7 @@ export function createImageInsertion({
       if (isImageNode(node)) images.push(node);
       else if (node.isText && node.text?.trim()) invalid = true;
     });
-    if (!images.length || invalid) throw new Error("The image could not be inserted at the current position.");
+    if (!images.length || invalid) throw new Error("Cannot insert image here");
     view.dispatch(imageInsertionTransaction(view.state, { images, selection, block }));
     view.focus();
     return true;

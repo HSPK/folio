@@ -48,7 +48,7 @@ impl Library {
         if let Some(store) = &self.store {
             if let Err(error) = store.record(&document, actor, kind) {
                 eprintln!("Could not record document history: {}", error.message);
-                document.warning = Some("The document was saved, but history could not be updated. Contact the project owner.".into());
+                document.warning = Some("Note saved without history. Contact the project owner.".into());
             }
             if let Err(error) = store.invalidate_index(&document.path, &document.version) {
                 eprintln!("Could not invalidate the search index: {}", error.message);

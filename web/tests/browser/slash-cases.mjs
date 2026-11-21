@@ -10,7 +10,7 @@ for (const [side, narrow] of [["above", false], ["below", false], ["above", true
       const scroller = node.closest("[data-editor-scroller]");
       const viewport = scroller.getBoundingClientRect();
       const bounds = node.getBoundingClientRect();
-      const top = side === "above" ? viewport.bottom - 70 : viewport.top + 24;
+      const top = side === "above" ? viewport.bottom - 70 : viewport.top + 80;
       scroller.scrollTop += bounds.top - top;
     }, side);
     await paragraph.click();

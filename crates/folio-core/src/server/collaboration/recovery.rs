@@ -109,7 +109,7 @@ impl Room {
                 document.id = Some(stored.resource.clone());
                 store.record(&document, &stored.actor, "recovery")?;
                 return Err(ApiError::conflict(
-                    "A recovered collaborative draft conflicts with the file on disk. The project owner can restore it from History; the disk file was not overwritten.",
+                    "Draft conflict. Disk file unchanged. The owner can restore the draft from History.",
                 ));
             }
         }

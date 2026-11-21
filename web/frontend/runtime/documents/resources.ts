@@ -64,7 +64,7 @@ export function rememberResource(
   if (!isRecord(value) || !isResourceId(value.id) || typeof value.path !== "string") return;
   const resourceKind = value.kind === "file" ? "document" : (value.kind ?? kind);
   if (resourceKind !== "document" && resourceKind !== "directory" && resourceKind !== "asset") {
-    throw new ApiError("The service returned an unrecognized resource kind.");
+    throw new ApiError("Unknown resource kind");
   }
   const resource: ResourceEntry = {
     id: value.id,
@@ -147,11 +147,7 @@ export function requestResourceLink(path: string, kind: ResourceKind): void {
       resourceState.unavailableResourceLinks.set(key, error.status);
       if (current === documentSession.id) {
         appState.inlineEditor.refreshLinks?.();
-        if (![403, 404].includes(error.status))
-          documentNotice(
-            `Could not load a linked resource. Refresh the file list to retry. ${error.message}`,
-            "warning",
-          );
+        if (![403, 404].includes(error.status)) documentNotice(`Link load failed: ${error.message}`, "warning");
       }
     })
     .finally(() => {
@@ -190,7 +186,7 @@ export function canCreateLinkedNote(value: string) {
 }
 export async function openLinkedNote(value: string): Promise<void> {
   if (!canCreateLinkedNote(value)) {
-    documentNotice("This linked note cannot be created here.", "warning");
+    documentNotice("Cannot create note here", "warning");
     return;
   }
   const path = linkedNotePath(value);
@@ -201,7 +197,7 @@ export async function openLinkedNote(value: string): Promise<void> {
   refreshNewNoteHint();
 }
 export async function documentResource(value: string | null, signal?: AbortSignal) {
-  if (value === null) throw new ApiError("A document identity or path is required.");
+  if (value === null) throw new ApiError("Document path required");
   if (isResourceId(value)) {
     const resource = resourceState.resourceIndex.get(value);
     if (resource) return resource;
@@ -225,7 +221,6 @@ export function currentResourceId(path: string, kind = "document") {
   const resource = resourceState.resourceLocations.get(
     resourceState.resourceLocation(documentSession.current?.project ?? projectModel.active?.id ?? "local", path),
   );
-  if (!resource || resource.kind !== kind)
-    throw new ApiError("This resource has no current identity. Refresh the project before continuing.");
+  if (!resource || resource.kind !== kind) throw new ApiError("Resource unavailable");
   return resource.id;
 }

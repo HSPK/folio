@@ -265,7 +265,7 @@ test("layout changes allow image-leading lists without placeholders and reject u
         position: 3,
         attrs: { layout: "center" },
       }),
-    /only supports inline images/,
+    /Only inline images/,
   );
   const legacy = document(
     schema.node(

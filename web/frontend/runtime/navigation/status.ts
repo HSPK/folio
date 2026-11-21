@@ -193,9 +193,9 @@ export function positionStatusMessages(): void {
   if (!statusState.statusNotices.matches(":popover-open")) return;
   const viewportTop = window.visualViewport?.offsetTop ?? 0;
   const viewportBottom = Math.min(innerHeight, viewportTop + (window.visualViewport?.height ?? innerHeight));
-  let right = 14;
-  let width = Math.min(420, innerWidth - 28);
-  let bottom = innerHeight - viewportBottom + 42;
+  let right = innerWidth > 650 ? 22 : 14;
+  let width = Math.min(360, innerWidth - 28);
+  let bottom = innerHeight - viewportBottom + 18;
   let maxHeight = Math.min((viewportBottom - viewportTop) * 0.5, viewportBottom - viewportTop - 28);
   const modal = document.querySelector<HTMLDialogElement>("dialog:modal");
   if (modal) {
@@ -254,7 +254,36 @@ export function scheduleStatusPosition(): void {
   }
 }
 
+const slowSaveMs = 2500;
+let savingSince = 0;
+let savingTimer: number | null = null;
+
+/** Routine saves finish quietly; the save status only surfaces when a save is taking unusually long. */
+function quietSave(node: HTMLElement) {
+  if (node !== appState.ui.dirty || node.dataset.state !== "saving") return false;
+  savingSince ||= performance.now();
+  if (performance.now() - savingSince >= slowSaveMs) return false;
+  savingTimer ??= window.setTimeout(() => {
+    savingTimer = null;
+    updateStatusMessages();
+  }, slowSaveMs);
+  return true;
+}
+
 export function updateStatusMessages(): void {
+  if (appState.ui.dirty.dataset.state !== "saving") savingSince = 0;
+  // With nothing to show and nothing showing, skip the document-wide lookups below: this runs on
+  // every keystroke, and they walk the whole page, including a long note.
+  if (!statusState.statusNotices.matches(":popover-open")) {
+    let pending = false;
+    for (const [node, { card }] of statusState.statusCards) {
+      if (node.hidden || !node.textContent) {
+        statusState.statusDismissed.delete(node);
+        setStatusHidden(card, true);
+      } else if (!quietSave(node)) pending = true;
+    }
+    if (!pending) return;
+  }
   const modal = document.querySelector<HTMLDialogElement>("dialog:modal");
   const context = modal ?? statusAvoidTarget() ?? (!appState.ui.authScreen.hidden ? appState.ui.authScreen : null);
   if (statusState.statusOverlayContext !== context || statusState.statusModal !== modal) {
@@ -264,11 +293,17 @@ export function updateStatusMessages(): void {
     statusState.statusResize.disconnect();
     statusState.statusResize.observe(statusState.statusNotices);
     if (context) statusState.statusResize.observe(context);
+    // A dialog may still be settling into place; place the messages again once it has.
+    window.setTimeout(scheduleStatusPosition, 250);
   }
   const messages = [];
   for (const [node, { card, dismiss }] of statusState.statusCards) {
     if (node.hidden || !node.textContent) {
       statusState.statusDismissed.delete(node);
+      setStatusHidden(card, true);
+      continue;
+    }
+    if (quietSave(node)) {
       setStatusHidden(card, true);
       continue;
     }
@@ -297,7 +332,8 @@ export function updateStatusMessages(): void {
     setStatusHidden(dismiss, error);
   }
   const others = messages.filter((message) => !message.error).length;
-  const expanded = statusState.statusExpanded ?? !context;
+  // Messages are always shown in full; there is no collapsed summary to expand.
+  const expanded = true;
   const summaryOnly = messages.length > 0 && others === messages.length && !expanded;
   if (statusState.statusNotices.dataset.summaryOnly !== String(summaryOnly)) {
     statusState.statusNotices.dataset.summaryOnly = String(summaryOnly);
@@ -305,7 +341,7 @@ export function updateStatusMessages(): void {
   const label = `${others} ${messages.length > others ? "other " : ""}message${others === 1 ? "" : "s"}`;
   if (statusState.statusCount.textContent !== label) statusState.statusCount.textContent = label;
   statusState.statusToggle.setAttribute("aria-expanded", String(expanded));
-  setStatusHidden(statusState.statusToggle, !others);
+  setStatusHidden(statusState.statusToggle, true);
   for (const { card, error } of messages) setStatusHidden(card, !error && !expanded);
   setStatusHidden(statusState.statusMessageList, !messages.some((message) => message.error || expanded));
   const parent = modal ?? document.body;

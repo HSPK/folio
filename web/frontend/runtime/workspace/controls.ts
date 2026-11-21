@@ -69,7 +69,7 @@ export function initializeWorkspaceControls(): void {
   listen(appState.element("tags-form"), "submit", async (event) => {
     event.preventDefault();
     if (workspaceControlState.tagsDocument !== documentSession.id || !projectWritable()) {
-      notice(appState.element("tags-error"), "The open document or its permissions changed.", "error");
+      notice(appState.element("tags-error"), "Document changed", "error");
       return;
     }
     try {
@@ -96,7 +96,6 @@ export function refreshWorkspaceControls(): void {
   const users = authenticationSession.mode === "users";
   appState.element("workspace-search-open").hidden = !users;
   appState.element("workspace-open").hidden = !users;
-  appState.element("library-shortcuts").hidden = !users || publicState.publicView;
   appState.element("sidebar-search-open").hidden = !users || publicState.publicView;
   appState.element("shares-open").hidden = !users;
   appState.element("backlinks-open").hidden = publicState.publicView;

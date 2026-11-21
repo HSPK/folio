@@ -32,6 +32,7 @@ let repository: DraftRepository | null = null;
 let recovery: ReturnType<typeof createDraftRecovery> | null = null;
 let lifetime: AbortSignal | null = null;
 let draftTimer: number | null = null;
+let draftDeadline = 0;
 let touched: DocumentSessionId | null = null;
 let selected: LocalDraft | null = null;
 let tab = "";
@@ -45,10 +46,8 @@ export function initializeDocumentsDrafts(): void {
   };
   const owned = createDraftRepository(
     createIndexedDbDraftStore({
-      onBlocked: () =>
-        storageNotice("Local recovery storage is blocked by another tab. Close old Folio tabs to finish upgrading."),
-      onVersionChange: () =>
-        storageNotice("Local recovery storage changed in another tab. Reload Folio before editing more notes."),
+      onBlocked: () => storageNotice("Recovery storage blocked by another tab"),
+      onVersionChange: () => storageNotice("Recovery storage changed, reload Folio"),
     }),
     durableWrites,
   );
@@ -81,7 +80,7 @@ export function initializeDocumentsDrafts(): void {
       !appState.movingEntry &&
       !collaborationLocked(),
     confirm: (_record, signal) =>
-      confirmAction("Apply this draft as a new edit? It may replace newer text.", {
+      confirmAction("Apply this draft? It may replace newer text", {
         label: "Apply draft",
         signal,
       }).then(Boolean),
@@ -124,7 +123,7 @@ export function initializeDocumentsDrafts(): void {
   listen(appState.element("draft-recovery-copy"), "click", async () => {
     const record = requireValue(selected, "Recovery copy");
     try {
-      await navigator.clipboard.writeText(record.source);
+      await copyPlainText(record.source);
     } catch (cause) {
       if (!owner.aborted && selected === record)
         notice(appState.element("draft-recovery-error"), errorContext(cause).message, "error");
@@ -161,11 +160,7 @@ export function initializeDocumentsDrafts(): void {
       )
         dialog.close();
       else if (result === "unsaved")
-        notice(
-          appState.element("draft-recovery-error"),
-          "The recovery copy is kept because saving was not confirmed. Resolve the save error, then retry.",
-          "error",
-        );
+        notice(appState.element("draft-recovery-error"), "Not saved, recovery copy kept", "error");
     } catch (cause) {
       if (!owner.aborted && selected === record)
         notice(appState.element("draft-recovery-error"), errorContext(cause).message, "error");
@@ -195,11 +190,11 @@ export function initializeDocumentsDrafts(): void {
           return button;
         }),
       );
-      notice(appState.element("drafts-message"), records.length ? "" : "No unsaved local drafts.");
+      notice(appState.element("drafts-message"), records.length ? "" : "No local drafts");
       showDialog(appState.element("drafts-dialog"));
     } catch (cause) {
       if (!owner.aborted && authenticationSession.isCurrent(scope))
-        documentNotice(`Local recovery is unavailable: ${errorContext(cause).message}`, "error");
+        documentNotice(`Recovery unavailable: ${errorContext(cause).message}`, "error");
     }
   });
   listen(appState.element("drafts-close"), "click", () => appState.element("drafts-dialog").close());
@@ -228,8 +223,7 @@ function currentDraftIdentity(): DraftIdentity {
       : publicState.publicView
         ? "public-link"
         : appState.currentRoot;
-  if (typeof secret !== "string" || !scope)
-    throw new Error("The private recovery key is unavailable. Reconnect before closing unsaved work.");
+  if (typeof secret !== "string" || !scope) throw new Error("Recovery key unavailable");
   return { scope, secret };
 }
 function currentDraftOwner() {
@@ -286,20 +280,13 @@ async function persistAccepted(retire: LocalDraft | null = null): Promise<void> 
     const snapshot = captureDraft();
     if (!snapshot) return;
     if (!localRecoveryAvailable()) {
-      if (snapshot.keep)
-        throw new Error(
-          "Encrypted local recovery requires HTTPS or localhost. Save or copy unsaved text before leaving this document.",
-        );
+      if (snapshot.keep) throw new Error("Recovery needs HTTPS or localhost");
       return;
     }
     await currentDraftOwner().persist(snapshot, retire);
   } catch (cause) {
     const error = errorContext(cause);
-    if (owner && !owner.aborted)
-      documentNotice(
-        `Local recovery could not be saved: ${error.message} Keep this tab open or copy your text.`,
-        "warning",
-      );
+    if (owner && !owner.aborted) documentNotice(`Recovery save failed: ${error.message}`, "warning");
     else console.warn("Local recovery could not finish after its view was disposed.", error);
     throw error;
   }
@@ -309,10 +296,16 @@ export const persistCurrentDraft = () => persistAccepted();
 export function queueDraftPersistence(local = false): void {
   if (local) touched = documentSession.id;
   if (!localRecoveryAvailable()) return;
-  if (draftTimer === null)
-    draftTimer = window.setTimeout(() => {
+  // A snapshot re-reads the whole note, so it waits for a pause in typing, but never longer than two seconds.
+  const now = performance.now();
+  if (draftTimer === null) draftDeadline = now + 2000;
+  else clearTimer(draftTimer);
+  draftTimer = window.setTimeout(
+    () => {
       void persistCurrentDraft().catch(console.error);
-    }, 250);
+    },
+    Math.max(0, Math.min(350, draftDeadline - now)),
+  );
 }
 export function finishLocalDraft(): void {
   if (
@@ -357,7 +350,7 @@ export async function recoverDocumentDraft(): Promise<void> {
       !record.unmerged
     ) {
       participationState.documentParticipation.recoveryRecord = record;
-      collaborationNotice("A local collaborative draft is kept. It will merge when shared editing resumes.");
+      collaborationNotice("Local draft kept");
       return;
     }
     if (collaborationState.collaboration) {
@@ -377,7 +370,7 @@ export async function recoverDocumentDraft(): Promise<void> {
     showDraftRecovery(record);
   } catch (cause) {
     if (current() && !isAbortError(cause))
-      documentNotice(`Could not read local recovery: ${errorContext(cause).message}`, "warning");
+      documentNotice(`Recovery read failed: ${errorContext(cause).message}`, "warning");
   }
 }
 
@@ -395,9 +388,7 @@ export function showDraftRecovery(record: LocalDraft): void {
   appState.element("draft-recovery-info").textContent = `${record.path} · ${new Date(record.updated).toLocaleString()}`;
   appState.element("draft-recovery-source").value = record.source.slice(0, 200000);
   updateRecoveryControls(record);
-  notice(
-    appState.element("draft-recovery-error"),
-    record.source.length > 200000 ? "Preview truncated. Copy draft preserves the complete text." : "",
-  );
+  notice(appState.element("draft-recovery-error"), record.source.length > 200000 ? "Preview truncated" : "");
   showDialog(appState.element("draft-recovery-dialog"), { restoreParent: true });
 }
+import { copyPlainText } from "../../../shared/clipboard";

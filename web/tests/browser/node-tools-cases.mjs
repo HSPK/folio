@@ -148,7 +148,7 @@ test("image hover supports native saving, replacement during typing and safe nav
     await page.locator('[data-path="Second.md"]').click();
     await expect(page.locator("#document-title")).toHaveText("Second.md");
     finish();
-    await expect(page.locator("#image-message")).toContainText(/changed while uploading/);
+    await expect(page.locator("#image-message")).toContainText(/changed; (file|image) at/);
     await expect(page.locator(".folio-inline-image")).toHaveCount(0);
     expect(await fs.readFile(path.join(root, "Image-replace.md"), "utf8")).toBe(saved);
     expect(await fs.readFile(path.join(root, "Second.md"), "utf8")).toBe("# Second\n\nAnother note.\n");
@@ -242,7 +242,7 @@ test("a pending image replacement cannot modify Source after leaving Live", asyn
     const source = '![Figure](images/figure.png "Original")\n\nSource text is kept.\n';
     await page.locator("#editor").fill(source);
     release();
-    await expect(page.locator("#image-message")).toContainText("image changed while uploading");
+    await expect(page.locator("#image-message")).toContainText("Image changed; file at");
     await expect(page.locator("#editor")).toHaveValue(source);
     await expect(page.getByRole("toolbar", { name: "Image tools" })).toBeHidden();
   } finally { release(); }
@@ -441,15 +441,9 @@ test("table cells stay neutral on hover and handle menus duplicate and clear onl
   await cell.click();
   await expect(table.locator(".folio-table-selection")).toBeVisible();
   const grip = table.locator(".folio-table-column-grip");
+  await expect(grip).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await grip.hover();
-  expect(await grip.evaluate(node => {
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 1;
-    const context = canvas.getContext("2d");
-    context.fillStyle = getComputedStyle(node).backgroundColor;
-    context.fillRect(0, 0, 1, 1);
-    return context.getImageData(0, 0, 1, 1).data[3];
-  })).toBe(255);
+  await expect(grip).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   const selected = await cell.boundingBox();
   const frame = await table.locator(".folio-table-selection").boundingBox();
   expect(Math.abs(frame.x - selected.x)).toBeLessThan(1);

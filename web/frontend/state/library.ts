@@ -12,6 +12,8 @@ interface LibraryCatalog {
   error: string;
   truncated: boolean;
   collapsedFolders: ReadonlySet<string>;
+  // Reader-chosen icon names by entry path; entries without one use the default glyph.
+  icons: ReadonlyMap<string, string>;
 }
 
 interface LibraryView {
@@ -33,6 +35,7 @@ const emptyCatalog = (): LibraryCatalog => ({
   error: "",
   truncated: false,
   collapsedFolders: new Set(),
+  icons: new Map(),
 });
 const emptyView = (): LibraryView => ({
   tree: buildFileTree([]),
@@ -52,6 +55,7 @@ export function createLibraryModel() {
   const view: Readonly<LibraryView> = presentation;
   let visible: readonly File[] = [];
   let matching: readonly File[] = [];
+  let collapsedObserver: ((paths: ReadonlySet<string>) => void) | null = null;
   const selected = (file: File) =>
     view.selectedId && file.id ? file.id === view.selectedId : file.path === view.selectedPath;
   const outside = () =>
@@ -63,6 +67,7 @@ export function createLibraryModel() {
     if (collapsed) next.add(path);
     else next.delete(path);
     setData("collapsedFolders", next);
+    collapsedObserver?.(next);
   }
 
   return {
@@ -123,6 +128,18 @@ export function createLibraryModel() {
     },
     selected,
     setCollapsed,
+    /** Adopt remembered folder states without reporting them back as a writer's change. */
+    restoreCollapsed(paths: Iterable<string>) {
+      setData("collapsedFolders", new Set(paths));
+    },
+    /** Replace the chosen entry icons; the caller owns remembering them. */
+    setIcons(icons: ReadonlyMap<string, string>) {
+      setData("icons", icons);
+    },
+    /** Report folder changes made by the writer so a storage adapter can remember them. */
+    observeCollapsed(observer: ((paths: ReadonlySet<string>) => void) | null) {
+      collapsedObserver = observer;
+    },
     focusCurrent() {
       const file = catalog.files.find(selected);
       if (!file) return;

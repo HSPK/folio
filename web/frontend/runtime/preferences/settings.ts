@@ -18,7 +18,7 @@ import { appState } from "../core/bootstrap";
 import { closeCommandPanel } from "../core/commands";
 import { notice, setText } from "../core/dom";
 import { readLayoutPreference, setPageWidth, setSidebarWidth, storeLayoutPreference } from "../core/layout";
-import { showDialog } from "../dialogs/dialogs";
+import { hasDialogConfirmation, showDialog } from "../dialogs/dialogs";
 import { applicationSignal, listen, onApplicationDispose } from "../lifecycle";
 import { setView } from "../navigation/files";
 import { renderFiles, scheduleTreeRefresh } from "../navigation/library";
@@ -114,6 +114,17 @@ export function initializePreferencesSettings(): void {
   listen(appState.ui.settingsDialog, "cancel", (event) => {
     event.preventDefault();
     cancelSettings();
+  });
+  // The panel sits beside the library; pressing anywhere outside it returns to the document.
+  listen(appState.ui.settingsDialog, "pointerdown", (event) => {
+    if (event.target !== appState.ui.settingsDialog) return;
+    const bounds = appState.ui.settingsDialog.getBoundingClientRect();
+    const inside =
+      event.clientX >= bounds.left &&
+      event.clientX <= bounds.right &&
+      event.clientY >= bounds.top &&
+      event.clientY <= bounds.bottom;
+    if (!inside && !hasDialogConfirmation(appState.ui.settingsDialog)) cancelSettings();
   });
   listen(appState.ui.settingsSearch, "input", filterSettings);
   listen(appState.ui.settingsPageWidth, "change", () => setPageWidth(appState.ui.settingsPageWidth.value));
@@ -321,7 +332,8 @@ export async function refreshSharedPreferences(signal?: AbortSignal): Promise<vo
   } catch (errorCause) {
     if (!current()) return;
     const error = errorContext(errorCause);
-    if (!handleAuthenticationFailure(error)) appearanceNotice(`Shared settings could not be loaded. ${error.message}`);
+    if (isConnectionLoss(error) && signal) throw error;
+    if (!handleAuthenticationFailure(error)) appearanceNotice(`Settings failed: ${error.message}`);
   }
 }
 export function populateSettings(): void {
@@ -422,7 +434,8 @@ export function openSettings(tab = settingsState.selectedSettingsTab): void {
   filterSettings();
   showDialog(appState.ui.settingsDialog);
   selectSettingsTab(tab);
-  appState.ui.settingsSearch.focus();
+  // Opening settings is not a search: focus the dialog itself and leave the field for those who want it.
+  appState.ui.settingsDialog.focus({ preventScroll: true });
 }
 export function cancelSettings(): void {
   if (settingsState.settingsSnapshot) {
@@ -476,3 +489,4 @@ function createSettingsUi() {
     save: appState.element("settings-save"),
   };
 }
+import { isConnectionLoss } from "../core/recovery";

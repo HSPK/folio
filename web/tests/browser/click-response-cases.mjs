@@ -54,7 +54,7 @@ test("virtual Source outline jumps reveal the exact wrapped target without edits
   const source = Array.from({ length: 512 }, (_, index) => `## Heading ${index}\n\n${paragraph.repeat(4)}`).join("");
   await fs.writeFile(path.join(root, "Outline-virtual.md"), source);
   await chooseView(page, "editor");
-  await page.locator("#refresh-files").click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.locator('#file-list button[data-path="Outline-virtual.md"]').click();
   await expect(page.locator(".virtual-source-editor .cm-content")).toBeVisible();
   await page.locator("#outline-tab").click();
@@ -71,7 +71,7 @@ test("native Source outline reveals wrapped text without losing undo or disabled
     + "## Wrapped target\n\nEnd.\n";
   await fs.writeFile(path.join(root, "Outline-native.md"), source);
   await chooseView(page, "editor");
-  await page.locator("#refresh-files").click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.locator('#file-list button[data-path="Outline-native.md"]').click();
   const editor = page.locator("#editor");
   await expect(editor).toBeVisible();
@@ -161,7 +161,7 @@ test("cached Markdown bodies keep per-file links, fresh history and external cha
     await fs.writeFile(path.join(root, folder, "target.md"), `# ${folder}\n`);
   }
   try {
-    await page.locator("#refresh-files").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await page.locator('#file-list button[data-path="Cache-scope-a/note.md"]').click();
     await expect(page.locator(".ProseMirror h1")).toHaveText("Shared body");
     const firstLink = await page.locator(".ProseMirror a").getAttribute("href");
@@ -198,7 +198,7 @@ test("unsupported bodies stay in Source across repeated Live attempts without lo
     const filename = `Unsupported-cache-${index}.md`;
     await fs.writeFile(path.join(root, filename), source);
     await chooseView(page, "editor");
-    await page.locator("#refresh-files").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await page.locator(`#file-list button[data-path="${filename}"]`).click();
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await chooseView(page, "rich");
@@ -336,7 +336,7 @@ for (const [view, label] of [["editor", "Source"], ["rich", "Live"]]) test(`${la
 test("dense Source notes virtualize below the byte threshold and retain save and undo", async ({ page }) => {
   const content = "# Dense Source\n\n" + "A line of source text.\n".repeat(5000);
   await fs.writeFile(path.join(root, "Dense-source.md"), content);
-  await page.locator("#refresh-files").click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   const note = page.locator('#file-list button[data-path="Dense-source.md"]');
   await expect(note).toBeVisible();
   await openSettingsDialog(page);
@@ -389,7 +389,7 @@ test("workspace opens from cached account data before a delayed refresh and surf
     await page.locator("#workspace-filter").fill("Shared");
     await expect(page.locator(".workspace-item-name")).toHaveCount(1);
     release();
-    await expect(page.locator("#document-message")).toContainText("Could not load your workspace");
+    await expect(page.locator("#document-message")).toContainText("Workspace load failed");
     await expect(page.locator(".workspace-item-name")).toHaveCount(1);
   } finally { release?.(); await library.close(); }
 });
@@ -398,7 +398,7 @@ test("document navigation resets Source scrolling before paint without a stale f
   await fs.writeFile(path.join(root, "Scroll-next.md"), `# Next note\n\n${"Line of source.\n".repeat(2000)}`);
   await openFixture(page, "Scroll-first.md", `# First note\n\n${"Line of source.\n".repeat(2000)}`);
   await chooseView(page, "editor");
-  await page.locator("#refresh-files").click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   const editor = page.locator("#editor");
   await editor.evaluate((node) => { node.scrollTop = node.scrollHeight; });
   await expect.poll(() => editor.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);

@@ -73,7 +73,7 @@ export function imageDimension(value: unknown) {
     .trim()
     .match(/^([1-9]\d{0,4})(px|%)?$/);
   if (!match || Number(match[1]) > (match[2] === "%" ? 100 : 16384)) {
-    throw new RangeError("Image sizes must be 1-16384 pixels or 1-100%.");
+    throw new RangeError("Size must be 1-16384 px or 1-100%");
   }
   return `${Number(match[1])}${match[2] === "%" ? "%" : ""}`;
 }
@@ -85,7 +85,7 @@ export function imageAttributes(value: ImageAttributesInput): {
 } {
   const layout = value.layout ?? "inline";
   if (layout !== "inline" && layout !== "left" && layout !== "center" && layout !== "right") {
-    throw new RangeError("Choose an inline, left, center, or right image layout.");
+    throw new RangeError("Invalid image layout");
   }
   return { width: imageDimension(value.width), height: imageDimension(value.height), layout };
 }

@@ -1,200 +1,190 @@
+import { For, Show } from "solid-js";
 import { shell, viewLabels } from "../state/shell";
 import { AppMenu, AppMenuContent, AppMenuTrigger } from "./primitives";
 
+const views = [
+  ["rich", "edit"],
+  ["editor", "code"],
+  ["split", "columns"],
+  ["preview", "book-open"],
+] as const;
+
 /** Render the document chrome around stable editor hosts. */
 export function DocumentWorkspace() {
+  // An untitled note is named by its path; the folder part recedes so the file name reads as the title.
+  const folder = () => {
+    const end = shell.title.endsWith(".md") ? shell.title.lastIndexOf("/") + 1 : 0;
+    return shell.title.slice(0, end);
+  };
   return (
     <main class="document-area" aria-labelledby="document-title">
-      <header class="document-header">
-        <button
-          id="sidebar-toggle"
-          class="icon-button"
-          type="button"
-          title="Toggle sidebar (Ctrl+Shift+L)"
-          aria-label="Toggle sidebar"
-          aria-controls="sidebar"
-          aria-expanded={shell.sidebarOpen}
-        >
-          <svg data-icon="sidebar" aria-hidden="true"></svg>
-        </button>
-        <h1 id="document-title">
-          <span id="document-name">{shell.title}</span>
-          <span id="document-modified" role="img" aria-label="Unsaved changes" hidden={!shell.modified}>
-            {shell.modified ? " *" : ""}
-          </span>
-        </h1>
-        <div
-          id="collaboration-people"
-          class="collaboration-people"
-          role="group"
-          aria-label="People editing this note"
-        ></div>
-        <nav class="document-actions menu-bar" aria-label="Document menu">
-          <button id="collaboration-join" class="collaboration-join" type="button" hidden>
-            Collaborate
-          </button>
-          <AppMenu id="view-menu" class="popup menu-bar-item">
-            <AppMenuTrigger
-              class="view-menu-trigger"
-              title="Switch document view"
-              aria-controls="document-view-options"
-            >
-              <span id="view-label">{viewLabels[shell.view]}</span>
-              <svg data-icon="chevron-down" aria-hidden="true"></svg>
-            </AppMenuTrigger>
-            <AppMenuContent
-              id="document-view-options"
-              class="popup-panel view-options"
-              role="group"
-              aria-label="Document view"
-            >
-              <button id="view-rich" type="button" data-view="rich" aria-pressed="true">
-                Live
-              </button>
-              <button id="view-editor" type="button" data-view="editor" aria-pressed="false">
-                Source
-              </button>
-              <button id="view-split" type="button" data-view="split" aria-pressed="false">
-                Compare
-              </button>
-              <button id="view-preview" type="button" data-view="preview" aria-pressed="false">
-                Read
-              </button>
-            </AppMenuContent>
-          </AppMenu>
-          <AppMenu id="layout-menu" class="popup layout-menu">
-            <AppMenuTrigger class="icon-button" title="Page width" aria-label="Adjust page width">
-              <svg data-icon="expand-width" aria-hidden="true"></svg>
-            </AppMenuTrigger>
-            <AppMenuContent class="popup-panel layout-options" role="group" aria-label="Page width">
-              <button type="button" data-page-width="focused" aria-pressed="false">
-                Focused
-              </button>
-              <button type="button" data-page-width="balanced" aria-pressed="true">
-                Balanced
-              </button>
-              <button type="button" data-page-width="wide" aria-pressed="false">
-                Wide
-              </button>
-            </AppMenuContent>
-          </AppMenu>
-          <button
-            id="command-palette-open"
-            class="icon-button"
-            type="button"
-            title="Commands (Ctrl+K)"
-            aria-label="Open command panel"
-            hidden
+      <button
+        id="sidebar-toggle"
+        class="icon-button"
+        type="button"
+        title="Show sidebar (Ctrl+Shift+L)"
+        aria-label="Show sidebar"
+        aria-controls="sidebar"
+        aria-expanded={shell.sidebarOpen}
+      >
+        <svg data-icon="sidebar" aria-hidden="true"></svg>
+      </button>
+      <nav class="document-actions" aria-label="Document menu">
+        <AppMenu id="more-menu" class="popup">
+          <AppMenuTrigger
+            class="icon-button more-menu-trigger"
+            title={`${shell.title} · More actions`}
+            aria-label={shell.modified ? "More actions · Unsaved changes" : "More actions"}
+            aria-controls="more-actions-panel"
           >
-            <svg data-icon="command" aria-hidden="true"></svg>
-          </button>
-          <AppMenu id="more-menu" class="popup">
-            <AppMenuTrigger
-              class="icon-button more-menu-trigger"
-              title="More actions"
-              aria-label="More actions"
-              aria-controls="more-actions-panel"
-            >
-              <svg data-icon="more-horizontal" aria-hidden="true"></svg>
-            </AppMenuTrigger>
-            <AppMenuContent id="more-actions-panel" class="popup-panel">
-              <div class="more-menu-scroll">
-                <div id="more-document-actions" class="menu-group" role="group" aria-label="Current note">
-                  <span class="menu-group-label" aria-hidden="true">
-                    Current note
-                  </span>
-                  <button id="share-page" type="button" hidden>
-                    Share page
-                  </button>
-                  <button id="copy-text" type="button" disabled>
-                    Copy Markdown
-                  </button>
-                  <button id="workspace-favorite" type="button" hidden>
-                    Add to favorites
-                  </button>
-                  <button id="backlinks-open" type="button" disabled>
-                    Backlinks
-                  </button>
-                  <button id="attachments-open" type="button" hidden>
-                    Attachments
-                  </button>
-                  <button id="document-tags-open" type="button" disabled>
-                    Edit tags
-                  </button>
-                </div>
-                <div id="more-workspace-actions" class="menu-group" role="group" aria-label="Workspace">
-                  <span class="menu-group-label" aria-hidden="true">
-                    Workspace
-                  </span>
-                  <button id="workspace-search-open" type="button">
-                    Search notes <kbd>Ctrl/Cmd+P</kbd>
-                  </button>
-                  <button id="workspace-open" type="button" hidden>
-                    Favorites and recent notes
-                  </button>
-                  <button id="shares-open" type="button" hidden>
-                    Public links
-                  </button>
-                </div>
-                <details id="more-recovery" class="menu-disclosure">
-                  <summary>
-                    History and recovery
-                    <svg data-icon="chevron-down" aria-hidden="true"></svg>
-                  </summary>
-                  <div id="more-recovery-actions" class="menu-disclosure-panel">
-                    <button id="history-open" type="button" hidden>
-                      Version history
+            <svg data-icon="more-horizontal" aria-hidden="true"></svg>
+            <span id="document-modified" role="img" aria-label="Unsaved changes" hidden={!shell.modified}></span>
+          </AppMenuTrigger>
+          <AppMenuContent id="more-actions-panel" class="popup-panel">
+            <div class="more-menu-scroll">
+              <h1 id="document-title" title={shell.title}>
+                <span id="document-name">
+                  <Show when={folder()}>
+                    <span class="document-folder">{folder()}</span>
+                  </Show>
+                  {shell.title.slice(folder().length)}
+                </span>
+                {shell.modified ? " *" : ""}
+              </h1>
+              <div class="view-options" id="document-view-options" role="group" aria-label="Document view">
+                <For each={views}>
+                  {([view, icon]) => (
+                    <button id={`view-${view}`} type="button" data-view={view} aria-pressed={shell.view === view}>
+                      <svg data-icon={icon} aria-hidden="true"></svg>
+                      {viewLabels[view]}
                     </button>
-                    <button id="drafts-open" type="button">
-                      Recover unsaved drafts
-                    </button>
-                    <button id="trash-open" type="button" hidden>
-                      Recycle bin
-                    </button>
-                    <button id="document-trash" type="button" hidden>
-                      Move note to recycle bin
-                    </button>
-                    <button id="reload-document" type="button" disabled>
-                      Reload from disk
-                    </button>
-                  </div>
-                </details>
-                <details id="compact-layout-menu" class="menu-disclosure compact-layout-menu">
-                  <summary>
-                    Page width
-                    <svg data-icon="chevron-down" aria-hidden="true"></svg>
-                  </summary>
-                  <div class="menu-disclosure-panel" role="group" aria-label="Page width">
-                    <button type="button" data-page-width="focused" aria-pressed="false">
-                      Focused
-                    </button>
-                    <button type="button" data-page-width="balanced" aria-pressed="true">
-                      Balanced
-                    </button>
-                    <button type="button" data-page-width="wide" aria-pressed="false">
-                      Wide
-                    </button>
-                  </div>
-                </details>
+                  )}
+                </For>
+                <span id="view-label" class="visually-hidden">
+                  {viewLabels[shell.view]}
+                </span>
               </div>
-              <div class="menu-group more-menu-application" role="group" aria-label="Application">
-                <button id="settings-open" type="button" aria-label="Open settings">
-                  Settings
+              <div id="more-document-actions" class="menu-group" role="group" aria-label="Current note">
+                <span class="menu-group-label" aria-hidden="true">
+                  Current note
+                </span>
+                <div
+                  id="collaboration-people"
+                  class="collaboration-people"
+                  role="group"
+                  aria-label="People editing this note"
+                ></div>
+                <button id="collaboration-join" class="collaboration-join" type="button" hidden>
+                  Collaborate
                 </button>
-                <button id="focus-mode" type="button" aria-pressed="false">
-                  Distraction free
+                <button id="share-page" type="button" data-menu-icon="link" hidden>
+                  Share page
                 </button>
-                <button id="about-open" type="button">
-                  About Folio
+                <button id="copy-text" type="button" data-menu-icon="copy" disabled>
+                  Copy Markdown
                 </button>
-                <button id="logout" type="button" hidden>
-                  Log out
+                <button id="workspace-favorite" type="button" data-menu-icon="star" hidden>
+                  Add to favorites
+                </button>
+                <button id="backlinks-open" type="button" data-menu-icon="arrow-left-right" disabled>
+                  Backlinks
+                </button>
+                <button id="attachments-open" type="button" data-menu-icon="paperclip" hidden>
+                  Attachments
+                </button>
+                <button id="document-tags-open" type="button" data-menu-icon="tag" disabled>
+                  Edit tags
                 </button>
               </div>
-            </AppMenuContent>
-          </AppMenu>
-        </nav>
-      </header>
+              <div id="more-workspace-actions" class="menu-group" role="group" aria-label="Workspace">
+                <span class="menu-group-label" aria-hidden="true">
+                  Workspace
+                </span>
+                <button
+                  id="command-palette-open"
+                  type="button"
+                  data-menu-icon="command"
+                  aria-label="Open command panel"
+                  hidden
+                >
+                  Commands <kbd>Ctrl/Cmd+K</kbd>
+                </button>
+                <button id="workspace-search-open" type="button" data-menu-icon="search">
+                  Search notes <kbd>Ctrl/Cmd+P</kbd>
+                </button>
+                <button id="workspace-open" type="button" data-menu-icon="clock" hidden>
+                  Favorites and recent notes
+                </button>
+                <button id="shares-open" type="button" data-menu-icon="globe" hidden>
+                  Public links
+                </button>
+              </div>
+              <details id="more-recovery" class="menu-disclosure">
+                <summary data-menu-icon="clock">
+                  History and recovery
+                  <svg data-icon="chevron-down" aria-hidden="true"></svg>
+                </summary>
+                <div id="more-recovery-actions" class="menu-disclosure-panel">
+                  <button id="history-open" type="button" data-menu-icon="clock" hidden>
+                    Version history
+                  </button>
+                  <button id="drafts-open" type="button" data-menu-icon="file">
+                    Recover unsaved drafts
+                  </button>
+                  <button id="trash-open" type="button" data-menu-icon="trash" hidden>
+                    Recycle bin
+                  </button>
+                  <button id="document-trash" type="button" data-menu-icon="file-minus" hidden>
+                    Move note to recycle bin
+                  </button>
+                  <button id="reload-document" type="button" data-menu-icon="refresh" disabled>
+                    Reload from disk
+                  </button>
+                </div>
+              </details>
+              <details id="compact-layout-menu" class="menu-disclosure">
+                <summary data-menu-icon="expand-width">
+                  Page width
+                  <svg data-icon="chevron-down" aria-hidden="true"></svg>
+                </summary>
+                <div class="menu-disclosure-panel" role="group" aria-label="Page width">
+                  <button type="button" data-page-width="focused" aria-pressed="false">
+                    Focused
+                  </button>
+                  <button type="button" data-page-width="balanced" aria-pressed="true">
+                    Balanced
+                  </button>
+                  <button type="button" data-page-width="wide" aria-pressed="false">
+                    Wide
+                  </button>
+                </div>
+              </details>
+            </div>
+            <div class="menu-group more-menu-application" role="group" aria-label="Application">
+              <button id="settings-open" type="button" data-menu-icon="settings" aria-label="Open settings">
+                Settings
+              </button>
+              <button id="focus-mode" type="button" data-menu-icon="maximize" aria-pressed="false">
+                Distraction free
+              </button>
+              <button id="about-open" type="button" data-menu-icon="circle-help">
+                About Folio
+              </button>
+              <button id="logout" type="button" data-menu-icon="log-out" hidden>
+                Log out
+              </button>
+            </div>
+            <div class="menu-group menu-stats" role="group" aria-label="Statistics" hidden={!shell.statistics}>
+              <p class="menu-stat" data-menu-icon="text">
+                <span id="editor-stats" title={shell.statisticsDetail}>
+                  {shell.statistics}
+                </span>
+                <small>{shell.statisticsDetail.split(" · ").slice(0, 2).join(" · ")}</small>
+              </p>
+            </div>
+          </AppMenuContent>
+        </AppMenu>
+      </nav>
       <div class="document-alerts">
         <div id="collaboration-message" class="notice" role="status" hidden></div>
         <div id="connection-message" class="notice" role="alert" hidden></div>
@@ -271,17 +261,9 @@ export function DocumentWorkspace() {
         <span id="dirty-indicator" class="dirty-indicator" data-state="empty" role="status" hidden></span>
         <span id="document-message" class="status-message" role="status" hidden></span>
         <span id="copy-status" class="visually-hidden" role="status"></span>
-        <div class="status-right">
-          <span id="editor-stats" title={shell.statisticsDetail}>
-            {shell.statistics}
-          </span>
-          <span id="connection-label" class="connection-label" role="status" hidden>
-            Connecting…
-          </span>
-          <button id="reconnect" type="button" disabled>
-            Reconnect
-          </button>
-        </div>
+        <span id="connection-label" class="connection-label" role="status" hidden>
+          Connecting…
+        </span>
       </footer>
     </main>
   );

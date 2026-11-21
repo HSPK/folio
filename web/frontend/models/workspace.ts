@@ -23,7 +23,7 @@ export function templateTitle(kind: string, date = new Date()) {
 
 function noteTitle(value: string) {
   const title = value.trim();
-  if (!title) throw new Error("Enter a title for the new note.");
+  if (!title) throw new Error("Enter a note title.");
   if ([...title].length > 200) throw new Error("Keep the title within 200 characters.");
   if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(title))
     throw new Error("Use a single-line title without control characters.");
@@ -44,7 +44,7 @@ export function notePathFromTitle(value: string, parent = "") {
     name += character;
   }
   name = name.replace(/[. ]+$/, "");
-  if (!name) throw new Error("Use a title with a name, not only spaces or periods.");
+  if (!name) throw new Error("Title cannot contain only spaces or periods.");
   if (isReservedFileName(name)) name = `_${name}`;
   return validateNewNotePath(`${parent ? `${parent}/` : ""}${name}.md`);
 }

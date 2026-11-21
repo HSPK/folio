@@ -49,7 +49,7 @@ export function WorkspaceShell() {
               Log in
             </button>
             <button id="auth-use-invitation" class="auth-mode-switch" type="button" hidden>
-              Create account with an invitation
+              Join with an invitation
             </button>
             <button id="auth-back-login" class="auth-mode-switch" type="button" hidden>
               Back to login

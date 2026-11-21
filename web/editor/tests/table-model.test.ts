@@ -138,14 +138,14 @@ test("column insertion, clearing and alignment affect only the intended cells", 
 });
 test("deletion keeps the last required Markdown row and column and rejects stale targets explicitly", () => {
   let state = apply(createState(), "row", 2, "delete");
-  assert.throws(() => apply(state, "row", 1, "delete"), /header and at least one data row/);
+  assert.throws(() => apply(state, "row", 1, "delete"), /header and one data row/);
   state = apply(state, "column", 1, "delete");
   state.doc.check();
   assert.throws(() => apply(state, "column", 0, "delete"), /at least one column/);
-  assert.throws(() => apply(state, "column", 5, "duplicate"), /no longer available/);
+  assert.throws(() => apply(state, "column", 5, "duplicate"), /unavailable/);
   assert.throws(
     () => tableAxisTransaction(state, { position: 0, axis: "row", index: 0, action: "clear" }),
-    /no longer editable/,
+    /not editable/,
   );
 });
 test("whole-table alignment and clearing retain structure, formatting and one-step undo", () => {

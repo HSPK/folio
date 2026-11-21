@@ -118,7 +118,7 @@ test("a failed recovery save keeps its text and encrypted copy available for an 
     await page.route("**/api/document", reject);
     await page.locator("#draft-recovery-apply").click();
     await confirmDialog(page);
-    await expect(page.locator("#draft-recovery-error")).toContainText("copy is kept");
+    await expect(page.locator("#draft-recovery-error")).toContainText("recovery copy kept");
     await page.screenshot({ path: test.info().outputPath("kept-recovery-copy.png"), animations: "disabled" });
     await expect(page.locator("#editor")).toHaveValue(recovered);
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe(original);
@@ -228,11 +228,13 @@ test("accepted collaborative updates survive a crash and encrypted offline draft
 });
 
 test("metadata tags drive permission-filtered search and history restores without replacing YAML spelling", async ({ browser }) => {
-  const library = await collaborativeLibrary(browser);
+  const library = await collaborativeLibrary(browser, {
+    content: '---\ntitle: "Shared"\n# Preserve this\ncustom: {x: 1}\n---\n\n# Shared\n\nAlpha\n\nBeta\n',
+  });
   try {
     const [alice, bob] = library.pages;
-    const metadata = await metadataField(alice);
-    await metadata.fill('title: "Shared"\n# Preserve this\ncustom: {x: 1}\n');
+    const metadata = alice.locator("#editor");
+    await metadataField(alice);
     const add = alice.getByRole("textbox", { name: "Add a metadata tag" });
     await add.fill("research");
     await add.press("Enter");
@@ -348,7 +350,7 @@ test("retrying a conflicted recovery refreshes its baseline and clears the obsol
     await page.route("**/api/document", conflict);
     await page.locator("#draft-recovery-apply").click();
     await confirmDialog(page);
-    await expect(page.locator("#draft-recovery-error")).toContainText("copy is kept");
+    await expect(page.locator("#draft-recovery-error")).toContainText("recovery copy kept");
     await expect(page.locator("#conflict-message")).toContainText("Recovery conflict fixture");
     await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "conflict");
     await page.unroute("**/api/document", conflict);

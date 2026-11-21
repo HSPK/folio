@@ -135,7 +135,7 @@ test("VS Code shortcuts work in virtual Source without replacing the editor or l
     `Tail ${index}: ${"padding text ".repeat(36)}\n`).join("");
   await fs.writeFile(path.join(root, "Virtual-line-keys.md"), content);
   await chooseView(page, "editor");
-  await page.locator("#refresh-files").click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.locator('[data-path="Virtual-line-keys.md"]').click();
   const editor = page.locator(".virtual-source-editor .cm-content");
   await expect(editor).toBeVisible();

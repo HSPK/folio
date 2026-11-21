@@ -140,13 +140,13 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.deepEqual(await evaluate("fallbacks"), []);
     assert.equal(await evaluate("document.querySelectorAll('.ProseMirror[contenteditable=true]').length"), 1);
     assert.equal(await evaluate("document.querySelectorAll('[data-editor-scroller]').length"), 1);
-    assert.equal(await evaluate("document.querySelectorAll('.frontmatter details textarea').length"), 1);
+    assert.equal(await evaluate("document.querySelectorAll('.frontmatter textarea').length"), 0);
     assert.equal(await evaluate("document.querySelector('.ProseMirror h1').textContent"), "Heading world");
     assert.equal(await evaluate("document.querySelectorAll('.ProseMirror h2,.ProseMirror hr').length"), 0);
     assert.doesNotMatch(await evaluate("document.querySelector('.ProseMirror').textContent"), /title:|Folded description|unknown:/);
     assert.equal(await evaluate("document.querySelector('.folio-metadata details').open"), false);
-    assert.equal(await evaluate("document.querySelector('.folio-metadata summary').textContent.trim()"), "Metadata");
-    assert.equal(await evaluate("document.querySelectorAll('.folio-metadata-summary,.folio-metadata-description,.folio-metadata-tag,.folio-metadata-hint,.folio-metadata-editor-heading').length"), 0);
+    assert.equal(await evaluate("document.querySelector('.folio-metadata-caption').textContent"), "Properties");
+    assert.equal(await evaluate("document.querySelector('.folio-property-preview').textContent"), "#alpha  #beta tag");
     assert.equal(await evaluate("document.querySelector('.folio-metadata-warning').hidden"), true);
     assert.equal(await evaluate("editor.getSource()"), source);
     assert.deepEqual(await evaluate("changes"), []);
@@ -174,7 +174,7 @@ test("formatted editing preserves YAML independently of body editing, selection,
     })()`);
     assert.ok(Math.abs(layout.height - layout.rootHeight) <= 1, JSON.stringify(layout));
     assert.ok(layout.width <= 780 && layout.width > 700, JSON.stringify(layout));
-    assert.equal(layout.padding, 56);
+    assert.ok(layout.padding >= 36 && layout.padding < 56, JSON.stringify(layout));
     assert.equal(layout.size, 17);
     assert.doesNotMatch(layout.font, /Consolas|monospace/);
     assert.ok(layout.checkWidth >= 12 && layout.checkWidth <= 22 && layout.gap >= 0 && layout.gap < 18 && layout.labelHeight < 30, JSON.stringify(layout));
@@ -214,11 +214,10 @@ test("formatted editing preserves YAML independently of body editing, selection,
 
     await evaluate(`(() => {
       document.querySelector('.folio-metadata details').open = true;
-      const input = document.querySelector('.folio-metadata-source');
+      const input = document.querySelector('[aria-label="Document title"]');
       input.focus(); const from = input.value.indexOf('Guide'); input.setSelectionRange(from, from + 5);
     })()`);
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('.folio-metadata-scroll')).borderLeftWidth"), "1px");
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('.folio-metadata-source')).borderLeftWidth"), "0px");
+    assert.equal(await evaluate(`document.activeElement.matches('[aria-label="Document title"]')`), true);
     await type("Updated");
     const metadataChanged = await evaluate("editor.getSource()");
     assert.equal(metadataChanged, source.replace("Guide", "Updated"));
@@ -230,10 +229,10 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.ok((await evaluate("changes.at(-1)")).startsWith(changedPrefix));
     await undo();
     assert.equal(await evaluate("editor.getSource()"), changedPrefix + body);
-    assert.match(await evaluate("document.querySelector('.folio-metadata-source').value"), /Updated/);
+    assert.match(await evaluate(`document.querySelector('[aria-label="Document title"]').value`), /Updated/);
     await evaluate(`window.beforeAppearance = {
       editor: document.querySelector('.ProseMirror'),
-      metadata: document.querySelector('.folio-metadata-source'),
+      metadata: document.querySelector('.folio-metadata'),
       anchor: getSelection().anchorNode, offset: getSelection().anchorOffset,
       source: editor.getSource(), changes: changes.length,
     }; void 0`);
@@ -259,7 +258,7 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.equal(await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--surface').trim()"), "Canvas");
     await command("Emulation.setEmulatedMedia", { features: [] });
     assert.equal(await evaluate("document.querySelector('.ProseMirror') === beforeAppearance.editor"), true);
-    assert.equal(await evaluate("document.querySelector('.folio-metadata-source') === beforeAppearance.metadata"), true);
+    assert.equal(await evaluate("document.querySelector('.folio-metadata') === beforeAppearance.metadata"), true);
     assert.equal(await evaluate("getSelection().anchorNode === beforeAppearance.anchor && getSelection().anchorOffset === beforeAppearance.offset"), true);
     assert.equal(await evaluate("editor.getSource() === beforeAppearance.source && changes.length === beforeAppearance.changes"), true);
     assert.equal(await evaluate("(() => {try {applyAppearance({theme:'invalid',latinFont:'Arial',cjkFont:'宋体'});return false;} catch {return true;}})()"), true);
@@ -306,7 +305,7 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.deepEqual(await evaluate("fallbacks"), []);
     await evaluate(`(async () => {
       const loading = editor.load(${JSON.stringify(source)}, 'pending.md');
-      const input = document.querySelector('.folio-metadata-source');
+      const input = document.querySelector('[aria-label="Document title"]');
       input.value = input.value.replace('Guide', 'Pending');
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await loading;

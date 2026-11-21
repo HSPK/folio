@@ -26,16 +26,12 @@ export function initializeAccountsAccounts(): void {
   );
   listen(accountState.accountsUi.copy, "click", async () => {
     try {
-      await navigator.clipboard.writeText(accountState.accountsUi.code.value);
+      await copyPlainText(accountState.accountsUi.code.value);
       setText(accountState.accountsUi.copy, "Copied");
     } catch {
       accountState.accountsUi.code.focus();
       accountState.accountsUi.code.select();
-      notice(
-        accountState.accountsUi.error,
-        "Clipboard access is unavailable. Copy the selected invitation key manually.",
-        "warning",
-      );
+      notice(accountState.accountsUi.error, "Clipboard unavailable, copy manually", "warning");
     }
   });
   listen(appState.ui.settingsDialog, "close", () => {
@@ -75,8 +71,7 @@ export function accountButton(label: string, action: () => void) {
   return button;
 }
 export function renderAccounts(value: AccountsListing): void {
-  if (!Array.isArray(value?.users) || !Array.isArray(value?.invitations))
-    throw new ApiError("Incomplete account data.");
+  if (!Array.isArray(value?.users) || !Array.isArray(value?.invitations)) throw new ApiError("Incomplete account data");
   const users = document.createDocumentFragment();
   for (const user of value.users) {
     const row = document.createElement("div");
@@ -94,10 +89,9 @@ export function renderAccounts(value: AccountsListing): void {
     role.value = user.role;
     role.addEventListener("change", async () => {
       if (
-        !(await confirmAction(
-          `Change ${user.username} to ${role.value}? Existing sessions for this account will end.`,
-          { label: "Change role" },
-        ))
+        !(await confirmAction(`Change ${user.username} to ${role.value}? Their sessions will end`, {
+          label: "Change role",
+        }))
       ) {
         role.value = user.role;
         return;
@@ -116,12 +110,7 @@ export function renderAccounts(value: AccountsListing): void {
         accountState.accountsUi.password.focus();
       }),
       accountButton("Delete", async () => {
-        if (
-          await confirmAction(
-            `Delete account ${user.username}? Their sessions will end; note files will not be deleted.`,
-            { label: "Delete account" },
-          )
-        ) {
+        if (await confirmAction(`Delete account ${user.username}? Note files are kept`, { label: "Delete account" })) {
           void accountAction({ action: "delete", username: user.username });
         }
       }),
@@ -148,7 +137,7 @@ export function renderAccounts(value: AccountsListing): void {
     invitations.append(row);
   }
   accountState.accountsUi.invitations.replaceChildren(invitations);
-  if (!value.invitations.length) accountState.accountsUi.invitations.textContent = "No invitations.";
+  if (!value.invitations.length) accountState.accountsUi.invitations.textContent = "No invitations";
 }
 export function accountControls(): void {
   accountState.accountsUi.create.disabled = accountState.accountBusy;
@@ -194,7 +183,7 @@ export async function accountAction(body: Action) {
       window.location.reload();
       return true;
     }
-    if (!response.accounts) throw new ApiError("The service returned an incomplete account update.");
+    if (!response.accounts) throw new ApiError("Incomplete account update");
     renderAccounts(response.accounts);
     if (response.code) {
       accountState.accountsUi.code.value = response.code;
@@ -228,3 +217,4 @@ function createAccountsUi() {
     passwordError: appState.element("account-password-error"),
   };
 }
+import { copyPlainText } from "../../../shared/clipboard";

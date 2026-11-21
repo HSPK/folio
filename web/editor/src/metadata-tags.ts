@@ -8,10 +8,10 @@ export function normalizeTags(values: readonly unknown[]) {
   const tags: string[] = [];
   const seen = new Set<string>();
   for (const value of values) {
-    if (typeof value !== "string") throw new Error("Tags must be strings; quote numeric tags in YAML.");
+    if (typeof value !== "string") throw new Error("Tags must be strings");
     const tag = value.trim().replace(/^#/, "");
     if (!tag || tag.length > 80 || /[\u0000-\u001f\u007f-\u009f]/u.test(tag)) {
-      throw new Error("Each tag must contain 1-80 characters without control characters.");
+      throw new Error("Tags must be 1-80 characters");
     }
     const key = tag.toLowerCase();
     if (!seen.has(key)) {
@@ -19,12 +19,12 @@ export function normalizeTags(values: readonly unknown[]) {
       seen.add(key);
     }
   }
-  if (tags.length > 64) throw new Error("A note can have at most 64 tags.");
+  if (tags.length > 64) throw new Error("At most 64 tags");
   return tags;
 }
 
 export function tagsFromValues(values: unknown) {
-  if (!isMetadataValues(values)) throw new Error("Metadata must be a YAML mapping.");
+  if (!isMetadataValues(values)) throw new Error("Metadata must be a YAML mapping");
   return normalizeTags(
     ["tags", "tag"].flatMap((key): unknown[] => {
       const value: unknown = Reflect.get(values, key);
@@ -36,8 +36,8 @@ export function tagsFromValues(values: unknown) {
 
 function tagDocument(raw: string) {
   const parsed = parseDocument(raw, { uniqueKeys: true });
-  if (parsed.errors.length) throw new Error(`Fix the YAML before editing tags: ${parsed.errors[0].message}`);
-  assertMetadataMap(parsed, "Metadata must be a YAML mapping.");
+  if (parsed.errors.length) throw new Error(`Invalid YAML: ${parsed.errors[0].message}`);
+  assertMetadataMap(parsed, "Metadata must be a YAML mapping");
   return parsed;
 }
 
@@ -65,9 +65,9 @@ export function replaceYamlTags(raw: string, values: readonly unknown[]) {
   const primary = pairs.find((pair) => isScalar(pair.key) && pair.key.value === "tags") ?? pairs[0];
   const edits = pairs.map((pair) => {
     const node = pair.value;
-    if (!isNode(node) || !node.range) throw new Error("Edit this tag field directly in YAML.");
+    if (!isNode(node) || !node.range) throw new Error("Edit this tag field in YAML");
     if (isSeq(node) && node.items.some((item) => isNode(item) && (item.comment || item.commentBefore))) {
-      throw new Error("Edit this commented tag list in YAML so its comments stay intact.");
+      throw new Error("Edit commented tags in YAML");
     }
     const [from, to] = node.range;
     const newline = raw.slice(from, to).match(/(?:\r\n|\r|\n)$/)?.[0] ?? "";
@@ -98,11 +98,12 @@ export function updateMetadataTags(source: string, values: readonly unknown[]) {
 
 export function mountTagEditor(
   panel: HTMLElement,
-  textarea: HTMLTextAreaElement,
   {
+    onChange,
     onTag,
     onError,
   }: {
+    onChange: (tags: string[]) => void;
     onTag?: (tag: string) => void;
     onError: (message: string) => void;
   },
@@ -122,13 +123,9 @@ export function mountTagEditor(
   panel.append(root);
   let current: string[] = [];
   const commit = (tags: string[]) => {
-    if (textarea.disabled) return;
+    if (input.disabled) return;
     try {
-      const next = replaceYamlTags(textarea.value, tags);
-      if (next !== textarea.value) {
-        textarea.value = next;
-        textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      }
+      onChange(tags);
       input.value = "";
     } catch (error) {
       onError(errorMessage(error));

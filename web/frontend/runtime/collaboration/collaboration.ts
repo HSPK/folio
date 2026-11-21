@@ -7,7 +7,8 @@ import { shell } from "../../state/shell";
 import type { Collaboration, DocumentPayload, RelativeSelection } from "../../types/domain";
 import { clearTimer, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
-import { refreshControls } from "../accounts/authentication";
+import { connectionFailure, refreshControls } from "../accounts/authentication";
+import { connectivity, isConnectionLoss } from "../core/recovery";
 import { api } from "../core/api";
 import { appState, dirty } from "../core/bootstrap";
 import { documentNotice, previewStatus } from "../core/dom";
@@ -44,9 +45,7 @@ export function initializeCollaborationCollaboration(): void {
   onApplicationDispose(stopCollaboration);
   collaborationState.collaborativeTarget = (target) =>
     target instanceof Element
-      ? target.closest<HTMLElement>(
-          "#editor, .virtual-source-editor .cm-content, #rich-editor .ProseMirror, .folio-metadata-source",
-        )
+      ? target.closest<HTMLElement>("#editor, .virtual-source-editor .cm-content, #rich-editor .ProseMirror")
       : null;
   listen(document, "compositionstart", (event) => {
     if (!(event.target instanceof Element)) return;
@@ -102,10 +101,12 @@ export function collaborationLocked() {
   );
 }
 export function pauseCollaboration(): void {
+  connectivity.roomLost = false;
   const current = collaborationState.collaboration;
   if (!current) return;
   void persistCurrentDraft().catch(console.error);
   clearTimer(current.retry);
+  current.retry = null;
   const socket = current.socket;
   current.socket = null;
   current.connected = false;
@@ -136,7 +137,7 @@ export async function startCollaboration(): Promise<void> {
   )
     return;
   if (dirty() || documentSession.saving) {
-    collaborationNotice("Save this draft before joining collaborative editing.", true);
+    collaborationNotice("Save draft before joining", true);
     return;
   }
   const initial: Omit<Collaboration, "shared"> = {
@@ -197,17 +198,26 @@ export function sendCollaborativeUpdate(
   current.pending.set(sequence, local);
   current.socket.send(bytes);
 }
+const joining = new WeakSet<Collaboration>();
 export async function connectCollaboration(current: Collaboration): Promise<void> {
-  if (current !== collaborationState.collaboration || current.closed || current.socket?.readyState === WebSocket.OPEN)
+  if (
+    current !== collaborationState.collaboration ||
+    current.closed ||
+    joining.has(current) ||
+    current.socket?.readyState === WebSocket.OPEN ||
+    current.socket?.readyState === WebSocket.CONNECTING
+  )
     return;
   if (current.unmerged) {
-    collaborationNotice("An unmerged local draft is kept. Copy it before reopening this note.", true);
+    collaborationNotice("Unmerged local draft kept", true);
     return;
   }
   clearTimer(current.retry);
+  current.retry = null;
+  joining.add(current);
   current.connecting = !current.initialized;
   appState.inlineEditor.setReadOnly(current.connecting);
-  collaborationNotice("Connecting collaborative editing…");
+  if (!connectivity.roomLost && !connectivity.serviceLost) collaborationNotice("Connecting…");
   renderCollaborators();
   refreshControls();
   try {
@@ -241,7 +251,6 @@ export async function connectCollaboration(current: Collaboration): Promise<void
       if (data instanceof ArrayBuffer) snapshot = false;
       void drainCollaboration(current);
     };
-    socket.onerror = () => collaborationNotice("Collaborative connection failed. Your local text is kept.", true);
     socket.onclose = () => {
       if (current !== collaborationState.collaboration || current.closed || socket !== current.socket) return;
       current.connected = false;
@@ -251,12 +260,8 @@ export async function connectCollaboration(current: Collaboration): Promise<void
       current.users = [];
       current.queue = [];
       appState.inlineEditor.setReadOnly(!current.initialized);
-      collaborationNotice(
-        current.unmerged
-          ? "An unmerged local draft is kept. Copy it before reopening this note."
-          : "Collaboration disconnected. Local edits are kept; reconnecting…",
-        true,
-      );
+      connectivity.roomLost = !current.unmerged;
+      collaborationNotice(current.unmerged ? "Unmerged local draft kept" : "", true);
       renderCollaborators();
       refreshControls();
       if (!current.unmerged) current.retry = window.setTimeout(() => void connectCollaboration(current), 2000);
@@ -269,13 +274,23 @@ export async function connectCollaboration(current: Collaboration): Promise<void
       current.retry = window.setTimeout(() => void connectCollaboration(current), 1000);
       return;
     }
+    if (isConnectionLoss(error)) {
+      connectivity.roomLost = true;
+      collaborationNotice("");
+      connectionFailure(error);
+      current.retry = window.setTimeout(() => void connectCollaboration(current), 3000);
+      return;
+    }
+    connectivity.roomLost = false;
     if (error.status === 403 || error.status === 401) current.writable = false;
     appState.inlineEditor.setReadOnly(!current.initialized);
-    collaborationNotice(`Could not join collaboration: ${error.message}`, true);
+    collaborationNotice(`Join failed: ${error.message}`, true);
     renderCollaborators();
     refreshControls();
     if (publicState.publicView && error.status === 401) requestPublicPassword();
     if (current.recoveryRecord) showDraftRecovery(current.recoveryRecord);
+  } finally {
+    joining.delete(current);
   }
 }
 export function collaborationChanged(): void {
@@ -295,18 +310,18 @@ export function collaborationChanged(): void {
     current.failed = true;
     current.unmerged = appState.ui.editor.value;
     current.socket?.close();
-    collaborationNotice(`${error.message} Your local text is kept.`, true);
+    collaborationNotice(error.message, true);
   }
 }
 export function saveCollaboration() {
   if (!projectWritable()) return Promise.resolve(false);
   const current = collaborationState.collaboration;
   if (!current?.connected) {
-    collaborationNotice("Not saved: collaboration is disconnected. Your local edits are kept.", true);
+    if (!connectivity.roomLost && !connectivity.serviceLost) collaborationNotice("Not connected, not saved", true);
     return Promise.resolve(false);
   }
   if (current.failed) {
-    collaborationNotice("Reconnect shared editing before saving. Your local text is kept.", true);
+    collaborationNotice("Reconnect before saving", true);
     return Promise.resolve(false);
   }
   if (current.saveCompletion) {
@@ -320,7 +335,7 @@ export function saveCollaboration() {
   current.saveTimer = window.setTimeout(() => {
     if (current !== collaborationState.collaboration || !current.saveCompletion) return;
     current.saving = false;
-    collaborationNotice("Shared saving timed out. Your local text is kept; retry saving.", true);
+    collaborationNotice("Shared save timed out", true);
     finishCollaborationSave(current, false);
     refreshControls();
   }, SAVE_TIMEOUT_MS);
@@ -330,7 +345,7 @@ export function saveCollaboration() {
   } catch (errorCause) {
     const error = errorContext(errorCause);
     current.saving = false;
-    collaborationNotice(`Could not request shared saving: ${error.message}. Your text is kept.`, true);
+    collaborationNotice(`Save failed: ${error.message}`, true);
     finishCollaborationSave(current, false);
   }
   refreshControls();
@@ -420,6 +435,7 @@ export async function drainCollaboration(current: Collaboration): Promise<void> 
           const reconnect = current.initialized;
           current.connecting = false;
           current.connected = true;
+          connectivity.roomLost = false;
           current.initialized = true;
           current.pending.clear();
           current.cursorSignature = null;
@@ -427,12 +443,7 @@ export async function drainCollaboration(current: Collaboration): Promise<void> 
           if ((reconnect || current.localUpdates.size) && current.writable !== false) {
             sendCollaborativeUpdate(current, current.shared.changesSince(update));
           }
-          collaborationNotice(
-            current.failed
-              ? "This collaborative draft could not be saved. Copy your shared edits before reopening the note."
-              : "",
-            current.failed,
-          );
+          collaborationNotice(current.failed ? "Shared draft not saved" : "", current.failed);
           renderCollaborators();
         }
         await displaySharedText(current, selection);
@@ -500,7 +511,7 @@ export async function drainCollaboration(current: Collaboration): Promise<void> 
     const error = errorContext(errorCause);
     current.failed = true;
     finishCollaborationSave(current, false);
-    collaborationNotice(`Collaboration could not apply an update: ${error.message}. Your local text is kept.`, true);
+    collaborationNotice(`Update failed: ${error.message}`, true);
     current.socket?.close();
   } finally {
     current.processing = false;

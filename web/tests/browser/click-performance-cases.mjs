@@ -23,7 +23,7 @@ test("click latency benchmark separates UI feedback from document and workspace 
     for (let index = 0; index < 20; index += 1) {
       await fs.writeFile(path.join(library.notes, `Bench${index}.md`), `---\ntitle: Bench ${index}\n---\n\n${content}`);
     }
-    await page.locator("#refresh-files").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(page.locator('[data-path="Bench19.md"]')).toBeAttached();
     const clickFrame = (selector, readySelector) => measureClickFrame(page, selector, readySelector);
     for (let index = 0; index < 20; index += 1) {

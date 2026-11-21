@@ -13,7 +13,7 @@ export function WorkspaceDialogs() {
           </button>
         </header>
         <div id="backlinks-list" class="workspace-list"></div>
-        <p id="backlinks-message" class="notice" role="status" hidden></p>
+        <p id="backlinks-message" class="notice" role="status" data-inline-status hidden></p>
       </AppDialog>
       <AppDialog id="attachments-dialog" class="workspace-dialog" aria-labelledby="attachments-title">
         <header class="workspace-heading">
@@ -24,10 +24,10 @@ export function WorkspaceDialogs() {
         </header>
         <label class="form-hint">
           <input id="attachments-unused" type="checkbox" checked />
-          Show only files without Markdown references
+          Only unreferenced files
         </label>
         <div id="attachments-list" class="workspace-list"></div>
-        <p id="attachments-message" class="notice" role="status" hidden></p>
+        <p id="attachments-message" class="notice" role="status" data-inline-status hidden></p>
         <div class="dialog-actions">
           <button id="attachments-refresh" type="button">
             Refresh
@@ -61,7 +61,7 @@ export function WorkspaceDialogs() {
           </button>
         </header>
         <div id="shares-list" class="workspace-list"></div>
-        <p id="shares-message" class="notice" role="status" hidden></p>
+        <p id="shares-message" class="notice" role="status" data-inline-status hidden></p>
       </AppDialog>
       <AppDialog id="workspace-dialog" class="workspace-dialog" aria-labelledby="workspace-title">
         <header class="workspace-heading">
@@ -78,7 +78,7 @@ export function WorkspaceDialogs() {
           <input id="workspace-filter" type="search" placeholder="Filter notes" aria-label="Filter workspace notes" />
         </div>
         <div id="workspace-list" class="workspace-list"></div>
-        <p id="workspace-message" class="notice" role="status" hidden></p>
+        <p id="workspace-message" class="notice" role="status" data-inline-status hidden></p>
       </AppDialog>
       <AppDialog id="drafts-dialog" class="workspace-dialog" aria-labelledby="drafts-title">
         <header class="workspace-heading">
@@ -88,7 +88,7 @@ export function WorkspaceDialogs() {
           </button>
         </header>
         <div id="drafts-list" class="workspace-list"></div>
-        <p id="drafts-message" class="notice" role="status" hidden></p>
+        <p id="drafts-message" class="notice" role="status" data-inline-status hidden></p>
       </AppDialog>
       <AppDialog id="draft-recovery-dialog" class="workspace-dialog" aria-labelledby="draft-recovery-title">
         <h2 id="draft-recovery-title">Recover local draft</h2>
@@ -160,7 +160,7 @@ export function WorkspaceDialogs() {
           <section>
             <SearchResults />
             <p id="search-empty" class="form-hint" hidden>
-              No matching notes.
+              No matching notes
             </p>
           </section>
         </div>
@@ -200,7 +200,7 @@ export function WorkspaceDialogs() {
             <pre id="history-diff" class="history-diff"></pre>
           </section>
         </div>
-        <p id="history-message" class="notice" role="status" hidden></p>
+        <p id="history-message" class="notice" role="status" data-inline-status hidden></p>
         <div class="dialog-actions">
           <button id="history-copy" type="button" disabled>
             Copy version
@@ -218,7 +218,7 @@ export function WorkspaceDialogs() {
           </button>
         </header>
         <div id="trash-list" class="workspace-list"></div>
-        <p id="trash-message" class="notice" role="status" hidden></p>
+        <p id="trash-message" class="notice" role="status" data-inline-status hidden></p>
       </AppDialog>
     </>
   );

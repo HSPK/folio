@@ -39,6 +39,7 @@ import {
   refreshProjectBusy,
   renderProjects,
   setProjectView,
+  focusProjectList,
   showProjectBrowse,
   syncProjectSource,
 } from "./dialog";
@@ -60,7 +61,7 @@ export function initializeProjectsProjects(): void {
     activate(target, signal) {
       const project = projectModel.items.find((project) => project.id === target.id);
       if (!project) {
-        documentNotice("This project is no longer accessible.", "error");
+        documentNotice("Project unavailable", "error");
         return Promise.resolve(false);
       }
       return activateProject(project, { url: target.url, mode: target.mode, signal });
@@ -119,7 +120,7 @@ export function initializeProjectsProjects(): void {
       if (!current()) return;
       const error = errorContext(errorCause);
       notice(appState.element("project-error"), error.message, "error");
-      documentNotice(`Could not create project: ${error.message}`, "error");
+      documentNotice(`Create failed: ${error.message}`, "error");
     } finally {
       if (!owner.aborted) {
         projectState.projectCreating = false;
@@ -155,17 +156,16 @@ export function initializeProjectsProjects(): void {
     url.hash = "";
     try {
       const link = target.path ? target.project.publicLinks?.[target.path] : undefined;
-      if (appState.element("sharing-level").value === "publicRead" && !link)
-        throw new Error("Save the permissions to create the public link first.");
-      await navigator.clipboard.writeText(link ? publicShareUrl(link.token) : url.href);
+      if (appState.element("sharing-level").value === "publicRead" && !link) throw new Error("Save permissions first");
+      await copyPlainText(link ? publicShareUrl(link.token) : url.href);
       if (projectState.sharingTarget !== target || !projectManagerOpen()) return;
       setText(appState.element("sharing-copy-link"), "Copied");
-      setText(appState.element("sharing-feedback"), "Link copied.");
+      setText(appState.element("sharing-feedback"), "Link copied");
       appState.element("sharing-feedback").hidden = false;
       documentNotice("");
     } catch (errorCause) {
       const error = errorContext(errorCause);
-      notice(appState.element("sharing-error"), `Could not copy the sharing link: ${error.message}`, "error");
+      notice(appState.element("sharing-error"), `Copy failed: ${error.message}`, "error");
     }
   });
 }
@@ -249,12 +249,11 @@ export async function ensureProject(isCurrent = () => true) {
   projectModel.select(project?.id ?? null);
   updateProjectControls();
   if (!projectModel.active) {
-    if (requested)
-      throw new ApiError("This project is private or no longer shared with you. Open Projects to choose another.", 403);
+    if (requested) throw new ApiError("Project unavailable", 403);
     appState.connectionState = "ready";
     appState.currentRoot = null;
     renderFiles();
-    documentNotice("No project selected.");
+    documentNotice("No project selected");
     return false;
   }
   url.searchParams.set("project", projectModel.active.id);
@@ -283,7 +282,7 @@ export async function switchProject(
     return result;
   } catch (cause) {
     const error = errorContext(cause);
-    documentNotice(`Could not finish switching projects: ${error.message}`, "error");
+    documentNotice(`Switch failed: ${error.message}`, "error");
     if (mode === "pop") restoreCommittedUrl();
     return false;
   }
@@ -300,12 +299,12 @@ export function projectOperationPending() {
 export async function allowProjectSwitch(action: string, signal?: AbortSignal) {
   if (signal?.aborted) return false;
   if (appState.creating || appState.movingEntry || projectState.projectCreating || imageState.imageUploading) {
-    documentNotice("Wait for the current operation before switching projects.");
+    documentNotice("Operation in progress");
     return false;
   }
   if (!(await saveBeforeLeaving(action, signal)) || signal?.aborted) return false;
   if (projectOperationPending()) {
-    documentNotice("Wait for the current operation before switching projects.");
+    documentNotice("Operation in progress");
     return false;
   }
   return true;
@@ -373,9 +372,15 @@ export async function openProjects(): Promise<void> {
   appState.element("projects-filter").value = "";
   showProjectBrowse();
   openProjectManager();
-  appState.element("projects-filter").focus();
+  focusProjectList();
   try {
     await loadProjects();
+    if (
+      projectManagerOpen() &&
+      projectDialogState.projectView === "browse" &&
+      (document.activeElement === document.body || document.activeElement === appState.element("projects-close"))
+    )
+      focusProjectList();
   } catch (errorCause) {
     if (owner.aborted || !authenticationSession.isCurrent(scope)) return;
     const error = errorContext(errorCause);
@@ -393,7 +398,7 @@ export async function openSharing(
   if (owner.aborted || !authenticationSession.isCurrent(scope)) return;
   const current = projectModel.get(project.id);
   if (!current) {
-    documentNotice("This project is no longer accessible.", "error");
+    documentNotice("Project unavailable", "error");
     return;
   }
   project = current;
@@ -403,7 +408,7 @@ export async function openSharing(
       null)
     : null;
   if (path && !isResourceId(resourceId)) {
-    documentNotice("This document identity is unavailable. Refresh the project before changing permissions.", "error");
+    documentNotice("Document unavailable", "error");
     return;
   }
   const parent =
@@ -506,7 +511,7 @@ export async function saveSharing(resetLink = false): Promise<void> {
         fields.permission === "publicRead" && fields.publicEdit ? "publicEdit" : fields.permission,
       );
       const expiresAt = fields.expiration ? new Date(fields.expiration).getTime() : null;
-      if (expiresAt !== null && !Number.isFinite(expiresAt)) throw new Error("Choose a valid expiration time.");
+      if (expiresAt !== null && !Number.isFinite(expiresAt)) throw new Error("Invalid expiration time");
       body = {
         action: "document",
         id: project.id,
@@ -576,8 +581,8 @@ export async function saveSharing(resetLink = false): Promise<void> {
       refreshProjectBusy();
       refreshSharingCopy();
       if (changingActiveRoot && selection === projectModel.selection) scheduleAutoSave();
-      if (projectManagerOpen() && projectDialogState.projectView === "browse")
-        appState.element("projects-filter").focus();
+      if (projectManagerOpen() && projectDialogState.projectView === "browse") focusProjectList();
     }
   }
 }
+import { copyPlainText } from "../../../shared/clipboard";

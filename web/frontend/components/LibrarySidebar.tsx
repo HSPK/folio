@@ -8,51 +8,53 @@ export function LibrarySidebar() {
           id="sidebar-hide"
           class="icon-button"
           type="button"
-          title="Close sidebar"
+          title="Close sidebar (Ctrl+Shift+L)"
           aria-label="Close library sidebar"
         >
           <svg data-icon="sidebar" aria-hidden="true"></svg>
         </button>
-        <div class="library-actions">
-          <button id="new-note" class="icon-button" type="button" title="New note" aria-label="New note" disabled>
-            <svg data-icon="file-plus" aria-hidden="true"></svg>
-          </button>
-          <button id="new-folder" class="icon-button" type="button" title="New folder" aria-label="New folder" disabled>
-            <svg data-icon="folder-plus" aria-hidden="true"></svg>
-          </button>
-          <button
-            id="refresh-files"
-            class="icon-button"
-            type="button"
-            title="Refresh files"
-            aria-label="Refresh files"
-            disabled
-          >
-            <svg data-icon="refresh" aria-hidden="true"></svg>
+      </header>
+      <div class="sidebar-tools">
+        <div class="search-field sidebar-search">
+          <svg data-icon="search" aria-hidden="true"></svg>
+          <label class="visually-hidden" for="file-filter">
+            Search files
+          </label>
+          <input
+            id="file-filter"
+            ref={filter}
+            type="search"
+            placeholder="Find a note"
+            autocomplete="off"
+            spellcheck="false"
+            aria-controls="file-list"
+          />
+          <button id="sidebar-search-open" type="button" title="Search notes" aria-label="Search notes" hidden>
+            <kbd>⌘/Ctrl P</kbd>
           </button>
         </div>
-      </header>
-      <div class="search-field sidebar-search">
-        <svg data-icon="search" aria-hidden="true"></svg>
-        <label class="visually-hidden" for="file-filter">
-          Search files
-        </label>
-        <input
-          id="file-filter"
-          ref={filter}
-          type="search"
-          placeholder="Find a note"
-          autocomplete="off"
-          spellcheck="false"
-          aria-controls="file-list"
-        />
-        <button id="sidebar-search-open" type="button" title="Search notes" aria-label="Search notes" hidden>
-          <kbd>⌘/Ctrl P</kbd>
-        </button>
+        <AppMenu id="new-menu" class="popup new-menu">
+          <AppMenuTrigger
+            class="icon-button"
+            title="New"
+            aria-label="New note or folder"
+            aria-controls="new-menu-panel"
+          >
+            <svg data-icon="plus" aria-hidden="true"></svg>
+          </AppMenuTrigger>
+          <AppMenuContent id="new-menu-panel" class="popup-panel" role="group" aria-label="New">
+            <button id="new-note" type="button" data-menu-icon="file-plus" disabled>
+              New note
+            </button>
+            <button id="new-folder" type="button" data-menu-icon="folder-plus" disabled>
+              New folder
+            </button>
+          </AppMenuContent>
+        </AppMenu>
       </div>
       <Show when={libraryView.outsideFilter}>
         <div id="filtered-current-note" class="file-filter-context">
-          <span>The open note is outside this filter.</span>
+          <span>Open note is filtered out</span>
           <button
             type="button"
             onClick={() => {
@@ -65,23 +67,8 @@ export function LibrarySidebar() {
           </button>
         </div>
       </Show>
-      <nav class="sidebar-navigation" aria-label="Library navigation">
-        <button id="files-tab" aria-controls="files-panel" aria-pressed="true" type="button">
-          <svg data-icon="folder" aria-hidden="true"></svg>
-          <span>Notes</span>
-        </button>
-      </nav>
-      <nav id="library-shortcuts" class="library-shortcuts" aria-label="Find notes" hidden>
-        <button id="sidebar-workspace-open" type="button">
-          <svg data-icon="list" aria-hidden="true"></svg>
-          <span>Favorites and recent</span>
-        </button>
-      </nav>
-      <section id="files-panel" class="sidebar-panel" aria-labelledby="files-tab">
-        <h2 class="sidebar-section-label">Pages</h2>
-        <p id="tree-message" class="tree-message" role="status">
-          Connecting to your notes…
-        </p>
+      <section id="files-panel" class="sidebar-panel" aria-label="Notes">
+        <p id="tree-message" class="tree-message" role="status" hidden></p>
         <p id="tree-limit" class="notice tree-limit" role="status" hidden></p>
         <div id="files-scroll-frame" class="scroll-frame" data-overlayscrollbars-initialize>
           <nav id="file-nav" class="file-nav" aria-label="Markdown notes">
@@ -124,3 +111,4 @@ import { Show } from "solid-js";
 import { shell } from "../state/shell";
 import { libraryModel, libraryView } from "../state/library";
 import { FileTree } from "./FileTree";
+import { AppMenu, AppMenuContent, AppMenuTrigger } from "./primitives";

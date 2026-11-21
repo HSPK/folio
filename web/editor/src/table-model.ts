@@ -32,18 +32,17 @@ export function tableAxisTransaction(
 ) {
   const table = state.doc.nodeAt(position);
   if (table?.type.name !== "table" || !["row", "column"].includes(axis)) {
-    throw new Error("This table is no longer editable.");
+    throw new Error("Table not editable");
   }
   const map = TableMap.get(table);
   const size = axis === "row" ? map.height : map.width;
-  if (!Number.isInteger(index) || index < 0 || index >= size)
-    throw new Error("This row or column is no longer available.");
+  if (!Number.isInteger(index) || index < 0 || index >= size) throw new Error("Row or column unavailable");
   const rows: { node: Node; cells: Node[] }[] = [];
   table.forEach((node) => {
     const cells: Node[] = [];
     node.forEach((cell) => cells.push(cell));
     if (cells.length !== map.width || cells.some((cell) => cell.attrs.colspan > 1 || cell.attrs.rowspan > 1)) {
-      throw new Error("These actions require a simple Markdown table without merged cells.");
+      throw new Error("Merged cells not supported");
     }
     rows.push({ node, cells });
   });
@@ -77,14 +76,14 @@ export function tableAxisTransaction(
     else for (const entry of rows) entry.cells[index] = empty(entry.cells[index]);
   } else if (action === "delete") {
     if (!canDeleteTableAxis(table, axis === "row" ? "row" : "column")) {
-      throw new Error(axis === "row" ? "Keep a header and at least one data row." : "Keep at least one column.");
+      throw new Error(axis === "row" ? "Needs a header and one data row" : "Needs at least one column");
     }
     if (axis === "row") rows.splice(index, 1);
     else for (const entry of rows) entry.cells.splice(index, 1);
   } else if (/^align-(left|center|right)$/.test(action) && axis === "column") {
     const cell = rows[0].cells[index];
     rows[0].cells[index] = cell.type.create({ ...cell.attrs, alignment: action.slice(6) }, cell.content, cell.marks);
-  } else throw new Error("This table action is unavailable.");
+  } else throw new Error("Action unavailable");
   const alignment = rows[0].cells.map((cell) => cell.attrs.alignment);
   // Markdown requires one header row followed by at least one data row.
   const content = rows.map((entry, rowIndex) => {
@@ -105,7 +104,7 @@ export function tableAxisTransaction(
 
 export function tableActionTransaction(state: EditorState, { position, action }: { position: number; action: string }) {
   const table = state.doc.nodeAt(position);
-  if (table?.type.name !== "table") throw new Error("This table is no longer editable.");
+  if (table?.type.name !== "table") throw new Error("Table not editable");
   const transaction = closeHistory(state.tr);
   if (action === "delete") {
     transaction.deleteRange(position, position + table.nodeSize);
@@ -118,8 +117,7 @@ export function tableActionTransaction(state: EditorState, { position, action }:
     transaction.insert(at, table);
     return transaction.setSelection(TextSelection.near(transaction.doc.resolve(at + 3))).scrollIntoView();
   }
-  if (action !== "clear" && !/^align-(left|center|right)$/.test(action))
-    throw new Error("This table action is unavailable.");
+  if (action !== "clear" && !/^align-(left|center|right)$/.test(action)) throw new Error("Action unavailable");
   const rows: Node[] = [];
   table.forEach((row) => {
     const cells: Node[] = [];

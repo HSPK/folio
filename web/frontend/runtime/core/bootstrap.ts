@@ -92,6 +92,7 @@ class AppState {
   commandShortcut!: string;
 }
 export const appState = new AppState();
+
 export function initializeCoreBootstrap(): void {
   hydrateIcons(document);
   appState.element = element;
@@ -228,10 +229,8 @@ function createApplicationUi() {
     connectionLabel: appState.element("connection-label"),
     connectionMessage: appState.element("connection-message"),
     appearanceMessage: appState.element("appearance-message"),
-    reconnect: appState.element("reconnect"),
     newNote: appState.element("new-note"),
     newFolder: appState.element("new-folder"),
-    refreshFiles: appState.element("refresh-files"),
     filter: appState.element("file-filter"),
     treeMessage: appState.element("tree-message"),
     treeLimit: appState.element("tree-limit"),
@@ -290,7 +289,6 @@ function createApplicationUi() {
     sidebarResizer: appState.element("sidebar-resizer"),
     sidebarToggle: appState.element("sidebar-toggle"),
     scrim: appState.element("sidebar-scrim"),
-    filesTab: appState.element("files-tab"),
     outlineTab: appState.element("outline-tab"),
     filesPanel: appState.element("files-panel"),
     outlinePanel: appState.element("outline-panel"),

@@ -41,6 +41,22 @@ export function createSourceEditor({
     virtualSize = null;
   };
   textarea.addEventListener("input", invalidateVirtualSize);
+  // The Live editor mirrors every keystroke into this hidden textarea. For a large note that write costs
+  // milliseconds per key, so the newest text waits here and reaches the DOM once typing pauses or the
+  // textarea is about to be used.
+  const DEFERRED_WRITE_LENGTH = 200_000;
+  let pending: string | null = null;
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  const sync = () => {
+    if (pendingTimer !== null) clearTimeout(pendingTimer);
+    pendingTimer = null;
+    if (pending === null) return;
+    const text = pending;
+    pending = null;
+    textarea.value = text;
+    nativeHistory.reset(text);
+  };
+  for (const type of ["focus", "pointerdown", "keydown", "beforeinput"]) textarea.addEventListener(type, sync, true);
   const insertLineAbove: Command = ({ state, dispatch }) => {
     if (state.readOnly) return false;
     dispatch(
@@ -60,7 +76,7 @@ export function createSourceEditor({
   };
 
   const value = () => {
-    if (!view) return textarea.value;
+    if (!view) return pending ?? textarea.value;
     if (cachedDocument !== view.state.doc) {
       cachedDocument = view.state.doc;
       cachedValue = view.state.doc.toString();
@@ -78,6 +94,7 @@ export function createSourceEditor({
     onNotice,
   });
   const createView = (text: string) => {
+    pending = null;
     pane.classList.add("is-virtual-source");
     textarea.hidden = true;
     textarea.value = "";
@@ -153,10 +170,18 @@ export function createSourceEditor({
     text = String(text);
     if (reset && view) destroyView("");
     if (!view) {
-      if (!reset && textarea.value === text) return;
+      if (!reset && value() === text) return;
+      invalidateVirtualSize();
+      // A textarea normalizes line endings, so only text it would store unchanged may wait.
+      if (!reset && text.length >= DEFERRED_WRITE_LENGTH && !text.includes("\r")) {
+        pending = text;
+        if (pendingTimer !== null) clearTimeout(pendingTimer);
+        pendingTimer = setTimeout(sync, 250);
+        return;
+      }
+      pending = null;
       textarea.value = text;
       nativeHistory.reset(textarea.value);
-      invalidateVirtualSize();
       return;
     }
     if (value() === text) return;
@@ -196,21 +221,26 @@ export function createSourceEditor({
       if (view) view.dispatch({ effects: editable.reconfigure(editability()) });
     },
     get scrollTop() {
+      sync();
       return view ? view.scrollDOM.scrollTop : textarea.scrollTop;
     },
     set scrollTop(value: number) {
+      sync();
       if (view) view.scrollDOM.scrollTop = value;
       else textarea.scrollTop = value;
     },
     get selectionStart() {
+      sync();
       return view ? view.state.selection.main.head : textarea.selectionStart;
     },
     getSelection() {
+      sync();
       return view
         ? { from: view.state.selection.main.anchor, to: view.state.selection.main.head }
         : { from: textarea.selectionStart, to: textarea.selectionEnd };
     },
     cursorRect(position: number) {
+      sync();
       return view
         ? view.coordsAtPos(Math.max(0, Math.min(view.state.doc.length, position)))
         : textareaCursorRect(textarea, position);
@@ -225,7 +255,8 @@ export function createSourceEditor({
       setValue(text, true);
     },
     applyEdit(text: string) {
-      if (disabled || readOnly) throw new Error("The source editor is read-only.");
+      if (disabled || readOnly) throw new Error("Read-only");
+      sync();
       if (value() === text) return;
       if (!view && shouldVirtualizeSource(text, threshold)) createView(value());
       if (view)
@@ -238,6 +269,7 @@ export function createSourceEditor({
       else nativeHistory.replace(text);
     },
     prepare() {
+      sync();
       if (view) return;
       virtualSize ??= shouldVirtualizeSource(textarea.value, threshold);
       if (virtualSize) createView(textarea.value);
@@ -248,6 +280,7 @@ export function createSourceEditor({
       else textarea.focus(options);
     },
     select() {
+      sync();
       if (view) {
         view.dispatch({
           selection: EditorSelection.range(0, view.state.doc.length),
@@ -331,6 +364,9 @@ export function createSourceEditor({
       return Boolean(view);
     },
     destroy() {
+      sync();
+      for (const type of ["focus", "pointerdown", "keydown", "beforeinput"])
+        textarea.removeEventListener(type, sync, true);
       textarea.removeEventListener("input", invalidateVirtualSize);
       nativeHistory.destroy();
       destroyView("");

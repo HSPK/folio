@@ -45,13 +45,13 @@ export function createTableTools({
   function run(action: string) {
     try {
       const target = menu.target();
-      if (!target?.editable_fn()) throw new Error("Select an editable table first.");
+      if (!target?.editable_fn()) throw new Error("No editable table selected");
       target.run_fn(action);
       menu.close();
       target.focus_fn();
       onNotice?.("");
     } catch (error) {
-      onNotice?.(`Could not edit table: ${errorMessage(error)}`, "error");
+      onNotice?.(`Table edit failed: ${errorMessage(error)}`, "error");
     }
   }
   for (const [index, action] of ["before", "after", "duplicate", "clear", "delete"].entries()) {
@@ -104,11 +104,11 @@ export function createTableTools({
       onClick: async () => {
         try {
           const target = menu.target();
-          if (!target) throw new Error("This table is no longer open.");
-          await navigator.clipboard.writeText(target.format_fn(format));
+          if (!target) throw new Error("Table no longer open");
+          await copyPlainText(target.format_fn(format));
           onNotice?.("");
         } catch (error) {
-          onNotice?.(`Could not copy table: ${errorMessage(error)}`, "error");
+          onNotice?.(`Copy failed: ${errorMessage(error)}`, "error");
         }
       },
     });
@@ -233,7 +233,7 @@ export function createTableTools({
     openBlock(view: EditorView, position: number, trigger: HTMLElement, onClose_fn?: () => void) {
       const dom = view.nodeDOM(position);
       const target = dom && handles.get(dom);
-      if (!target?.active_fn() || !target.owns_fn(view)) throw new Error("This table is no longer open.");
+      if (!target?.active_fn() || !target.owns_fn(view)) throw new Error("Table no longer open");
       target.open_fn("table", trigger, onClose_fn);
     },
     updateSelection(view: EditorView) {
@@ -288,3 +288,4 @@ export function createTableTools({
     },
   };
 }
+import { copyPlainText } from "../../shared/clipboard";

@@ -70,14 +70,14 @@ export async function openShareCenter(): Promise<void> {
             await loadProjects();
             if (!current()) return;
             const project = projectModel.items.find((project) => project.id === link.project);
-            if (!project?.owned) throw new Error("This project is no longer available.");
+            if (!project?.owned) throw new Error("Project unavailable");
             dialog.close();
             handedOff = true;
             await openSharing(project, link.path, link.document);
           } catch (errorCause) {
             if (isAbortError(errorCause) || owner.aborted || !authenticationSession.isCurrent(scope)) return;
             const error = errorContext(errorCause);
-            if (handedOff) documentNotice(`Could not open sharing settings: ${error.message}`, "error");
+            if (handedOff) documentNotice(`Open failed: ${error.message}`, "error");
             else if (current()) notice(appState.element("shares-message"), error.message, "error");
           }
         });
@@ -87,7 +87,7 @@ export async function openShareCenter(): Promise<void> {
         copy.addEventListener("click", async () => {
           if (!current()) return;
           try {
-            await navigator.clipboard.writeText(publicShareUrl(link.token));
+            await copyPlainText(publicShareUrl(link.token));
             if (current()) documentNotice("");
           } catch (errorCause) {
             if (!current()) return;
@@ -100,12 +100,7 @@ export async function openShareCenter(): Promise<void> {
         revoke.textContent = "Revoke";
         revoke.addEventListener("click", async () => {
           if (!current()) return;
-          if (
-            !(await confirmAction(
-              `Revoke the public link for ${link.path}? Signed-in user permissions will be retained.`,
-              { label: "Revoke link", signal },
-            ))
-          )
+          if (!(await confirmAction(`Revoke the public link for ${link.path}?`, { label: "Revoke link", signal })))
             return;
           revoke.disabled = true;
           try {
@@ -126,10 +121,11 @@ export async function openShareCenter(): Promise<void> {
         return row;
       }),
     );
-    notice(appState.element("shares-message"), links.length ? "" : "You have no public document links.");
+    notice(appState.element("shares-message"), links.length ? "" : "No public links");
   } catch (errorCause) {
     if (!current() || isAbortError(errorCause)) return;
     const error = errorContext(errorCause);
     notice(appState.element("shares-message"), error.message, "error");
   }
 }
+import { copyPlainText } from "../../../shared/clipboard";

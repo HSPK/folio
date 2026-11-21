@@ -1,6 +1,6 @@
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
-import { libraryCatalog, libraryModel } from "../../state/library";
+import { libraryModel } from "../../state/library";
 import { decodedAuthStatus, decodedAuthentication } from "../../api/contracts";
 import { MAX_MARKDOWN_BYTES, browserDocumentTitle, formatByteCount, readNoteRoute } from "@folio/model";
 import { updateShell } from "../../state/shell";
@@ -19,6 +19,13 @@ import { stopAppearancePolling } from "../core/appearance";
 import { appState, currentEditorAnalysis, rootChanged } from "../core/bootstrap";
 import { ApiError, documentNotice, notice, previewStatus, setText } from "../core/dom";
 import { connect } from "../core/connection";
+import {
+  clearServiceOutage,
+  connectivity,
+  initializeConnectionRecovery,
+  isConnectionLoss,
+  reportServiceOutage,
+} from "../core/recovery";
 import { closeAllDialogs } from "../dialogs/dialogs";
 import { persistCurrentDraft } from "../documents/drafts";
 import { cancelDocumentLoad, clearDocument, confirmDiscard } from "../documents/navigation";
@@ -40,10 +47,18 @@ class AuthenticationState {
 export const authenticationState = new AuthenticationState();
 export function initializeAccountsAuthentication(): void {
   authenticationState.authInvitation = false;
+  initializeConnectionRecovery(
+    () => (authenticationSession.mode ? connect({ restoreWorkspace: false }) : bootstrapAuthentication()),
+    () => {
+      if (appState.ui.authScreen.hidden && !appState.element("public-password-dialog").open) {
+        connectionFailure(errorContext(new ApiError("Disconnected", 0, true)));
+      }
+    },
+  );
 }
 export function expectDocument(payload: unknown) {
   if (!isDocumentPayload(payload)) {
-    throw new ApiError("The service returned an incomplete document.");
+    throw new ApiError("Incomplete document");
   }
   return payload;
 }
@@ -82,11 +97,19 @@ export function handleAuthenticationFailure(error: RuntimeError) {
   stopDocumentParticipation({ notify: false });
   pauseCollaboration();
   if (documentSession.current) acceptDocumentPermissions({ writable: false, collaborative: false, owner: false });
-  showAuthentication(false, "Log in again. Local text is kept.");
+  showAuthentication(false, "Log in again");
   return true;
 }
 export function connectionFailure(error: RuntimeError, force = false): void {
   if (handleAuthenticationFailure(error)) return;
+  if (isConnectionLoss(error)) {
+    if (!appState.ui.authScreen.hidden || appState.element("public-password-dialog").open) return;
+    appState.connectionState = "error";
+    reportServiceOutage();
+    refreshControls();
+    return;
+  }
+  if (force) clearServiceOutage();
   if ((authenticationSession.mode === "users" || publicState.publicView) && error.status === 403) {
     if (force) appState.connectionState = "error";
     documentNotice(error.message, "error");
@@ -94,15 +117,9 @@ export function connectionFailure(error: RuntimeError, force = false): void {
   }
   let message = "";
   if (error.status === 401 || error.status === 403) {
-    message =
-      "This tab is no longer authorized, or was not opened from Folio. The service may have restarted. " +
-      "Your editor text is still here. Copy any unsaved changes, then reopen Folio using the desktop app or the current CLI launch URL.";
-  } else if (error.network) {
-    message =
-      "The local Folio service is unavailable. Your editor text is still here. " +
-      "Check that Folio is running, then choose Reconnect. If it restarted, copy your changes and reopen it using the desktop app or the current CLI launch URL.";
+    message = "Not authorized";
   } else if (force) {
-    message = `Could not connect: ${error.message} Your editor text has been kept. Check the Folio app or CLI, then try Reconnect.`;
+    message = `Connect failed: ${error.message}`;
   }
   if (!message) return;
   appState.connectionState = "error";
@@ -110,6 +127,7 @@ export function connectionFailure(error: RuntimeError, force = false): void {
   refreshControls();
 }
 export function showAuthentication(setup: boolean, message = "", registration = false): void {
+  clearServiceOutage();
   closeAllDialogs();
   appState.authSetup = setup;
   authenticationState.authInvitation = !setup && registration;
@@ -165,6 +183,7 @@ export async function bootstrapAuthentication(): Promise<void> {
   try {
     const status = await api("/api/auth/status", {
       decode: decodedAuthStatus,
+      timeoutMs: 15000,
     });
     if (owner.aborted || authenticationSession.scope.key !== scope.key) return;
     authenticationSession.initialize(status.mode, status.user);
@@ -180,10 +199,7 @@ export async function bootstrapAuthentication(): Promise<void> {
         return;
       }
     } else if (!status.authenticated) {
-      throw new ApiError(
-        "This tab has no valid Folio connection token. Reopen Folio using the desktop app or current CLI launch URL.",
-        401,
-      );
+      throw new ApiError("No valid connection token", 401);
     }
     hideAuthentication();
     const workspace = loadUserWorkspace();
@@ -204,7 +220,7 @@ export async function submitAuthentication(event: SubmitEvent): Promise<void> {
     (appState.authSetup || authenticationState.authInvitation) &&
     appState.ui.authPassword.value !== appState.ui.authConfirm.value
   ) {
-    notice(appState.ui.authError, "The password confirmation does not match.", "error");
+    notice(appState.ui.authError, "Passwords do not match", "error");
     appState.ui.authConfirm.focus();
     return;
   }
@@ -256,7 +272,7 @@ export async function submitAuthentication(event: SubmitEvent): Promise<void> {
     if (!(error instanceof ApiError)) console.error("Authentication could not be completed.", error);
     if (appState.authSetup && error.status === 409) {
       appState.authSetup = false;
-      showAuthentication(false, "Another request completed the initial setup. Log in with that account.");
+      showAuthentication(false, "Setup already completed, log in");
     } else {
       notice(appState.ui.authError, error.message, "error");
     }
@@ -281,7 +297,7 @@ export async function logout(): Promise<void> {
     window.location.reload();
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    documentNotice(`Could not log out: ${error.message}`, "error");
+    documentNotice(`Logout failed: ${error.message}`, "error");
     connectionFailure(error);
     appState.ui.logout.disabled = false;
   }
@@ -296,7 +312,7 @@ export function setRoot(root: string): void {
   appState.currentRoot = root;
   refreshControls();
   if (changed && documentSession.current) {
-    if (rootChanged()) previewStatus("Preview paused: the notes folder changed.", true);
+    if (rootChanged()) previewStatus("Preview paused: folder changed", true);
     else schedulePreview(0);
   }
 }
@@ -317,7 +333,7 @@ export function renderDocumentStatus(changed: boolean): void {
           ? "dirty"
           : "saved";
     status = documentSession.conflict
-      ? "Disk conflict — editor text kept"
+      ? "Disk conflict"
       : documentSession.saving || collaborationState.collaboration?.saving
         ? "Saving…"
         : projectWritable()
@@ -355,9 +371,6 @@ export function refreshControls(): void {
   appState.ui.newFolder.disabled = !ready || writing || !projectCanCreate();
   appState.ui.emptyNew.disabled = appState.ui.newNote.disabled;
   updateShell({ hasDocument: Boolean(documentSession.current) });
-  appState.ui.refreshFiles.disabled = !ready || libraryCatalog.loading;
-  appState.ui.reconnect.disabled = appState.connectionState === "connecting" || writing;
-  appState.ui.reconnect.hidden = ready;
   appState.ui.logout.disabled = appState.authenticating || writing || appState.connectionState === "connecting";
   appState.ui.authUsername.disabled = appState.authenticating;
   appState.ui.authPassword.disabled = appState.authenticating;
@@ -376,10 +389,19 @@ export function refreshControls(): void {
   setText(appState.ui.create, appState.creating ? "Creating…" : "Create note");
   setText(appState.ui.createFolder, appState.creating ? "Creating…" : "Create folder");
   setText(appState.ui.confirmRename, appState.movingEntry ? "Moving…" : "Rename");
-  appState.ui.connectionLabel.dataset.state = appState.connectionState;
+  const disconnected = connectivity.serviceLost || connectivity.roomLost;
+  appState.ui.connectionLabel.dataset.state = disconnected ? "error" : appState.connectionState;
+  appState.ui.connectionLabel.classList.toggle("is-error", disconnected);
+  appState.ui.connectionLabel.hidden = !disconnected;
   setText(
     appState.ui.connectionLabel,
-    ready ? "Local service" : appState.connectionState === "connecting" ? "Connecting…" : "Disconnected",
+    disconnected
+      ? "Disconnected"
+      : ready
+        ? "Local service"
+        : appState.connectionState === "connecting"
+          ? "Connecting…"
+          : "Disconnected",
   );
   appState.ui.connectionLabel.title =
     ready && appState.currentPort ? `Connected on loopback port ${appState.currentPort}` : "";
@@ -405,18 +427,10 @@ export function refreshControls(): void {
   appState.ui.editor.setAttribute("aria-invalid", String(tooLarge));
   notice(
     appState.ui.sizeWarning,
-    tooLarge
-      ? `This note is ${formatByteCount(analysis.bytes)}; the limit is 4 MiB. Reduce the text before saving or previewing. Your text has not been removed.`
-      : "",
+    tooLarge ? `${formatByteCount(analysis.bytes)} exceeds the 4 MiB limit` : "",
     "error",
   );
-  notice(
-    appState.ui.rootWarning,
-    rootChanged()
-      ? "The notes folder changed. Your open text has been kept, but it belongs to the previous folder. Copy any changes before reloading or choosing a note from the new folder."
-      : "",
-    "warning",
-  );
+  notice(appState.ui.rootWarning, rootChanged() ? "Notes folder changed" : "", "warning");
   refreshOutline();
   updateProjectControls();
   refreshWorkspaceControls();
@@ -428,14 +442,19 @@ export function selectNavigation(destination: unknown, focus = false): void {
     return;
   }
   closeDocumentOutline();
-  if (focus) appState.ui.filesTab.focus();
+  if (focus) appState.ui.filter.focus();
 }
 export function setSidebar(open: boolean): void {
   if (publicState.publicView) open = false;
+  const returnFocus =
+    !open &&
+    (appState.ui.sidebar.contains(document.activeElement) || document.activeElement === appState.ui.sidebarToggle);
+  const openingFromToggle = open && document.activeElement === appState.ui.sidebarToggle;
   document.body.dataset.sidebar = open ? "open" : "closed";
   updateShell({ sidebarOpen: open, compact: appState.compactLayout.matches });
   appState.ui.sidebarResizer.tabIndex = open && !appState.compactLayout.matches ? 0 : -1;
-  if (!open && appState.ui.sidebar.contains(document.activeElement)) appState.ui.sidebarToggle.focus();
+  if (returnFocus && !publicState.publicView) appState.ui.sidebarToggle.focus({ preventScroll: true });
+  if (openingFromToggle) appState.element("sidebar-hide").focus({ preventScroll: true });
 }
 export function closeMenus(): void {
   for (const popup of document.querySelectorAll<HTMLDetailsElement>(".popup[open]")) popup.open = false;

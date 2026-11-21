@@ -15,6 +15,7 @@ import { appState } from "../core/bootstrap";
 import { ApiError, aborted, documentNotice, notice } from "../core/dom";
 import { showDialog } from "../dialogs/dialogs";
 import { navigateTo } from "../documents/navigation";
+import { setView } from "../navigation/files";
 import { listen, onApplicationDispose } from "../lifecycle";
 import { projectDialogState, projectManagerOpen } from "../projects/dialog";
 import { switchProject } from "../projects/projects";
@@ -58,7 +59,7 @@ export function initializeSearchSearch(): void {
     searchState.searchGeneration += 1;
     setSearchPending(true);
     appState.element("search-empty").hidden = true;
-    notice(appState.element("search-message"), "Searching notes…");
+    notice(appState.element("search-message"), "Searching…");
     searchState.searchTimer = window.setTimeout(() => void runWorkspaceSearch(), 200);
   });
   for (const id of ["search-project", "search-field"] as const)
@@ -108,7 +109,7 @@ export async function openWorkspaceSearch({
   tags?: string[];
 } = {}): Promise<void> {
   if (authenticationSession.mode !== "users") {
-    documentNotice("Library search requires a signed-in account.", "warning");
+    documentNotice("Sign in to search", "warning");
     return;
   }
   closeMenus();
@@ -194,7 +195,7 @@ export async function runWorkspaceSearch(cursor = 0, refresh = false): Promise<v
   const query = appState.element("search-query").value;
   setSearchPending(true);
   appState.element("search-empty").hidden = true;
-  notice(appState.element("search-message"), "Searching notes…");
+  notice(appState.element("search-message"), "Searching…");
   try {
     const result = await api("/api/search", {
       decode: decodedSearch,
@@ -211,7 +212,7 @@ export async function runWorkspaceSearch(cursor = 0, refresh = false): Promise<v
     });
     if (generation !== searchState.searchGeneration || !searchState.searchDialog.open || key !== searchKey()) return;
     if (!Array.isArray(result.results) || !Array.isArray(result.tags) || !Array.isArray(result.projects)) {
-      throw new ApiError("The search response is incomplete.");
+      throw new ApiError("Incomplete search response");
     }
     renderSearchTags(result.tags);
     if (searchState.searchResultKey !== key) updateSearchUi({ selection: 0 });
@@ -222,12 +223,7 @@ export async function runWorkspaceSearch(cursor = 0, refresh = false): Promise<v
     searchState.searchResultKey = key;
     setSearchPending(false);
     const message =
-      result.warnings?.join("\n") ||
-      (result.indexing
-        ? "Indexing notes; results are updating…"
-        : result.truncated
-          ? "Showing a limited set of results. Narrow the query or tags."
-          : "");
+      result.warnings?.join("\n") || (result.indexing ? "Indexing…" : result.truncated ? "Results limited" : "");
     notice(appState.element("search-message"), message, result.warnings?.length ? "warning" : "");
     if (result.indexing) searchState.searchTimer = window.setTimeout(() => void runWorkspaceSearch(result.cursor), 350);
   } catch (errorCause) {
@@ -252,6 +248,11 @@ export async function openSearchResult(index: number): Promise<void> {
   }
   if (!(await navigateTo(result.id))) return;
   if (documentSession.current?.version !== result.version) return;
+  if (result.matchedField === "metadata" && shell.view === "rich") {
+    setView("editor");
+    appState.ui.editor.revealSelection(result.offset, result.offset, { focus: true });
+    return;
+  }
   if (shell.view === "rich") {
     if (appState.element("rich-editor").getAttribute("aria-busy") === "true") appState.pendingHeading = result.offset;
     else appState.inlineEditor.jumpTo(result.offset);

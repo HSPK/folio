@@ -11,14 +11,14 @@ test(`settings are inside the distinct More menu at ${viewport.width}px`, async 
   await expect(settings).toHaveText("Settings");
   await expect(settings).toBeHidden();
   const bounds = await trigger.boundingBox();
-  expect(bounds.width).toBeGreaterThanOrEqual(32);
-  expect(bounds.height).toBeGreaterThanOrEqual(32);
+  expect(bounds.width).toBeGreaterThanOrEqual(28);
+  expect(bounds.height).toBeGreaterThanOrEqual(28);
   await expect(trigger.locator("svg")).toHaveCSS("width", "20px");
   expect(await trigger.locator("svg").evaluate(node => parseFloat(getComputedStyle(node).strokeWidth))).toBeGreaterThan(2);
 
   for (const theme of ["light", "dark"]) {
     await page.emulateMedia({ colorScheme: theme });
-    await expect(trigger).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(trigger).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     if (browserName !== "webkit") await page.screenshot({
       path: test.info().outputPath(`more-trigger-${theme}-${viewport.width}.png`), animations: "disabled",
     });
@@ -41,7 +41,8 @@ test(`settings are inside the distinct More menu at ${viewport.width}px`, async 
     } else await settings.click();
     await expect(page.locator("#settings-dialog")).toBeVisible();
     await expect(menu).not.toHaveAttribute("open", "");
-    await expect(page.locator("#settings-search")).toBeFocused();
+    await expect(page.locator("#settings-search")).not.toBeFocused();
+    await expect(page.locator("#settings-dialog")).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(page.locator("#settings-dialog")).toBeHidden();
     await expect(trigger).toBeFocused();
@@ -77,10 +78,11 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
       ["Guides/Research.md", "Research notes and longer descriptive document titles"],
       ["Planning/Weekly.md", "Weekly review"],
     ]) await fs.writeFile(path.join(library.notes, name), `---\ntitle: ${title}\ntags: [research]\n---\n\n# ${title}\n`);
-    await page.locator("#refresh-files").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(page.locator('[data-path="Guides/Research.md"]')).toBeAttached();
     await expect(page.locator(".sidebar-footer, #library-menu, #library-name, #file-count, #root-path")).toHaveCount(0);
-    await expect(page.locator(".library-actions #refresh-files")).toBeVisible();
+    await expect(page.locator("#refresh-files")).toHaveCount(0);
+    await expect(page.locator("#new-menu > summary")).toBeVisible();
     await page.keyboard.press("Escape");
     const capture = async (name) => {
       await page.screenshot({ path: path.join(output, `${name}.png`), animations: "disabled" });
@@ -177,7 +179,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     const filter = await page.locator("#workspace-filter").boundingBox();
     expect(kind.y).toBe(filter.y);
     await page.locator("#workspace-close").click();
-    await page.locator("#new-note").click();
+    await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
     await page.locator("#new-note-template").selectOption("weekly");
     await capture("desktop-new-note");
     await page.locator("#cancel-new-note").click();
@@ -268,7 +270,7 @@ test("routine editing confirmations stay quiet while project errors remain visib
     await page.route(endpoint, rejectSave);
     await page.locator("#sharing-save").click();
     await expect(page.locator("#sharing-error")).toContainText("Project settings could not be saved.");
-    await expect(page.locator("#sharing-error")).toContainText("could not be confirmed");
+    await expect(page.locator("#sharing-error")).toContainText("unconfirmed");
     await expect(page.locator("#sharing-error")).toHaveClass(/is-error/);
     await expect(page.locator("#projects-dialog")).toHaveAttribute("data-view", "sharing");
     await page.unroute(endpoint, rejectSave);
@@ -287,12 +289,12 @@ test("routine editing confirmations stay quiet while project errors remain visib
     await expect(page.locator("#editor")).toHaveValue(/quiet/);
     await expect(page.locator("#document-message")).toBeHidden();
     await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-    await page.locator("#new-note").click();
+    await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
     await page.locator("#new-note-title").fill("Quiet note");
     await page.locator("#new-note-form button[type=submit]").click();
     await expect(page.locator("#document-title")).toHaveText("Quiet note");
     await expect(page.locator("#document-message")).toBeHidden();
-    await page.locator("#new-folder").click();
+    await page.locator("#new-menu > summary").click(); await page.locator("#new-folder").click();
     await page.locator("#new-folder-path").fill("References");
     await page.locator("#new-folder-form button[type=submit]").click();
     await expect(page.locator('#file-list .directory[data-path="References"]')).toBeVisible();
@@ -473,7 +475,7 @@ test("hover feedback stays neutral and stable in light and dark themes", async (
       expect(toolbarAfter.bounds).toEqual(toolbarBefore.bounds);
       expect(toolbarAfter.transform).toBe("none");
       await page.screenshot({ path: test.info().outputPath(`${theme}-toolbar-hover.png`), animations: "disabled" });
-      const files = page.locator("#files-tab");
+      const files = page.locator('#file-list .file-button[aria-current="page"]');
       const selectedBefore = await sample(files);
       await files.hover();
       await expect.poll(async () => (await sample(files)).rgba).toEqual(selectedBefore.rgba);
@@ -500,12 +502,14 @@ test("hover feedback stays neutral and stable in light and dark themes", async (
       await page.mouse.move(700, 700);
       const save = page.locator("#sharing-save");
       const primaryBefore = await sample(save);
+      expect(primaryBefore.rgba[3]).toBe(0);
       await save.hover();
       await page.screenshot({ path: test.info().outputPath(`${theme}-primary-hover.png`), animations: "disabled" });
       const primaryAfter = await sample(save);
       expect(primaryAfter.bounds).toEqual(primaryBefore.bounds);
       expect(primaryAfter.color).toBe(primaryBefore.color);
-      expect(Math.max(...primaryAfter.rgba.slice(0, 3).map((value, index) => Math.abs(value - primaryBefore.rgba[index])))).toBeLessThanOrEqual(12);
+      expect(primaryAfter.rgba[3]).toBeGreaterThan(0);
+      expect(primaryAfter.rgba[3]).toBeLessThanOrEqual(24);
       await page.locator("#projects-close").click();
     }
   } finally { await library.close(); }

@@ -50,16 +50,37 @@ function languageInfo(language = "") {
   return languages.get(name.toLowerCase()) ?? { label: name, parser: null };
 }
 
+const highlights = new WeakMap<Node, readonly (readonly [number, number, string])[]>();
+
+/** An untouched code block keeps its node across edits, so it is highlighted once rather than on every keystroke. */
+function codeHighlights(node: Node) {
+  let ranges = highlights.get(node);
+  if (!ranges) {
+    const found: [number, number, string][] = [];
+    const { parser } = languageInfo(node.attrs.language);
+    if (parser && node.textContent)
+      highlightTree(parser.parse(node.textContent), codeHighlighter, (from, to, classes) => {
+        if (to > from) found.push([from, to, classes]);
+      });
+    highlights.set(node, (ranges = found));
+  }
+  return ranges;
+}
+
+/** Collect the highlights of every code block inside `node`, which starts at `position` in its document. */
+export function codeBlockDecorationsAt(node: Node, position: number, decorations: Decoration[] = []) {
+  if (node.type.name === "code_block") {
+    for (const [from, to, classes] of codeHighlights(node))
+      decorations.push(Decoration.inline(position + 1 + from, position + 1 + to, { class: classes }));
+    // Only containers can hold a code block; prose text is never walked.
+  } else if (!node.isTextblock && !node.isLeaf)
+    node.forEach((child, offset) => codeBlockDecorationsAt(child, position + 1 + offset, decorations));
+  return decorations;
+}
+
 export function codeBlockDecorations(document: Node) {
   const decorations: Decoration[] = [];
-  document.descendants((node, position) => {
-    if (node.type.name !== "code_block" || !node.textContent) return;
-    const { parser } = languageInfo(node.attrs.language);
-    if (parser)
-      highlightTree(parser.parse(node.textContent), codeHighlighter, (from, to, classes) => {
-        if (to > from) decorations.push(Decoration.inline(position + 1 + from, position + 1 + to, { class: classes }));
-      });
-  });
+  document.forEach((child, offset) => codeBlockDecorationsAt(child, offset, decorations));
   return decorations;
 }
 

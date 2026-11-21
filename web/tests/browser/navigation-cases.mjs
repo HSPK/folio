@@ -40,9 +40,8 @@ for (const theme of ["light", "dark"]) {
       const sidebar = page.locator("#sidebar");
       const outline = page.locator("#document-outline");
       const panel = page.locator("#outline-panel");
-      await expect(sidebar.getByRole("navigation", { name: "Library navigation" })).toBeVisible();
+      await expect(sidebar.getByRole("navigation", { name: "Library navigation" })).toHaveCount(0);
       await expect(sidebar.locator("#outline-tab, .sidebar-tabs")).toHaveCount(0);
-      await expect(page.locator("#files-tab")).toHaveAttribute("aria-pressed", "true");
       await expect(outline).toBeVisible();
       await expect(panel).toBeHidden();
       await expect(page.locator("#outline-rail > span")).toHaveCount(4);
@@ -58,11 +57,11 @@ for (const theme of ["light", "dark"]) {
       if (browserName !== "webkit") await page.screenshot({ path: test.info().outputPath(`navigation-${theme}-hover.png`) });
       await panel.hover();
       await expect(panel).toBeVisible();
-      await page.locator(".document-header").hover();
+      await page.locator("#more-menu > summary").hover();
       await expect(page.locator("#outline-tab")).toHaveAttribute("aria-expanded", "false");
       await expect(panel).toBeHidden();
       expect(await panel.evaluate(node => node.inert)).toBe(true);
-      await page.locator("#sidebar-toggle").click();
+      await page.locator("#sidebar-hide").click();
       await expect(sidebar).toBeHidden();
       await openOutline(page);
       await page.locator("#outline-list").getByRole("button", { name: "neo4j", exact: true }).click();
@@ -97,7 +96,6 @@ test("right outline follows reading position and supports keyboard dismissal wit
   await expect(page.locator("#outline-panel")).toBeHidden();
   await page.keyboard.press(`${primaryModifier}+Shift+1`);
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
-  await expect(page.locator("#files-tab")).toHaveAttribute("aria-pressed", "true");
   await trigger.click();
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator("#editor")).toHaveValue(source);
@@ -148,7 +146,8 @@ test.describe("touch outline", () => {
     await expect(page.locator("#sidebar")).toBeHidden();
     await page.locator("#outline-tab").tap();
     await expect(page.locator("#outline-panel")).toBeVisible();
-    await expect(page.locator("#outline-panel")).toHaveCSS("transition-duration", "0s, 0s");
+    const durations = await page.locator("#outline-panel").evaluate(node => getComputedStyle(node).transitionDuration);
+    expect(durations.split(",").every(value => parseFloat(value) === 0)).toBe(true);
     const panel = await page.locator("#outline-panel").boundingBox();
     expect(panel.x).toBeGreaterThanOrEqual(0);
     expect(panel.x + panel.width).toBeLessThanOrEqual(390);

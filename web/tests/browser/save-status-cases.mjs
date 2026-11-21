@@ -22,16 +22,15 @@ test("unsaved title marker stays visible for long titles and clears on undo and 
   await source.focus();
   await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End");
   await page.keyboard.insertText("Unfinished");
-  await expect(marker).toHaveText(" *");
+  await expect(marker).toHaveAccessibleName("Unsaved changes");
   await expect(marker).toBeVisible();
   await expect(page).toHaveTitle(`${title} * — Folio`);
   await expect(status).toBeHidden();
   await expect(status).toHaveText("");
   expect(await page.locator("#document-panes").boundingBox()).toEqual(panes);
-  expect(await page.locator("#document-name").evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);
   const markerBounds = await marker.boundingBox();
-  const titleBounds = await page.locator("#document-title").boundingBox();
-  expect(markerBounds.x + markerBounds.width).toBeLessThanOrEqual(titleBounds.x + titleBounds.width + 1);
+  const triggerBounds = await page.locator("#more-menu > summary").boundingBox();
+  expect(markerBounds.x + markerBounds.width).toBeLessThanOrEqual(triggerBounds.x + triggerBounds.width);
   await page.screenshot({ path: path.join(buildRoot, "quiet-save-status-dirty.png") });
   await page.keyboard.press(`${primaryModifier}+z`);
   await expect(marker).toBeHidden();
@@ -171,7 +170,7 @@ test("save failures keep the title marker and explicit error feedback", async ({
     : route.continue());
   await page.locator("#editor").fill("# Unsaved after failure\n");
   await page.keyboard.press("Control+s");
-  await expect(page.locator("#document-message")).toContainText("Could not save:");
+  await expect(page.locator("#document-message")).toContainText("Save failed:");
   await expect(page.locator("#document-message")).toBeVisible();
   await expect(page.locator("#document-title")).toHaveText("README.md *");
   await expect(page).toHaveTitle("README.md * — Folio");

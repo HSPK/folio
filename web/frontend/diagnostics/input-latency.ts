@@ -72,8 +72,7 @@ export function createInputLatencyRecorder({
   let awaitingModel: InputSample[] = [];
   let awaitingFrame: InputSample[] = [];
 
-  const inEditor = (target: unknown) =>
-    target instanceof Element && Boolean(target.closest(EDITORS)) && !target.closest(".folio-metadata-source");
+  const inEditor = (target: unknown) => target instanceof Element && Boolean(target.closest(EDITORS));
   const watch = (type: string, callback: (entries: PerformanceEntry[]) => void) => {
     if (!supported.includes(type)) return;
     const owner = lifetime;
@@ -125,6 +124,13 @@ export function createInputLatencyRecorder({
     retain(awaitingFrame, sample);
     lastInput = now;
   };
+  // Plain typing in the Live editor is applied by the editor right after its key event, so it never
+  // raises beforeinput; its keypress is the equivalent moment.
+  const keyPress = (event: KeyboardEvent) => {
+    if (!event.charCode || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+    if (!(event.target instanceof Element) || !event.target.closest(".ProseMirror")) return;
+    beforeInput(Object.assign(event, { inputType: "insertText" }) as unknown as InputEvent);
+  };
   const modelInput = () => {
     if (!recording || !awaitingModel.length) return;
     const now = performance.now();
@@ -155,6 +161,7 @@ export function createInputLatencyRecorder({
     });
     try {
       owner.listen(document, "beforeinput", beforeInput, true);
+      owner.listen(document, "keypress", keyPress, true);
       owner.listen(document, "visibilitychange", visibility);
       owner.listen(textarea, "input", modelInput);
       watch("longtask", (entries) => {

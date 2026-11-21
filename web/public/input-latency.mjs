@@ -80,7 +80,7 @@ function createInputLatencyRecorder({
   let since = performance.now();
   let awaitingModel = [];
   let awaitingFrame = [];
-  const inEditor = (target) => target instanceof Element && Boolean(target.closest(EDITORS)) && !target.closest(".folio-metadata-source");
+  const inEditor = (target) => target instanceof Element && Boolean(target.closest(EDITORS));
   const watch = (type, callback) => {
     if (!supported.includes(type)) return;
     const owner = lifetime;
@@ -131,6 +131,11 @@ function createInputLatencyRecorder({
     retain(awaitingFrame, sample);
     lastInput = now;
   };
+  const keyPress = (event) => {
+    if (!event.charCode || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+    if (!(event.target instanceof Element) || !event.target.closest(".ProseMirror")) return;
+    beforeInput(Object.assign(event, { inputType: "insertText" }));
+  };
   const modelInput = () => {
     if (!recording || !awaitingModel.length) return;
     const now = performance.now();
@@ -160,6 +165,7 @@ function createInputLatencyRecorder({
     });
     try {
       owner.listen(document, "beforeinput", beforeInput, true);
+      owner.listen(document, "keypress", keyPress, true);
       owner.listen(document, "visibilitychange", visibility);
       owner.listen(textarea, "input", modelInput);
       watch("longtask", (entries) => {
