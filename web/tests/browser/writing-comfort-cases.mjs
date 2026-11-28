@@ -9,6 +9,7 @@ async function capture(page, name, browserName) {
 }
 
 test("link selection stays native and editing requires an explicit action", async ({ page, browserName }) => {
+  test.setTimeout(90_000);
   const source = "Visit https://example.com/guide for details.\n\nContinue writing here.\n";
   await openFixture(page, "Link-selection.md", source);
   const link = page.locator(".ProseMirror a");
@@ -137,7 +138,7 @@ test("link selection stays native and editing requires an explicit action", asyn
       await control.mouse.move(clonedBox.x + clonedBox.width - 15, clonedBox.y + clonedBox.height / 2, { steps: 12 });
       state.withoutApplicationScripts = await control.evaluate(() => document.getSelection().toString());
       await control.mouse.up();
-      if (!state.withoutApplicationScripts) {
+      if (!state.withoutApplicationScripts || process.env.FOLIO_NATIVE_CSS_DIAGNOSTICS) {
         await control.evaluate(() => {
           for (const sheet of document.styleSheets) sheet.disabled = true;
         });
@@ -148,6 +149,62 @@ test("link selection stays native and editing requires an explicit action", asyn
         await control.mouse.move(bounds.x + bounds.width - 15, bounds.y + bounds.height / 2, { steps: 12 });
         state.withoutScriptsOrStyles = await control.evaluate(() => document.getSelection().toString());
         await control.mouse.up();
+        const select = async () => {
+          await control.evaluate(() => document.getSelection().removeAllRanges());
+          try { await clonedLink.scrollIntoViewIfNeeded({ timeout: 1000 }); } catch { return ""; }
+          const bounds = await clonedLink.boundingBox();
+          if (!bounds?.width || !bounds.height) return "";
+          await control.mouse.move(bounds.x + 12, bounds.y + bounds.height / 2);
+          await control.mouse.down();
+          try {
+            await control.mouse.move(bounds.x + bounds.width - 15, bounds.y + bounds.height / 2, { steps: 12 });
+            return await control.evaluate(() => document.getSelection().toString());
+          } finally { await control.mouse.up(); }
+        };
+        const sheets = await control.evaluate(() => [...document.styleSheets].map((sheet, index) => {
+          sheet.disabled = false;
+          return { index, href: sheet.href };
+        }));
+        state.cssTrials = [];
+        for (const sheet of sheets) {
+          await control.evaluate(index => { document.styleSheets[index].disabled = true; }, sheet.index);
+          const text = await select();
+          state.cssTrials.push({ ...sheet, text });
+          await control.evaluate(index => { document.styleSheets[index].disabled = false; }, sheet.index);
+          if (!text) continue;
+          const count = await control.evaluate(index => {
+            const rules = [];
+            const visit = list => {
+              for (const rule of list) {
+                if (rule.style) rules.push({ style: rule.style, text: rule.style.cssText, rule: rule.cssText });
+                if (rule.cssRules) visit(rule.cssRules);
+                else if (rule.styleSheet) visit(rule.styleSheet.cssRules);
+              }
+            };
+            visit(document.styleSheets[index].cssRules);
+            window.nativeCssRules = rules;
+            return rules.length;
+          }, sheet.index);
+          const trial = async indices => {
+            await control.evaluate(indices => {
+              const disabled = new Set(indices);
+              window.nativeCssRules.forEach((rule, index) => { rule.style.cssText = disabled.has(index) ? "" : rule.text; });
+            }, indices);
+            return Boolean(await select());
+          };
+          let disabled = Array.from({ length: count }, (_, index) => index);
+          if (await trial(disabled)) {
+            while (disabled.length > 1) {
+              const middle = Math.ceil(disabled.length / 2);
+              const left = disabled.slice(0, middle), right = disabled.slice(middle);
+              if (await trial(left)) disabled = left;
+              else if (await trial(right)) disabled = right;
+              else break;
+            }
+            state.causalRules = await control.evaluate(indices => indices.map(index => window.nativeCssRules[index].rule), disabled);
+          }
+          break;
+        }
       }
       await control.setContent(`<style>p{width:max-content;font:17px sans-serif}</style>
         <p contenteditable="true"><a id="link" href="https://example.com/guide" draggable="false">https://example.com/guide</a></p>
