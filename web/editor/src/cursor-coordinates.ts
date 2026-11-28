@@ -45,19 +45,32 @@ export function syncViewSelection(view: EditorView) {
   }
 }
 
-export function syncNavigationKeyUp(view: EditorView, event: KeyboardEvent) {
+function syncNavigationSelection(view: EditorView, event: KeyboardEvent) {
   if (
     event.isComposing ||
     view.composing ||
     !/^(Arrow(Left|Right|Up|Down)|Home|End|PageUp|PageDown|Meta|Control)$/.test(event.key)
   )
     return false;
-  // macOS suppresses navigation keyups while Meta is held, so also observe modifier release.
-  queueMicrotask(() => {
-    if (!view.isDestroyed && view.hasFocus() && view.state.selection instanceof TextSelection) syncViewSelection(view);
-  });
+  const sync = () => {
+    if (
+      (event.type !== "keydown" || !event.defaultPrevented) &&
+      !view.isDestroyed &&
+      view.hasFocus() &&
+      view.state.selection instanceof TextSelection
+    )
+      syncViewSelection(view);
+  };
+  // Keyup is prompt when available; the native default action also needs a fallback when it is omitted.
+  if (event.type === "keyup") queueMicrotask(sync);
+  else if (event.key !== "Meta" && event.key !== "Control") setTimeout(sync, 0);
   return false;
 }
+
+export const nativeNavigationEvents = {
+  keydown: syncNavigationSelection,
+  keyup: syncNavigationSelection,
+};
 
 export function focusEditorView(view: EditorView, selection: Selection | null = null) {
   const positions = new Map<Element, { top: number; left: number }>();

@@ -37,9 +37,7 @@ test("native navigation immediately after focusing cannot be undone by delayed f
     };
     window.holdFocusSelection = event => event.stopImmediatePropagation();
     document.addEventListener("selectionchange", window.holdFocusSelection, true);
-    window.holdFocusKeyUp = event => {
-      if (event.key !== "Meta" && event.key !== "Control") event.stopImmediatePropagation();
-    };
+    window.holdFocusKeyUp = event => event.stopImmediatePropagation();
     document.addEventListener("keyup", window.holdFocusKeyUp, true);
   });
   try {
@@ -51,6 +49,13 @@ test("native navigation immediately after focusing cannot be undone by delayed f
     });
     await page.mouse.click(position.x, position.y);
     await page.keyboard.press(documentEndShortcut);
+    expect(await page.locator(".ProseMirror code").evaluate(node => {
+      const selection = document.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      range.setEnd(selection.focusNode, selection.focusOffset);
+      return range.toString();
+    })).toBe("const a = 1;\nconst b = 2;");
     expect(await page.evaluate(() => window.focusCallbacks.length)).toBeGreaterThan(0);
     await page.evaluate(() => {
       window.setTimeout = window.nativeFocusTimeout;
