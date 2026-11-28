@@ -46,9 +46,13 @@ export function syncViewSelection(view: EditorView) {
 }
 
 export function syncNavigationKeyUp(view: EditorView, event: KeyboardEvent) {
-  if (event.isComposing || view.composing || !/^(Arrow(Left|Right|Up|Down)|Home|End|PageUp|PageDown)$/.test(event.key))
+  if (
+    event.isComposing ||
+    view.composing ||
+    !/^(Arrow(Left|Right|Up|Down)|Home|End|PageUp|PageDown|Meta|Control)$/.test(event.key)
+  )
     return false;
-  // Publish native navigation before delayed focus repair; leave structural selections intact.
+  // macOS suppresses navigation keyups while Meta is held, so also observe modifier release.
   queueMicrotask(() => {
     if (!view.isDestroyed && view.hasFocus() && view.state.selection instanceof TextSelection) syncViewSelection(view);
   });

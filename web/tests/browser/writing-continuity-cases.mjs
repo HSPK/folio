@@ -37,6 +37,10 @@ test("native navigation immediately after focusing cannot be undone by delayed f
     };
     window.holdFocusSelection = event => event.stopImmediatePropagation();
     document.addEventListener("selectionchange", window.holdFocusSelection, true);
+    window.holdFocusKeyUp = event => {
+      if (event.key !== "Meta" && event.key !== "Control") event.stopImmediatePropagation();
+    };
+    document.addEventListener("keyup", window.holdFocusKeyUp, true);
   });
   try {
     const position = await page.locator(".ProseMirror code").evaluate(node => {
@@ -52,6 +56,7 @@ test("native navigation immediately after focusing cannot be undone by delayed f
       window.setTimeout = window.nativeFocusTimeout;
       for (const callback of window.focusCallbacks) callback();
       document.removeEventListener("selectionchange", window.holdFocusSelection, true);
+      document.removeEventListener("keyup", window.holdFocusKeyUp, true);
     });
     await page.keyboard.insertText("!");
     await expect(page.locator(".ProseMirror code")).toHaveJSProperty("textContent", "const a = 1;\nconst b = 2;!");
@@ -59,6 +64,7 @@ test("native navigation immediately after focusing cannot be undone by delayed f
     await page.evaluate(() => {
       window.setTimeout = window.nativeFocusTimeout;
       document.removeEventListener("selectionchange", window.holdFocusSelection, true);
+      document.removeEventListener("keyup", window.holdFocusKeyUp, true);
     });
   }
 });
