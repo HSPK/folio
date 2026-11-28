@@ -41,21 +41,27 @@ test("native navigation immediately after focusing cannot be undone by delayed f
     document.addEventListener("keyup", window.holdFocusKeyUp, true);
   });
   try {
-    const position = await page.locator(".ProseMirror code").evaluate(node => {
+    const code = page.locator(".ProseMirror code");
+    // Hover initializes the deferred code viewport before measuring its text.
+    await code.hover();
+    const position = await code.evaluate(node => {
       const range = document.createRange();
       range.selectNodeContents(node);
       const first = range.getClientRects()[0];
-      return { x: Math.round(first.left + 3), y: Math.round(first.top + first.height / 2) };
+      const bounds = node.getBoundingClientRect();
+      return { x: Math.round(first.left - bounds.left + 3), y: Math.round(first.top - bounds.top + first.height / 2) };
     });
-    await page.mouse.click(position.x, position.y);
+    await code.click({ position });
+    await expect(page.locator(".ProseMirror")).toBeFocused();
     await page.keyboard.press(documentEndShortcut);
-    expect(await page.locator(".ProseMirror code").evaluate(node => {
+    const caret = await code.evaluate(node => {
       const selection = document.getSelection();
       const range = document.createRange();
       range.selectNodeContents(node);
       range.setEnd(selection.focusNode, selection.focusOffset);
-      return range.toString();
-    })).toBe("const a = 1;\nconst b = 2;");
+      return { prefix: range.toString(), active: document.activeElement?.tagName, offset: selection.focusOffset };
+    });
+    expect(caret.prefix, JSON.stringify(caret)).toBe("const a = 1;\nconst b = 2;");
     expect(await page.evaluate(() => window.focusCallbacks.length)).toBeGreaterThan(0);
     await page.evaluate(() => {
       window.setTimeout = window.nativeFocusTimeout;
