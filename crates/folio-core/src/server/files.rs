@@ -234,20 +234,18 @@ impl Root {
         check_active()?;
         let mut staged = StagedFile::write(&resolved.parent, &bytes, Some(&metadata))?;
 
-        // An editor may have replaced the directory entry while the staging file was written.
-        let mut latest = resolved
-            .parent
-            .open_regular(&resolved.name)
-            .map_err(deleted_conflict)?;
-        let latest_bytes = read_limited(&mut latest, MAX_DOCUMENT_BYTES, "Markdown files")
-            .map_err(deleted_conflict)?;
-        check_version(&latest_bytes, expected_version)?;
-        check_active()?;
-        // Windows replacement requires closing the destination read handles.
-        // The parent directory chain remains pinned throughout the rename.
-        drop(latest);
         drop(original);
-        staged.commit(&resolved.name, true)?;
+        staged.commit(&resolved.name, true, || {
+            check_active()?;
+            let mut latest = resolved
+                .parent
+                .open_regular(&resolved.name)
+                .map_err(deleted_conflict)?;
+            let latest_bytes = read_limited(&mut latest, MAX_DOCUMENT_BYTES, "Markdown files")
+                .map_err(deleted_conflict)?;
+            check_version(&latest_bytes, expected_version)?;
+            check_active()
+        })?;
         drop(staged);
         resolved.parent.sync()?;
         Ok(bytes)
@@ -294,8 +292,7 @@ impl Root {
             }
         }
         let mut staged = StagedFile::write(&resolved.parent, content.as_bytes(), None)?;
-        check_active()?;
-        staged.commit(&resolved.name, false)?;
+        staged.commit(&resolved.name, false, check_active)?;
         drop(staged);
         resolved.parent.sync()?;
         if let Ok(mut cache) = self.document_cache.lock() {
@@ -549,11 +546,34 @@ impl StagedFile {
         ))
     }
 
-    fn commit(&mut self, destination: &std::ffi::OsStr, replace: bool) -> Result<(), ApiError> {
-        let source_retained = self
-            .parent
-            .commit(&self.name, destination, replace)
-            .map_err(|error| ApiError::io("Could not atomically save the document", error))?;
+    fn commit(
+        &mut self,
+        destination: &std::ffi::OsStr,
+        replace: bool,
+        validate: impl Fn() -> Result<(), ApiError>,
+    ) -> Result<(), ApiError> {
+        let mut attempt = 0;
+        let source_retained = loop {
+            validate()?;
+            match self.parent.commit(&self.name, destination, replace) {
+                Ok(retained) => break retained,
+                Err(error)
+                    if cfg!(windows)
+                        && matches!(error.raw_os_error(), Some(5 | 32 | 33))
+                        && attempt < 4 =>
+                {
+                    // Windows scanners can briefly deny rename even with delete sharing.
+                    std::thread::sleep(std::time::Duration::from_millis(25 << attempt));
+                    attempt += 1;
+                }
+                Err(error) => {
+                    return Err(ApiError::io(
+                        "Could not atomically save the document",
+                        error,
+                    ));
+                }
+            }
+        };
         // A no-clobber Unix publication links the staged inode into place. Keep
         // ownership of the staging name until Drop unlinks it, even after success.
         self.cleanup_needed = source_retained;

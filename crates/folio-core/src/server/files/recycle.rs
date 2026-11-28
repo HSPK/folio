@@ -234,8 +234,7 @@ impl Root {
         }
         let resolved = self.resolve(path)?;
         let mut staged = StagedFile::write(&resolved.parent, bytes, None)?;
-        check()?;
-        staged.commit(&resolved.name, false)?;
+        staged.commit(&resolved.name, false, check)?;
         resolved.parent.sync()?;
         Ok(())
     }
