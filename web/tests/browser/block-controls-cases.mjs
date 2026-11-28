@@ -7,6 +7,22 @@ const source = 'Intro **kept**.\n\n```rust\nfn main() {\n    kept();\n}\n```\n\n
 const blockMenu = page => page.getByRole("menu", { name: "Block actions", exact: true });
 const grip = page => page.locator(".folio-block-grip");
 
+async function clickCaret(paragraph, offset) {
+  const caret = await paragraph.evaluate((node, offset) => {
+    const range = node.ownerDocument.createRange();
+    range.setStart(node.firstChild, offset);
+    range.collapse(true);
+    const rect = range.getBoundingClientRect();
+    const bounds = node.getBoundingClientRect();
+    return { x: Math.round(rect.left - bounds.left), y: Math.round(rect.top + rect.height / 2 - bounds.top) };
+  }, offset);
+  await paragraph.click({ position: caret });
+  await expect.poll(() => paragraph.evaluate(node => {
+    const selection = node.ownerDocument.getSelection();
+    return selection.anchorNode === node.firstChild ? selection.anchorOffset : null;
+  })).toBe(offset);
+}
+
 for (const width of [1440, 651]) {
   test(`desktop block controls activate only on click and stay with the clicked block at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
@@ -161,8 +177,7 @@ for (const [selector, label] of [
     await openFixture(page, `Block-toggle-${label.replaceAll(" ", "-")}.md`, source);
     const editor = page.locator(".ProseMirror");
     const paragraph = editor.locator(":scope > p").first();
-    await paragraph.click();
-    await paragraph.evaluate(node => node.ownerDocument.getSelection().setBaseAndExtent(node.firstChild, 2, node.firstChild, 2));
+    await clickCaret(paragraph, 2);
     const menu = await openBlock(page, page.locator(selector), label);
     await expect(grip(page)).toHaveAttribute("aria-expanded", "true");
     await expect(editor.locator(".ProseMirror-selectednode, .selectedCell")).toHaveCount(0);
@@ -348,11 +363,7 @@ for (const [label, body, selector] of [
       await openFixture(page, `Menu-focus-${label.replaceAll(" ", "-")}-${dismissBy}.md`, source);
       const editor = page.locator(".ProseMirror");
       const origin = editor.locator(":scope > p").first();
-      await origin.click();
-      await origin.evaluate(node => new Promise(resolve => {
-        node.ownerDocument.addEventListener("selectionchange", () => requestAnimationFrame(resolve), { once: true });
-        node.ownerDocument.getSelection().setBaseAndExtent(node.firstChild, 2, node.firstChild, 2);
-      }));
+      await clickCaret(origin, 2);
       await (await openBlock(page, origin, "Text")).press("Escape");
       const block = page.locator(selector);
       await block.scrollIntoViewIfNeeded();

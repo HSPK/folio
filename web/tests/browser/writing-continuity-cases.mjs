@@ -78,9 +78,9 @@ test("a trailing code block can be left by pointer, Arrow Down and a second empt
   await page.keyboard.press(documentEndShortcut);
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
-  await expect(code).toHaveText("const a = 1;\nconst b = 2;!\n\n");
+  await expect(code).toHaveJSProperty("textContent", "const a = 1;\nconst b = 2;!\n\n");
   await page.keyboard.press("Enter");
-  await expect(code).toHaveText("const a = 1;\nconst b = 2;!");
+  await expect(code).toHaveJSProperty("textContent", "const a = 1;\nconst b = 2;!");
   await page.keyboard.insertText("After enter");
   await expect(page.locator(".ProseMirror > p").nth(0)).toHaveText("After enter");
   await expect(page.locator("#editor")).toHaveValue(

@@ -173,6 +173,7 @@ test("cached Markdown bodies keep per-file links, fresh history and external cha
     await expect(page.locator("#editor")).toHaveValue(source);
     await page.locator('#file-list button[data-path="Cache-scope-b/note.md"]').click();
     await expect(page.locator(".ProseMirror h1")).toHaveText("Shared body");
+    await expect(page.locator(".ProseMirror a")).not.toHaveAttribute("href", firstLink);
     await page.locator(".ProseMirror").focus();
     await page.keyboard.press(`${primaryModifier}+Shift+z`);
     await expect(page.locator("#editor")).toHaveValue(source);
