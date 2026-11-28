@@ -10,7 +10,11 @@ fn startup_element(
     policy: &HeaderValue,
 ) -> (String, Option<StartPagePolicy>) {
     let (script, hash) = slot.get_or_init(|| {
-        let script = src.replace("\r\n", "\n");
+        let script = format!(
+            "{}\n{src}",
+            include_str!("../../../../../web/public/startup.js")
+        )
+        .replace("\r\n", "\n");
         let hash = STANDARD.encode(Sha256::digest(script.as_bytes()));
         (script, hash)
     });
@@ -51,7 +55,8 @@ pub(super) async fn index(
             &state.shared.content_policy,
         )
     } else {
-        (String::new(), None)
+        static PLAIN: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+        startup_element("", &PLAIN, "", &state.shared.content_policy)
     };
     let page = include_str!(concat!(env!("OUT_DIR"), "/index.html"))
         .replace(

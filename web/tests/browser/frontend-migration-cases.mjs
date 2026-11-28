@@ -49,16 +49,66 @@ test("native scrollbar visuals stay hidden while settings still scroll", async (
 });
 
 test("startup shows one centered heading before the app loads", async ({ page }) => {
-  await page.route(/\/app\.mjs(?:\?|$)/, route => route.abort());
-  await page.reload();
-  const status = page.getByRole("status");
-  await expect(status).toHaveText("Opening Folio");
-  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
-    await page.setViewportSize(viewport);
-    const box = await status.getByRole("heading").boundingBox();
-    expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThan(1);
-    expect(Math.abs(box.y + box.height / 2 - viewport.height / 2)).toBeLessThan(1);
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  await page.route(/\/app\.mjs(?:\?|$)/, async route => { await pending; await route.continue(); });
+  try {
+    await page.reload({ waitUntil: "commit" });
+    const status = page.getByRole("status");
+    await expect(status).toHaveText("Opening Folio");
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      const box = await status.getByRole("heading").boundingBox();
+      expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThan(1);
+      expect(Math.abs(box.y + box.height / 2 - viewport.height / 2)).toBeLessThan(1);
+    }
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
   }
+});
+
+test("startup recovers a transient module failure and offers a retry after persistent failure", async ({ page }) => {
+  const documentUrl = page.url();
+  let failures = 1;
+  let requests = 0;
+  await page.route(/\/app\.mjs(?:\?|$)/, route => {
+    requests++;
+    return failures-- > 0 ? route.abort("failed") : route.continue();
+  });
+  await page.reload();
+  await expect(page.locator(".ProseMirror[contenteditable=true]")).toBeVisible();
+  await expect(page.locator("#folio-boot")).toHaveCount(0);
+  expect(requests).toBe(2);
+  for (const shared of [false, true]) {
+    failures = Infinity;
+    requests = 0;
+    await page.goto(shared ? new URL("/share?share=invalid", page.url()).href : page.url());
+    const retry = page.getByRole("button", { name: "Try again", exact: true });
+    await expect(page.getByRole("heading", { name: "Folio couldn't open", exact: true })).toBeVisible();
+    await expect(retry).toBeVisible();
+    expect(requests).toBe(2);
+    if (shared) await page.unrouteAll({ behavior: "wait" });
+    else {
+      failures = 0;
+      await retry.click();
+      await expect(page.locator(".ProseMirror[contenteditable=true]")).toBeVisible();
+      await expect(page.locator("#folio-boot")).toHaveCount(0);
+      expect(requests).toBe(3);
+    }
+  }
+  await page.route(/\/model\.mjs(?:\?|$)/, route => route.abort("failed"));
+  await page.goto(documentUrl);
+  const retry = page.getByRole("button", { name: "Try again", exact: true });
+  await expect(retry).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("startup-retry-mobile-dark.png") });
+  await page.unrouteAll({ behavior: "wait" });
+  await retry.click();
+  await expect(page.locator(".ProseMirror[contenteditable=true]")).toBeVisible();
+  await expect(page.locator("#folio-boot")).toHaveCount(0);
 });
 
 test("startup mounts with already-loaded stylesheets and survives cached reloads", async ({ page }) => {
