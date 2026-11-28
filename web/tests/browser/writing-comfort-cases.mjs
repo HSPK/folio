@@ -21,9 +21,9 @@ test("link selection stays native and editing requires an explicit action", asyn
   await page.mouse.move(box.x + 12, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width - 15, box.y + box.height / 2, { steps: 12 });
-  const selected = await page.evaluate(() => document.getSelection().toString());
-  expect(selected.length).toBeGreaterThan(5);
   await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => document.getSelection().toString().length)).toBeGreaterThan(5);
+  const selected = await page.evaluate(() => document.getSelection().toString());
   await expect(page.locator(".folio-link-dialog")).toBeHidden();
   await expect(page.getByRole("toolbar", { name: "Link actions" })).toBeHidden();
   expect(await page.evaluate(() => document.getSelection().toString())).toBe(selected);

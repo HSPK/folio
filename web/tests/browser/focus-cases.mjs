@@ -47,7 +47,7 @@ test("keyboard focus uses shared rounded surfaces across menus, lists and settin
       }, strength);
       for (const selector of [
         "#sidebar-hide", "#more-menu > button",
-        "#new-menu > button", "#file-list .file-button",
+        "#new-menu > button", "#file-list .file-button:visible",
       ]) {
         await expectQuietFocus(page, page.locator(selector).first());
       }
