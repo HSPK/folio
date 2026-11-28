@@ -31,6 +31,14 @@ test("link selection stays native and editing requires an explicit action", asyn
         return Reflect.apply(original, this, args);
       };
     }
+    new MutationObserver(records => window.linkSelectionEvents.push({
+      type: "mutation", time: performance.now(),
+      changes: records.map(record => ({
+        type: record.type, target: record.target.nodeName, attribute: record.attributeName,
+        added: [...record.addedNodes].map(node => node.nodeName),
+        removed: [...record.removedNodes].map(node => node.nodeName),
+      })),
+    })).observe(node.closest(".ProseMirror"), { subtree: true, childList: true, characterData: true, attributes: true });
     for (const type of ["pointerdown", "mousedown", "mousemove", "mouseup", "selectstart", "dragstart", "selectionchange"]) {
       document.addEventListener(type, event => {
         const selection = document.getSelection();
@@ -65,6 +73,28 @@ test("link selection stays native and editing requires an explicit action", asyn
       body: JSON.stringify(await page.evaluate(() => window.linkSelectionEvents), null, 2),
       contentType: "application/json",
     });
+    if (!selected) {
+      await page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.id = "native-link-probe";
+        probe.contentEditable = "true";
+        probe.style.cssText = "position:fixed;left:20px;top:20px;z-index:2147483647;padding:20px;background:white;color:black;font:17px sans-serif";
+        probe.innerHTML = 'Visit <a href="https://example.com/guide" draggable="false">https://example.com/guide</a> for details.';
+        document.body.append(probe);
+      });
+      const probe = page.locator("#native-link-probe a");
+      await probe.click();
+      const bounds = await probe.boundingBox();
+      await page.mouse.move(bounds.x + 12, bounds.y + bounds.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(bounds.x + bounds.width - 15, bounds.y + bounds.height / 2, { steps: 12 });
+      const plain = await page.evaluate(() => ({
+        text: document.getSelection().toString(),
+        anchor: document.getSelection().anchorOffset, focus: document.getSelection().focusOffset,
+      }));
+      await page.mouse.up();
+      await test.info().attach("plain-native-link", { body: JSON.stringify(plain), contentType: "application/json" });
+    }
   }
   await expect(page.locator(".folio-link-dialog")).toBeHidden();
   await expect(page.getByRole("toolbar", { name: "Link actions" })).toBeHidden();
