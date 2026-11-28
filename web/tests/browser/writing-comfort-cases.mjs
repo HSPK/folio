@@ -31,6 +31,13 @@ test("link selection stays native and editing requires an explicit action", asyn
         return Reflect.apply(original, this, args);
       };
     }
+    for (const [prototype, method] of [[HTMLElement.prototype, "focus"], [Event.prototype, "preventDefault"]]) {
+      const original = prototype[method];
+      prototype[method] = function (...args) {
+        window.linkSelectionEvents.push({ type: `invoke:${method}`, event: this.type, stack: new Error().stack });
+        return Reflect.apply(original, this, args);
+      };
+    }
     new MutationObserver(records => window.linkSelectionEvents.push({
       type: "mutation", time: performance.now(),
       changes: records.map(record => ({
@@ -78,6 +85,15 @@ test("link selection stays native and editing requires an explicit action", asyn
         body: document.body.outerHTML.slice(0, document.body.outerHTML.indexOf(">") + 1),
         userSelect: getComputedStyle(document.body).userSelect,
       }));
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Emulation.setScriptExecutionDisabled", { value: true });
+      await page.mouse.move(box.x + 12, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width - 15, box.y + box.height / 2, { steps: 12 });
+      state.withoutScripts = await page.evaluate(() => document.getSelection().toString());
+      await page.mouse.up();
+      await cdp.send("Emulation.setScriptExecutionDisabled", { value: false });
+      await cdp.detach();
       const control = await page.context().newPage();
       await control.setContent(`<style>p{width:max-content;font:17px sans-serif}</style>
         <p contenteditable="true"><a id="link" href="https://example.com/guide" draggable="false">https://example.com/guide</a></p>
