@@ -79,11 +79,13 @@ test("link selection stays native and editing requires an explicit action", asyn
   await expect(page.getByRole("toolbar", { name: "Link actions" })).toBeVisible();
   await capture(page, "lightweight-link-actions", browserName);
   const box = await link.boundingBox();
-  await page.mouse.move(box.x + 12, box.y + box.height / 2);
+  const start = Math.round(box.x + 12), end = Math.round(box.x + box.width - 15), y = Math.round(box.y + box.height / 2);
+  await page.mouse.move(start, y);
   await page.mouse.down();
   let selected;
   try {
-    await page.mouse.move(box.x + box.width - 15, box.y + box.height / 2, { steps: 12 });
+    for (let step = 1; step <= 12; step++)
+      await page.mouse.move(Math.round(start + (end - start) * step / 12), y);
     await expect.poll(() => page.evaluate(() => document.getSelection().toString().length)).toBeGreaterThan(5);
     selected = await page.evaluate(() => document.getSelection().toString());
   } finally {
@@ -149,16 +151,18 @@ test("link selection stays native and editing requires an explicit action", asyn
         await control.mouse.move(bounds.x + bounds.width - 15, bounds.y + bounds.height / 2, { steps: 12 });
         state.withoutScriptsOrStyles = await control.evaluate(() => document.getSelection().toString());
         await control.mouse.up();
-        const select = async (offset = 0, rounded = false) => {
+        const select = async (rounding = "none") => {
           await control.evaluate(() => document.getSelection().removeAllRanges());
           try { await clonedLink.scrollIntoViewIfNeeded({ timeout: 1000 }); } catch { return ""; }
           const bounds = await clonedLink.boundingBox();
           if (!bounds?.width || !bounds.height) return "";
-          const y = rounded ? Math.round(bounds.y + bounds.height / 2 + offset) : bounds.y + bounds.height / 2 + offset;
-          await control.mouse.move(bounds.x + 12, y);
+          const pixel = rounding === "none" ? value => value : value => Math[rounding](value);
+          const y = pixel(bounds.y + bounds.height / 2);
+          await control.mouse.move(pixel(bounds.x + 12), y);
           await control.mouse.down();
           try {
-            await control.mouse.move(bounds.x + bounds.width - 15, y, { steps: 12 });
+            for (let step = 1; step <= 12; step++)
+              await control.mouse.move(pixel(bounds.x + 12 + (bounds.width - 27) * step / 12), y);
             return await control.evaluate(() => document.getSelection().toString());
           } finally { await control.mouse.up(); }
         };
@@ -219,6 +223,9 @@ test("link selection stays native and editing requires an explicit action", asyn
                 state.propertyTrials.push({ property, text: await select() });
               }
               await control.evaluate(() => window.nativeCssRules.forEach(rule => { rule.style.cssText = rule.text; }));
+              state.pixelPointer = {};
+              for (const rounding of ["none", "floor", "round", "ceil"])
+                state.pixelPointer[rounding] = await select(rounding);
               state.typography = await clonedLink.evaluate(node => {
                 const style = getComputedStyle(node);
                 return { family: style.fontFamily, size: style.fontSize, lineHeight: style.lineHeight };
