@@ -1,13 +1,19 @@
 import type { DocumentPayload } from "./document";
-import { normalizeNotePath } from "./paths";
+import { noteName } from "./paths";
+import { expandedPageUrl, isPublicPage } from "./page-links";
+export * from "./page-links";
 
 const resourceIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 export const isResourceId = (value: unknown): value is string =>
   typeof value === "string" && resourceIdPattern.test(value);
 
+export function noteDisplayTitle(document: Pick<DocumentPayload, "title" | "path">) {
+  return document.title?.trim() || noteName(document.path);
+}
+
 export function browserDocumentTitle(document: Pick<DocumentPayload, "title" | "path"> | null, modified = false) {
   if (!document) return "Folio";
-  const title = document.title?.trim() || normalizeNotePath(document.path).split("/").at(-1);
+  const title = noteDisplayTitle(document);
   return `${title}${modified ? " *" : ""} — Folio`;
 }
 
@@ -25,7 +31,8 @@ export function readLaunchUrl(value: string | URL) {
 }
 
 export function readNoteRoute(value: string | URL) {
-  const url = new URL(value);
+  const url = expandedPageUrl(value);
+  if (/^\/[np]\//.test(url.pathname)) throw new Error("Invalid short link.");
   if (url.searchParams.has("file") || url.searchParams.has("path"))
     throw new Error("Path-based document URLs are no longer supported.");
   const id = url.searchParams.get("document");
@@ -35,10 +42,11 @@ export function readNoteRoute(value: string | URL) {
 
 export function makeNoteUrl(value: string | URL, id: string | null, hash = "") {
   if (id != null && !isResourceId(id)) throw new Error("A document URL requires a UUID v7.");
-  const url = new URL(value);
+  const url = expandedPageUrl(value);
   url.searchParams.delete("file");
+  url.searchParams.delete("asset");
   url.searchParams.delete("path");
-  if (id && url.pathname !== "/share") url.searchParams.set("document", id);
+  if (id && !isPublicPage(url.pathname)) url.searchParams.set("document", id);
   else url.searchParams.delete("document");
   url.hash = hash;
   return url;

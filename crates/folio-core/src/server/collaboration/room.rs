@@ -1,11 +1,12 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
     time::Instant,
 };
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use yrs::updates::decoder::Decode;
 use yrs::{Doc, GetString, OffsetKind, Options, ReadTxn, StateVector, Text, Transact, Update};
 
@@ -34,8 +35,7 @@ pub(super) struct Peer {
 #[derive(Clone)]
 pub(super) enum Event {
     Update(Arc<[u8]>),
-    Presence(Vec<Peer>),
-    Saved(files::Document),
+    Saved(Arc<files::Document>),
     Error(String),
     Reset(String),
 }
@@ -44,9 +44,10 @@ pub(super) struct Room {
     pub id: String,
     pub path: String,
     pub doc: Doc,
-    pub saved: files::Document,
+    pub saved: Arc<files::Document>,
     pub peers: BTreeMap<String, Peer>,
     pub events: broadcast::Sender<Event>,
+    pub presence_changed: watch::Sender<()>,
     pub dirty: bool,
     pub changed_at: Instant,
     pub failed: bool,
@@ -56,6 +57,8 @@ pub(super) struct Room {
     pub(super) pending_bytes: usize,
     pub(super) pending_updates: usize,
     pub(super) lease: Option<std::fs::File>,
+    pub(super) last_disk_check: Option<Instant>,
+    pub(super) disk_stamp: Option<String>,
     traffic_window: Instant,
     traffic_bytes: usize,
 }
@@ -76,9 +79,10 @@ impl Room {
             id: super::random_id()?,
             path: saved.path.clone(),
             doc,
-            saved,
+            saved: Arc::new(saved),
             peers: BTreeMap::new(),
             events: broadcast::channel(8).0,
+            presence_changed: watch::channel(()).0,
             dirty: false,
             changed_at: Instant::now(),
             failed: false,
@@ -88,6 +92,8 @@ impl Room {
             pending_bytes: 0,
             pending_updates: 0,
             lease: None,
+            last_disk_check: None,
+            disk_stamp: None,
             traffic_window: Instant::now(),
             traffic_bytes: 0,
         })
@@ -128,7 +134,7 @@ impl Room {
         // Validate a candidate first: invalid/oversized updates must never poison a room.
         let candidate = document();
         let text = candidate.get_or_insert_text("markdown");
-        {
+        let next = {
             let mut txn = candidate.transact_mut();
             txn.apply_update(Update::decode_v1(&self.snapshot()).map_err(|_| {
                 ApiError::internal("The collaborative document could not be decoded.")
@@ -149,7 +155,8 @@ impl Room {
                     "The Markdown size limit includes its UTF-8 BOM.",
                 ));
             }
-        }
+            content
+        };
         let snapshot = candidate
             .transact()
             .encode_state_as_update_v1(&StateVector::default());
@@ -158,7 +165,6 @@ impl Room {
                 "The collaboration history limit was reached. Save and reopen this note.",
             ));
         }
-        let next = text.get_string(&candidate.transact());
         let changed = next != self.text();
         if let Some(store) = &self.store {
             store.append_update(
@@ -202,53 +208,85 @@ impl Room {
     }
 
     pub fn publish_presence(&self) {
-        let _ = self.events.send(Event::Presence(self.presence()));
+        // A slow client needs only the newest caret positions, never a backlog ahead of edits.
+        self.presence_changed.send_replace(());
     }
 }
 
-pub(super) fn normalize(value: &str) -> String {
-    value
-        .strip_prefix('\u{feff}')
-        .unwrap_or(value)
-        .replace("\r\n", "\n")
-        .replace('\r', "\n")
+pub(super) fn normalize(value: &str) -> Cow<'_, str> {
+    let value = value.strip_prefix('\u{feff}').unwrap_or(value);
+    if value.contains('\r') {
+        Cow::Owned(value.replace("\r\n", "\n").replace('\r', "\n"))
+    } else {
+        Cow::Borrowed(value)
+    }
 }
 
 pub(super) async fn save(
     state: Arc<AppState>,
     room: Arc<std::sync::Mutex<Room>>,
     automatic: bool,
-) -> Result<files::Document, ApiError> {
+) -> Result<Arc<files::Document>, ApiError> {
     tokio::task::spawn_blocking(move || {
-        let _saving = state.saves.lock().map_err(|_| ApiError::internal("The save lock is unavailable."))?;
-        let mut room = room.lock().map_err(|_| ApiError::internal("The collaboration room is unavailable."))?;
+        let _saving = state
+            .saves
+            .lock()
+            .map_err(|_| ApiError::internal("The save lock is unavailable."))?;
+        let mut room = room
+            .lock()
+            .map_err(|_| ApiError::internal("The collaboration room is unavailable."))?;
         if !room.dirty || room.stopped {
+            if !room.stopped && automatic {
+                room.follow_disk(&state)?;
+            }
             return Ok(room.saved.clone());
         }
 
         if automatic {
-            let delay = state.web_preferences.read().map_err(|_| ApiError::internal("Settings are unavailable."))?.auto_save_delay_ms;
+            let delay = state
+                .shared
+                .web_preferences
+                .read()
+                .map_err(|_| ApiError::internal("Settings are unavailable."))?
+                .auto_save_delay_ms;
             if room.failed || room.changed_at.elapsed().as_millis() < delay as u128 {
                 return Ok(room.saved.clone());
             }
         }
         let text = super::format::serialize(&room.saved.content, &room.text());
         let actor = room.actors.iter().cloned().collect::<Vec<_>>().join(", ");
-        let result = state.save_recorded(&room.path, &text, &room.saved.version, &actor, "collaboration", || {
-            if state.health.stopping.load(std::sync::atomic::Ordering::Acquire) {
-                Err(ApiError::internal("The service is stopping; collaborative changes remain unsaved."))
-            } else {
-                Ok(())
-            }
-        });
+        let result = state.save_recorded(
+            &room.path,
+            &text,
+            &room.saved.version,
+            &actor,
+            "collaboration",
+            || {
+                if state
+                    .shared
+                    .health
+                    .stopping
+                    .load(std::sync::atomic::Ordering::Acquire)
+                {
+                    Err(ApiError::internal(
+                        "The service is stopping; collaborative changes remain unsaved.",
+                    ))
+                } else {
+                    Ok(())
+                }
+            },
+        );
         match result {
             Ok(saved) => {
+                let saved = Arc::new(saved);
                 room.saved = saved.clone();
                 room.dirty = false;
                 room.failed = false;
                 if let Err(error) = room.checkpoint() {
                     eprintln!("Could not checkpoint collaboration: {}", error.message);
-                    let _ = room.events.send(Event::Error("Note saved. Collaboration backup failed.".into()));
+                    let _ = room.events.send(Event::Error(
+                        "Note saved. Collaboration backup failed.".into(),
+                    ));
                 }
                 room.actors.clear();
                 let _ = room.events.send(Event::Saved(saved.clone()));
@@ -256,22 +294,45 @@ pub(super) async fn save(
             }
             Err(error) => {
                 room.failed = true;
-                let _ = room.events.send(Event::Error(format!(
-                    "Shared save failed: {} Copy your edits before reloading.",
-                    error.message
-                )));
+                let message = if error.status == axum::http::StatusCode::CONFLICT {
+                    "This note changed elsewhere. Copy your edits before reloading."
+                } else {
+                    "Couldn't save yet. Your edits are still here."
+                };
+                let _ = room.events.send(Event::Error(message.into()));
                 Err(error)
             }
         }
-    }).await.map_err(|error| ApiError::internal(format!("Collaboration save failed: {error}")))?
+    })
+    .await
+    .map_err(|error| ApiError::internal(format!("Collaboration save failed: {error}")))?
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
+    fn caret_bursts_do_not_evict_document_updates_for_a_slow_reader() {
+        let room = Room::new(files::document_from_bytes("shared.md", b"text").unwrap()).unwrap();
+        let mut events = room.events.subscribe();
+        let mut presence = room.presence_changed.subscribe();
+        room.events
+            .send(Event::Saved(room.saved.clone()))
+            .ok()
+            .unwrap();
+        for _ in 0..64 {
+            room.publish_presence();
+        }
+        assert!(matches!(events.try_recv(), Ok(Event::Saved(_))));
+        assert!(presence.has_changed().unwrap());
+        presence.borrow_and_update();
+        assert!(!presence.has_changed().unwrap());
+    }
+
+    #[test]
     fn concurrent_updates_converge_and_invalid_updates_do_not_change_the_room() {
         let mut room = Room::new(files::Document {
+            code: None,
             id: None,
             project: None,
             references: Vec::new(),

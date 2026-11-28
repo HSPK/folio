@@ -1,4 +1,4 @@
-import type { WorkspaceLists, WorkspaceSnapshot } from "../models/workspace-lists";
+import type { WorkspaceLists, WorkspaceSnapshot } from "@folio/model";
 
 function emptyWorkspace(): WorkspaceLists {
   return Object.freeze({ favorites: Object.freeze([]), recent: Object.freeze([]) });

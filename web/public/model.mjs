@@ -9,6 +9,10 @@ function accountIdentity(user) {
 function normalizeNotePath(path) {
   return path.replace(/\\/g, "/");
 }
+function noteName(path) {
+  const name = normalizeNotePath(path).split("/").at(-1) ?? "";
+  return name.replace(/\.(?:md|markdown)$/i, "") || name;
+}
 function isReservedFileName(name) {
   return /^(con|prn|aux|nul|clock\$|com[1-9¹²³]|lpt[1-9¹²³])$/i.test(name.split(".")[0].trimEnd());
 }
@@ -73,12 +77,86 @@ function createHiddenPathMatcher(patterns) {
   };
 }
 
+// frontend/models/page-links.ts
+var compact = /^[A-Za-z0-9_-]{21}[AQgw]$/;
+var eight = /^[A-Za-z0-9_-]{8}$/;
+var ids = /* @__PURE__ */ new Map();
+var codes = /* @__PURE__ */ new Map();
+function rememberPageCode(kind, id, code) {
+  if (typeof code !== "string" || !eight.test(code)) return;
+  ids.set(`${kind}/${code}`, id);
+  codes.set(`${kind}/${id}`, code);
+}
+function clearPageCodes() {
+  ids.clear();
+  codes.clear();
+}
+var unresolvedPage = (url) => /^\/[np]\/[A-Za-z0-9_-]{8}$/.test(url.pathname);
+function shortId(hex) {
+  if (!/^[a-f0-9]{32}$/i.test(hex)) throw new Error("Invalid link identity.");
+  return btoa(String.fromCharCode(...Array.from({ length: 16 }, (_, i) => parseInt(hex.slice(i * 2, i * 2 + 2), 16)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function expandId(id) {
+  if (!compact.test(id)) throw new Error("Invalid short link.");
+  return Array.from(
+    atob(id.replace(/-/g, "+").replace(/_/g, "/") + "=="),
+    (char) => char.charCodeAt(0).toString(16).padStart(2, "0")
+  ).join("");
+}
+var isPublicPage = (path) => path === "/share" || path.startsWith("/s/");
+var isShareId = (id) => eight.test(id) || compact.test(id) || /^[a-f0-9]{64}$/i.test(id);
+var shortShareId = (token) => eight.test(token) || compact.test(token) ? token : shortId(token.slice(0, 32));
+var shareIdFromUrl = (url) => url.pathname === "/share" ? url.searchParams.get("share") : url.pathname.startsWith("/s/") ? url.pathname.slice(3) : null;
+function expandedPageUrl(value) {
+  const url = new URL(value);
+  if (unresolvedPage(url)) {
+    const id = ids.get(url.pathname.slice(1));
+    if (!id) return url;
+    url.searchParams.set(url.pathname[1] === "n" ? "document" : "project", id);
+    url.pathname = "/";
+  } else if (url.pathname.startsWith("/n/") && compact.test(url.pathname.slice(3))) {
+    const hex = expandId(url.pathname.slice(3));
+    url.searchParams.set(
+      "document",
+      `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+    );
+    url.pathname = "/";
+  } else if (url.pathname.startsWith("/p/") && (url.pathname === "/p/default" || compact.test(url.pathname.slice(3)))) {
+    const id = url.pathname.slice(3);
+    url.searchParams.set("project", id === "default" ? id : expandId(id));
+    url.pathname = "/";
+  }
+  return url;
+}
+function compactPageUrl(value) {
+  const url = new URL(value);
+  const document = url.searchParams.get("document");
+  const project = url.searchParams.get("project");
+  if (isPublicPage(url.pathname)) {
+    const token = shareIdFromUrl(url);
+    if (token && isShareId(token)) {
+      url.pathname = `/s/${shortShareId(token)}`;
+      url.searchParams.delete("share");
+    }
+  } else if (url.pathname === "/" || url.pathname === "/index.html") {
+    if (document) url.pathname = `/n/${codes.get("n/" + document) ?? shortId(document.replaceAll("-", ""))}`;
+    else if (project)
+      url.pathname = `/p/${project === "default" ? project : codes.get("p/" + project) ?? shortId(project)}`;
+  } else return url;
+  url.searchParams.delete("project");
+  url.searchParams.delete("document");
+  return url;
+}
+
 // frontend/models/navigation.ts
 var resourceIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 var isResourceId = (value) => typeof value === "string" && resourceIdPattern.test(value);
+function noteDisplayTitle(document) {
+  return document.title?.trim() || noteName(document.path);
+}
 function browserDocumentTitle(document, modified = false) {
   if (!document) return "Folio";
-  const title = document.title?.trim() || normalizeNotePath(document.path).split("/").at(-1);
+  const title = noteDisplayTitle(document);
   return `${title}${modified ? " *" : ""} \u2014 Folio`;
 }
 function readLaunchUrl(value) {
@@ -94,7 +172,8 @@ function readLaunchUrl(value) {
   return { url, token };
 }
 function readNoteRoute(value) {
-  const url = new URL(value);
+  const url = expandedPageUrl(value);
+  if (/^\/[np]\//.test(url.pathname)) throw new Error("Invalid short link.");
   if (url.searchParams.has("file") || url.searchParams.has("path"))
     throw new Error("Path-based document URLs are no longer supported.");
   const id = url.searchParams.get("document");
@@ -103,10 +182,11 @@ function readNoteRoute(value) {
 }
 function makeNoteUrl(value, id, hash2 = "") {
   if (id != null && !isResourceId(id)) throw new Error("A document URL requires a UUID v7.");
-  const url = new URL(value);
+  const url = expandedPageUrl(value);
   url.searchParams.delete("file");
+  url.searchParams.delete("asset");
   url.searchParams.delete("path");
-  if (id && url.pathname !== "/share") url.searchParams.set("document", id);
+  if (id && !isPublicPage(url.pathname)) url.searchParams.set("document", id);
   else url.searchParams.delete("document");
   url.hash = hash2;
   return url;
@@ -274,18 +354,7 @@ function decodedEncryptedDraft(value) {
 
 // frontend/models/library.ts
 function fileLabel(file) {
-  return file.title ?? (file.name.replace(/\.(?:md|markdown)$/i, "") || file.name);
-}
-function fileDisplayKey(file) {
-  return fileLabel(file).normalize("NFC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
-}
-function countFileDisplays(files) {
-  const counts = /* @__PURE__ */ new Map();
-  for (const file of files) {
-    const key = fileDisplayKey(file);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return counts;
+  return file.title?.trim() || noteName(file.name);
 }
 var noteSearchCache = /* @__PURE__ */ new WeakMap();
 function filterNotes(files, query) {
@@ -317,8 +386,9 @@ function sameTreeEntries(left, right) {
   return sameTreeStructure(left, right) && left.every((entry, index) => (entry.title ?? null) === (right[index].title ?? null));
 }
 var treeCollator = new Intl.Collator(void 0, { numeric: true, sensitivity: "base" });
-function buildFileTree(files, directories = []) {
+function buildFileTree(files, directories = [], includeEmpty = true) {
   const root = { name: "", title: null, path: "", directories: /* @__PURE__ */ new Map(), files: [] };
+  const matchingDirectories = includeEmpty ? null : /* @__PURE__ */ new Map();
   const ensureChild = (parent, name) => {
     let child = parent.directories.get(name);
     if (!child) {
@@ -330,6 +400,7 @@ function buildFileTree(files, directories = []) {
         files: []
       };
       parent.directories.set(name, child);
+      matchingDirectories?.set(child.path, child);
     }
     return child;
   };
@@ -345,13 +416,16 @@ function buildFileTree(files, directories = []) {
     }
     return parent;
   };
+  for (const file of files) ensurePath(file.path, false).files.push(file);
   for (const directory of directories) {
-    const branch = ensurePath(directory.path, true);
+    const branch = matchingDirectories ? matchingDirectories.get(normalizeNotePath(directory.path)) : ensurePath(directory.path, true);
+    if (!branch) continue;
+    branch.id = directory.id;
     if (directory.title) branch.title = directory.title;
   }
-  for (const file of files) ensurePath(file.path, false).files.push(file);
   const compare = (a, b) => treeCollator.compare(a.title ?? a.name, b.title ?? b.name);
   const finish = (branch) => ({
+    id: branch.id,
     name: branch.name,
     title: branch.title,
     path: branch.path,
@@ -480,7 +554,8 @@ export {
   accountIdentity,
   browserDocumentTitle,
   buildFileTree,
-  countFileDisplays,
+  clearPageCodes,
+  compactPageUrl,
   createDocumentModel,
   createHiddenPathMatcher,
   createPreferenceDefaults,
@@ -491,17 +566,21 @@ export {
   decodedEncryptedDraft,
   documentSharing,
   entryDestination,
-  fileDisplayKey,
+  expandedPageUrl,
   fileLabel,
   filterNotes,
   formatByteCount,
   isDirty,
+  isPublicPage,
   isReservedFileName,
   isResourceId,
+  isShareId,
   makeNoteUrl,
   markdownByteLength,
   normalizeEditorText,
   normalizeNotePath,
+  noteDisplayTitle,
+  noteName,
   ownedProjectChange,
   parseHiddenPatterns,
   projectSharing,
@@ -509,11 +588,15 @@ export {
   readLaunchUrl,
   readNoteRoute,
   reconcileSave,
+  rememberPageCode,
   restoredWorkspaceNote,
   sameTreeEntries,
   sameTreeStructure,
   sameWorkspaceNote,
   serializeEditorText,
+  shareIdFromUrl,
+  shortShareId,
+  unresolvedPage,
   validateNewDirectoryPath,
   validateNewNotePath
 };

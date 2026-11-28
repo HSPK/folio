@@ -1,4 +1,4 @@
-import type { Project } from "../../models/projects";
+import type { Project } from "@folio/model";
 
 interface ProjectViewState {
   projectCreating: boolean;

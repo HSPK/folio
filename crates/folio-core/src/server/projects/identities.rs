@@ -1,11 +1,12 @@
 use super::{ApiError, Project, Registry, Sharing, Summary};
-use crate::server::state_store::resources::{ResourceKind, validate_id};
+use crate::server::state_store::resources::validate_id;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl Project {
     pub(super) fn summary(&self, id: &str, user: &str) -> Summary {
         let owned = self.owned(user);
         Summary {
+            code: String::new(),
             id: id.into(),
             name: self.name.clone(),
             owner: self.owner.clone(),
@@ -41,6 +42,11 @@ impl Registry {
         user: &str,
     ) -> Result<Summary, ApiError> {
         let mut summary = project.summary(id, user);
+        summary.code = if id == "default" {
+            id.to_owned()
+        } else {
+            self.storage()?.page_code("p", id)?
+        };
         let documents = summary
             .pages
             .keys()
@@ -50,8 +56,8 @@ impl Registry {
         let resources = self.storage()?.project(id).identify_many(
             &documents
                 .into_iter()
-                .map(|path| (path, ResourceKind::Document))
-                .collect::<Vec<_>>(),
+                .map(|path| Ok((path.clone(), super::files::panels::share_kind(&path)?)))
+                .collect::<Result<Vec<_>, ApiError>>()?,
         )?;
         summary.document_ids = resources
             .into_iter()
@@ -76,8 +82,8 @@ impl Registry {
                     .public_links
                     .iter()
                     .filter(|(_, link)| link.resource.is_none())
-                    .map(|(path, _)| (path.clone(), ResourceKind::Document))
-                    .collect::<Vec<_>>();
+                    .map(|(path, _)| Ok((path.clone(), super::files::panels::share_kind(path)?)))
+                    .collect::<Result<Vec<_>, ApiError>>()?;
                 for resource in store.identify_many(&paths)? {
                     if let Some(link) = project.public_links.get_mut(&resource.path) {
                         link.resource = Some(resource.id);
@@ -96,8 +102,8 @@ impl Registry {
         validate_id(document)?;
         let store = self.storage()?.project(project);
         let resource = store.resource(document, true)?;
-        if resource.kind != ResourceKind::Document {
-            return Err(ApiError::bad_request("Choose a document resource."));
+        if resource.kind != super::files::panels::share_kind(&resource.path)? {
+            return Err(ApiError::bad_request("Choose a file resource."));
         }
         if store
             .resource_at_path(&resource.path, false)?

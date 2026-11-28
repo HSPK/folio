@@ -1,62 +1,66 @@
 import { projectModel } from "../../state/projects";
 import { documentSession } from "../../state/document";
 import { decodedDocument, decodedHistory, decodedRevisionContent, decodedTrash } from "../../api/contracts";
-import { diffLines } from "@folio/editor-runtime";
+import { diffLines, createButton } from "@folio/editor-runtime";
 import { formatByteCount } from "@folio/model";
 import type { HistoryRevision, HistoryView, TrashEntry } from "../../types/domain";
-import { htmlChildren, requireValue } from "../../types/elements";
+import { element, htmlChildren, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { closeMenus } from "../accounts/authentication";
 import { api } from "../core/api";
-import { appState } from "../core/bootstrap";
-import { documentNotice, notice } from "../core/dom";
+import { appState, dirty } from "../core/bootstrap";
+import { createListRow, documentNotice, notice } from "../core/dom";
 import { confirmAction, showDialog } from "../dialogs/dialogs";
 import { listen } from "../lifecycle";
 import { refreshFiles } from "../navigation/library";
+import { projectOwns } from "../projects/permissions";
+import { closeFileContextMenu } from "../navigation/files";
+import { entryResourceId } from "./resources";
+import { activePanelPath } from "../../state/library";
+import { leaveFilePanel } from "../navigation/panels";
+import { collaboration } from "../collaboration/collaboration";
 
 import { clearDocument, useDocument } from "./navigation";
-class HistoryState {
-  historyView!: HistoryView | null;
-  historyGeneration!: number;
-  historyBusy!: boolean;
-  historyDialog!: HTMLDialogElement;
-  trashDialog!: HTMLDialogElement;
-}
-export const historyState = new HistoryState();
+let historyView: HistoryView | null;
+let historyGeneration: number;
+let historyBusy: boolean;
+let historyDialog: HTMLDialogElement;
+let trashDialog: HTMLDialogElement;
+
 export function initializeDocumentsHistory(): void {
-  historyState.historyView = null;
-  historyState.historyGeneration = 0;
-  historyState.historyBusy = false;
-  historyState.historyDialog = appState.element("history-dialog");
-  historyState.trashDialog = appState.element("trash-dialog");
-  listen(appState.element("history-open"), "click", () => void openHistory());
-  listen(appState.element("history-close"), "click", () => {
-    if (!historyState.historyBusy) historyState.historyDialog.close();
+  historyView = null;
+  historyGeneration = 0;
+  historyBusy = false;
+  historyDialog = element("history-dialog");
+  trashDialog = element("trash-dialog");
+  listen(element("history-open"), "click", () => void openHistory());
+  listen(element("history-close"), "click", () => {
+    if (!historyBusy) historyDialog.close();
   });
-  listen(historyState.historyDialog, "cancel", (event) => {
-    if (historyState.historyBusy) event.preventDefault();
+  listen(historyDialog, "cancel", (event) => {
+    if (historyBusy) event.preventDefault();
   });
-  listen(historyState.historyDialog, "close", () => {
-    historyState.historyGeneration += 1;
-    historyState.historyView = null;
+  listen(historyDialog, "close", () => {
+    historyGeneration += 1;
+    historyView = null;
   });
-  listen(appState.element("history-copy"), "click", async () => {
+  listen(element("history-copy"), "click", async () => {
     try {
-      await copyPlainText(requireValue(requireValue(historyState.historyView).selected).content);
+      await copyPlainText(requireValue(requireValue(historyView).selected).content);
       documentNotice("");
     } catch (errorCause) {
       const error = errorContext(errorCause);
-      notice(appState.element("history-message"), `Copy failed: ${error.message}`, "error");
+      notice(element("history-message"), `Copy failed: ${error.message}`, "error");
     }
   });
-  listen(appState.element("history-restore"), "click", async () => {
-    const view = historyState.historyView;
-    if (!view?.selected || historyState.historyBusy) return;
+  listen(element("history-restore"), "click", async () => {
+    const view = historyView;
+    if (!view?.selected || historyBusy) return;
     if (!(await confirmAction("Restore this version? Editors must reopen the note", { label: "Restore version" })))
       return;
-    historyState.historyBusy = true;
-    appState.element("history-restore").disabled = true;
-    notice(appState.element("history-message"), "Restoring version…");
+    historyBusy = true;
+    element("history-restore").disabled = true;
+    notice(element("history-message"), "Restoring version…");
     try {
       if (view.project !== projectModel.active?.id || view.document !== documentSession.id)
         throw new Error("Document changed");
@@ -69,73 +73,103 @@ export function initializeDocumentsHistory(): void {
           version: view.version,
         },
       });
-      historyState.historyDialog.close();
+      historyDialog.close();
       useDocument(document, appState.currentRoot, new URL(appState.committedUrl), "replace");
       void refreshFiles();
     } catch (errorCause) {
       const error = errorContext(errorCause);
-      notice(appState.element("history-message"), error.message, "error");
+      notice(element("history-message"), error.message, "error");
     } finally {
-      historyState.historyBusy = false;
-      appState.element("history-restore").disabled = false;
+      historyBusy = false;
+      element("history-restore").disabled = false;
     }
   });
-  listen(appState.element("trash-open"), "click", () => void openTrash());
-  listen(appState.element("trash-close"), "click", () => historyState.trashDialog.close());
-  listen(appState.element("document-trash"), "click", async () => {
+  listen(element("trash-open"), "click", () => void openTrash());
+  listen(element("trash-close"), "click", () => trashDialog.close());
+  listen(element("document-trash"), "click", () => {
     closeMenus();
-    if (!documentSession.current || !projectModel.active?.owned) return;
+    if (documentSession.current) void recycleEntry(documentSession.current.path, "file");
+  });
+  listen(element("file-recycle"), "click", () => {
+    const entry = appState.contextFile;
+    closeFileContextMenu();
+    if (entry) void recycleEntry(entry.path, entry.kind);
+  });
+}
+async function recycleEntry(path: string, kind: "file" | "directory"): Promise<void> {
+  if (!projectOwns() || appState.connectionState !== "ready") return;
+  const project = projectModel.active?.id;
+  const root = appState.currentRoot;
+  const sameScope = () => root === appState.currentRoot && project === projectModel.active?.id && projectOwns();
+  const affectsOpen = () =>
+    documentSession.current?.path === path ||
+    (kind === "directory" && documentSession.current?.path.startsWith(`${path}/`));
+  const unsafe = () => affectsOpen() && (dirty() || documentSession.saving || collaboration?.pending.size);
+  if (unsafe()) {
+    documentNotice("Save the open note first", "warning");
+    return;
+  }
+  try {
+    const id = await entryResourceId(path, kind);
+    const version = kind === "file" && affectsOpen() ? documentSession.current?.version : undefined;
+    if (!(await confirmAction(`Recycle “${path}”? Public links are revoked`, { label: "Recycle" })) || !sameScope())
+      return;
+    if (unsafe()) {
+      documentNotice("Save the open note first", "warning");
+      return;
+    }
+    const panel = activePanelPath();
     if (
-      !(await confirmAction(`Recycle “${documentSession.current.path}”? Public links are revoked`, {
-        label: "Recycle note",
-      }))
+      panel &&
+      (panel === path || (kind === "directory" && panel.startsWith(`${path}/`))) &&
+      !(await leaveFilePanel())
     )
       return;
-    const id = documentSession.id;
-    try {
-      await api("/api/document", {
-        method: "DELETE",
-        body: { id: documentSession.current.id, version: documentSession.current.version },
-      });
-      if (id === documentSession.id) {
-        const url = new URL(appState.committedUrl);
-        url.searchParams.delete("document");
-        url.hash = "";
-        clearDocument(url, "replace");
-      }
-      documentNotice("");
+    if (!sameScope()) return;
+    await api("/api/entry", { method: "DELETE", body: { id, version } });
+    if (!sameScope()) return;
+    if (unsafe()) {
+      documentNotice("Moved to recycle bin. Copy your unsaved changes", "warning");
       await refreshFiles();
-    } catch (errorCause) {
-      const error = errorContext(errorCause);
-      documentNotice(`Delete failed: ${error.message}`, "error");
+      return;
     }
-  });
+    if (affectsOpen()) {
+      const url = new URL(appState.committedUrl);
+      url.searchParams.delete("document");
+      url.hash = "";
+      clearDocument(url, "replace");
+    }
+    documentNotice("");
+    await refreshFiles();
+  } catch (cause) {
+    if (sameScope()) documentNotice(`Delete failed: ${errorContext(cause).message}`, "error");
+  }
 }
 export async function openHistory(): Promise<void> {
   if (!documentSession.current || !projectModel.active?.owned) return;
   closeMenus();
-  const generation = ++historyState.historyGeneration;
-  historyState.historyView = {
+  const generation = ++historyGeneration;
+  historyView = {
     id: documentSession.current.id,
     path: documentSession.current.path,
     project: projectModel.active.id,
     document: documentSession.id,
     selected: null,
   };
-  appState.element("history-list").replaceChildren();
-  appState.element("history-diff").textContent = "";
-  appState.element("history-restore").disabled = true;
-  appState.element("history-copy").disabled = true;
-  showDialog(historyState.historyDialog);
-  notice(appState.element("history-message"), "Loading history…");
+  element("history-list").replaceChildren();
+  element("history-diff").textContent = "";
+  element("history-restore").disabled = true;
+  element("history-copy").disabled = true;
+  showDialog(historyDialog);
+  notice(element("history-message"), "Loading history…");
   try {
-    const result = await api(`/api/history?document=${encodeURIComponent(historyState.historyView.id)}`, {
+    const result = await api(`/api/history?document=${encodeURIComponent(historyView.id)}`, {
       decode: decodedHistory,
     });
-    if (generation !== historyState.historyGeneration || !historyState.historyDialog.open) return;
-    historyState.historyView.version = result.currentVersion;
-    historyState.historyView.current = documentSession.current.content;
-    appState.element("history-list").replaceChildren(
+    if (generation !== historyGeneration || !historyDialog.open) return;
+    historyView.version = result.currentVersion;
+    historyView.current = documentSession.current.content;
+    element("history-list").replaceChildren(
       ...result.revisions.map((revision: HistoryRevision) => {
         const button = document.createElement("button");
         button.type = "button";
@@ -149,17 +183,17 @@ export async function openHistory(): Promise<void> {
         return button;
       }),
     );
-    notice(appState.element("history-message"), result.revisions.length ? "" : "No earlier versions");
+    notice(element("history-message"), result.revisions.length ? "" : "No earlier versions");
     if (result.revisions.length) await selectHistoryVersion(result.revisions[0].id);
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    notice(appState.element("history-message"), error.message, "error");
+    notice(element("history-message"), error.message, "error");
   }
 }
-export async function selectHistoryVersion(id: number): Promise<void> {
-  const view = historyState.historyView;
-  const generation = ++historyState.historyGeneration;
-  notice(appState.element("history-message"), "Loading version…");
+async function selectHistoryVersion(id: number): Promise<void> {
+  const view = historyView;
+  const generation = ++historyGeneration;
+  notice(element("history-message"), "Loading version…");
   try {
     const result = await api(
       `/api/history/content?document=${encodeURIComponent(requireValue(view).id)}&revision=${id}`,
@@ -167,18 +201,13 @@ export async function selectHistoryVersion(id: number): Promise<void> {
         decode: decodedRevisionContent,
       },
     );
-    if (
-      generation !== historyState.historyGeneration ||
-      historyState.historyView !== view ||
-      !historyState.historyDialog.open
-    )
-      return;
+    if (generation !== historyGeneration || historyView !== view || !historyDialog.open) return;
     requireValue(view).selected = result;
-    for (const button of htmlChildren(appState.element("history-list")))
+    for (const button of htmlChildren(element("history-list")))
       button.setAttribute("aria-pressed", String(Number(button.dataset.id) === id));
-    appState.element("history-detail").textContent = "Red removed, green current";
+    element("history-detail").textContent = "Red removed, green current";
     const changes = diffLines(result.content, requireValue(requireValue(view).current), { timeout: 200 });
-    const diff = appState.element("history-diff");
+    const diff = element("history-diff");
     diff.replaceChildren();
     let remaining = 200000;
     for (const change of changes ?? [{ value: String(result.content), added: false, removed: false }]) {
@@ -190,38 +219,34 @@ export async function selectHistoryVersion(id: number): Promise<void> {
       if (remaining <= 0) break;
     }
     notice(
-      appState.element("history-message"),
+      element("history-message"),
       !changes ? "Diff too large, showing version" : remaining <= 0 ? "Preview truncated" : "",
       "warning",
     );
-    appState.element("history-copy").disabled = false;
-    appState.element("history-restore").disabled =
+    element("history-copy").disabled = false;
+    element("history-restore").disabled =
       !requireValue(view).version || requireValue(view).version === result.revision.version;
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    notice(appState.element("history-message"), error.message, "error");
+    notice(element("history-message"), error.message, "error");
   }
 }
-export async function openTrash(): Promise<void> {
+async function openTrash(): Promise<void> {
   closeMenus();
-  showDialog(historyState.trashDialog);
-  notice(appState.element("trash-message"), "Loading recycle bin…");
+  showDialog(trashDialog);
+  notice(element("trash-message"), "Loading recycle bin…");
   try {
     const entries = await api("/api/trash", {
       decode: decodedTrash,
     });
-    appState.element("trash-list").replaceChildren(
+    element("trash-list").replaceChildren(
       ...entries.map((entry: TrashEntry) => {
-        const row = document.createElement("div");
-        const name = document.createElement("span");
-        name.className = "workspace-item-name";
-        name.textContent = entry.path;
-        const details = document.createElement("small");
-        details.textContent = `${new Date(entry.deleted).toLocaleString()} · ${formatByteCount(entry.size)}`;
-        name.append(details);
-        const restore = document.createElement("button");
-        restore.type = "button";
-        restore.textContent = "Restore";
+        const row = createListRow(
+          entry.path,
+          `${new Date(entry.deleted).toLocaleString()} · ${formatByteCount(entry.size)}`,
+        );
+        const restore = createButton({ label: "Restore" });
+
         restore.setAttribute("aria-label", `Restore ${entry.path}`);
         restore.addEventListener("click", async () => {
           restore.disabled = true;
@@ -229,23 +254,23 @@ export async function openTrash(): Promise<void> {
           try {
             await api("/api/trash/restore", { method: "POST", body: { id: entry.id } });
             if (projectModel.active?.id === project) {
-              if (historyState.trashDialog.open) await openTrash();
+              if (trashDialog.open) await openTrash();
               void refreshFiles();
             }
           } catch (errorCause) {
             const error = errorContext(errorCause);
-            notice(appState.element("trash-message"), error.message, "error");
+            notice(element("trash-message"), error.message, "error");
             restore.disabled = false;
           }
         });
-        row.append(name, restore);
+        row.append(restore);
         return row;
       }),
     );
-    notice(appState.element("trash-message"), entries.length ? "" : "Recycle bin empty");
+    notice(element("trash-message"), entries.length ? "" : "Recycle bin empty");
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    notice(appState.element("trash-message"), error.message, "error");
+    notice(element("trash-message"), error.message, "error");
   }
 }
 import { copyPlainText } from "../../../shared/clipboard";

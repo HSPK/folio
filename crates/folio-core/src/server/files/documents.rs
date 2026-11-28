@@ -7,7 +7,7 @@ use super::{
     BOM, Document, MAX_DOCUMENT_BYTES, Root, cache::touch_lru, platform, read_limited,
     validate_content, validate_document_path, version,
 };
-use crate::server::{ApiError, frontmatter, markdown};
+use crate::server::{ApiError, AppState, frontmatter, markdown};
 
 const MAX_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_CACHE_ENTRIES: usize = 64;
@@ -15,6 +15,8 @@ const MAX_CACHED_DOCUMENT_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(serde::Serialize)]
 struct SourceDocument<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -28,6 +30,28 @@ struct SourceDocument<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     warning: Option<&'a str>,
     bom: bool,
+}
+
+impl AppState {
+    // The caller holds the project's save lock, as do moves, deletes and room creation.
+    pub(in crate::server) fn duplicate_source(&self, id: &str) -> Result<String, ApiError> {
+        let (path, revision) = self.document_path_with_revision(id)?;
+        let permissions = self.document_permissions(&path)?;
+        self.root.apply_resource_revision(revision)?;
+        let disk = self.root.source_document(&path)?;
+        if disk.id.as_deref() != Some(id) || disk.path != path {
+            return Err(ApiError::conflict("The source document changed."));
+        }
+        if permissions.collaborative {
+            if let Some(text) = self
+                .collaboration
+                .pending_source(&disk, self.store.as_ref())?
+            {
+                return Ok(text);
+            }
+        }
+        Ok(disk.raw_content().into_owned())
+    }
 }
 
 impl Document {
@@ -82,6 +106,22 @@ impl Root {
             .join(":"))
     }
 
+    pub(in crate::server) fn document_version(&self, path: &str) -> Result<String, ApiError> {
+        let (mut file, fingerprint) = self.open_document(path)?;
+        if let Ok(mut cache) = self.document_cache.lock() {
+            if let Some(version) = cache.get_with(path, fingerprint, |entry| {
+                Some(entry.document.version.clone())
+            }) {
+                return Ok(version);
+            }
+        }
+        Ok(version(&read_limited(
+            &mut file,
+            MAX_DOCUMENT_BYTES,
+            "Markdown files",
+        )?))
+    }
+
     pub(in crate::server) fn document(&self, path: &str) -> Result<Document, ApiError> {
         self.resource_revision()?;
         let (mut file, fingerprint) = self.open_document(path)?;
@@ -127,6 +167,7 @@ impl Root {
         self.apply_resource_revision(revision)?;
         let document = self.source_document(path)?;
         let payload = SourceDocument {
+            code: document.code.as_deref(),
             id: document.id.as_deref(),
             project: document.project.as_deref(),
             path: &document.path,
@@ -196,6 +237,7 @@ impl DocumentCache {
         self.get_with(path, fingerprint, |entry| {
             let document = &entry.document;
             Some(Document {
+                code: document.code.clone(),
                 id: document.id.clone(),
                 project: document.project.clone(),
                 references: Vec::new(),
@@ -319,6 +361,7 @@ pub(super) fn source_from_bytes(path: &str, bytes: &[u8]) -> Result<Document, Ap
     let content = std::str::from_utf8(bytes.strip_prefix(BOM).unwrap_or(bytes))
         .map_err(|_| ApiError::bad_request("The Markdown file is not valid UTF-8."))?;
     Ok(Document {
+        code: None,
         id: None,
         project: None,
         references: Vec::new(),
@@ -338,6 +381,7 @@ mod tests {
 
     fn document(path: &str, size: usize) -> Document {
         Document {
+            code: None,
             id: None,
             project: None,
             references: Vec::new(),

@@ -1,3 +1,4 @@
+import { createButton } from "./dom.ts";
 import { NodeSelection } from "@milkdown/prose/state";
 import type { Node as ProseNode } from "@milkdown/prose/model";
 import type { NodeViewConstructor } from "@milkdown/prose/view";
@@ -13,7 +14,7 @@ import {
   type ImageNodeAttrs,
 } from "./image-model.ts";
 import { focusEditorView } from "./cursor-coordinates.ts";
-import { createNodeToolbar, toolButton } from "./node-toolbar.ts";
+import { createNodeToolbar } from "./node-toolbar.ts";
 import type { MarkdownUrl, NodeActivity } from "./types/editor.ts";
 
 interface ImageReplacement {
@@ -81,10 +82,14 @@ export function createImageNodeView(
     dom.contentEditable = "false";
     const image = document.createElement("img");
     image.loading = "lazy";
+    image.decoding = "async";
     image.draggable = false;
     const unavailable = document.createElement("span");
     const resizes = ["end", "start"].map((side) => {
-      const button = toolButton({ label: side === "end" ? "Resize image" : "Resize image from left", onClick() {} });
+      const button = createButton({
+        label: side === "end" ? "Resize image" : "Resize image from left",
+        text: "",
+      });
       button.className = "folio-image-resize";
       button.dataset.resizeSide = side;
       button.tabIndex = -1;

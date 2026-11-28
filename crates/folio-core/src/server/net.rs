@@ -50,9 +50,12 @@ impl axum::serve::Listener for LimitedListener {
                             stream,
                             _permit: permit,
                             deadline: Box::pin(tokio::time::sleep(Duration::from_secs(30))),
-                            control: ConnectionInfo(Arc::new(Mutex::new(Some(
-                                Instant::now() + Duration::from_secs(30),
-                            )))),
+                            control: ConnectionInfo(
+                                Arc::new(Mutex::new(Some(
+                                    Instant::now() + Duration::from_secs(30),
+                                ))),
+                                address.ip(),
+                            ),
                         },
                         address,
                     );
@@ -83,7 +86,7 @@ pub(super) struct Connection {
 }
 
 #[derive(Clone)]
-pub(super) struct ConnectionInfo(Arc<Mutex<Option<Instant>>>);
+pub(super) struct ConnectionInfo(Arc<Mutex<Option<Instant>>>, pub(super) std::net::IpAddr);
 
 impl<'a> Connected<axum::serve::IncomingStream<'a, LimitedListener>> for ConnectionInfo {
     fn connect_info(stream: axum::serve::IncomingStream<'a, LimitedListener>) -> Self {

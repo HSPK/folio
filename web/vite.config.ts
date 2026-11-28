@@ -1,8 +1,14 @@
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
+export function versionedAsset(name: string) {
+  const bytes = readFileSync(new URL(`./public/${name}`, import.meta.url));
+  return `${name}?v=${createHash("sha256").update(bytes).digest("hex")}`;
+}
 const runtimeAssets: Record<string, string> = {
   "@folio/model": "/model.mjs",
   "@folio/workspace-model": "/workspace-model.mjs",
@@ -19,7 +25,7 @@ export default defineConfig({
       name: "folio-runtime-assets",
       resolveId(source) {
         const asset = runtimeAssets[source];
-        return asset ? { id: asset, external: true } : null;
+        return asset ? { id: `/${versionedAsset(asset.slice(1))}`, external: true } : null;
       },
     },
   ],

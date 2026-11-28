@@ -27,7 +27,7 @@ test(
       result.output.map((output) => [`/${output.fileName}`, output.type === "chunk" ? output.code : output.source]),
     );
     const server = createServer(async (request, response) => {
-      const url = request.url ?? "/";
+      const url = new URL(request.url ?? "/", "http://localhost").pathname;
       try {
         if (url === "/") {
           response.setHeader("Content-Type", "text/html");
@@ -74,12 +74,41 @@ test(
       await page.waitForSelector("body", { state: "attached" });
       await page.evaluate(() => window.applicationLifecycle.trackObservers());
       const count = () => page.evaluate(() => window.applicationLifecycle.counts());
-      for (let iteration = 0; iteration < 3; iteration++) {
+      for (let iteration = 0; iteration < 4; iteration++) {
         await page.evaluate(() => window.applicationLifecycle.mount());
         await page.waitForSelector("#search-dialog", { state: "attached" });
         assert.deepEqual(await count(), { toolbars: 3, dialogs: 2, menus: 2, notices: 1 });
+        assert.deepEqual(await page.evaluate(() => window.applicationLifecycle.elementContract()), {
+          reused: true,
+          replaced: true,
+          rejected: true,
+          restored: true,
+        });
+        if (iteration === 2) {
+          await page.locator("#more-menu > button").evaluate((node: HTMLButtonElement) => {
+            node.click();
+            window.applicationLifecycle.unmount();
+          });
+        } else if (iteration === 0) {
+          await page.locator("#more-menu > button").click();
+          await page.waitForSelector("#more-actions-panel:popover-open");
+        } else if (iteration === 1) {
+          await page.locator("#settings-dialog").evaluate((node: HTMLDialogElement) => node.showModal());
+          await page.waitForSelector("#settings-dialog:modal");
+        } else {
+          const resizer = page.locator("#sidebar-resizer");
+          await resizer.hover({ position: { x: 2, y: 100 } });
+          await page.mouse.down();
+          await resizer.evaluate((node) => {
+            if (!node.hasPointerCapture(1)) throw new Error("The sidebar did not capture its resize pointer.");
+            node.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: 350, bubbles: true }));
+            window.applicationLifecycle.unmount();
+          });
+          await page.mouse.up();
+        }
         await page.evaluate(() => window.applicationLifecycle.unmount());
         assert.deepEqual(await count(), { toolbars: 0, dialogs: 0, menus: 0, notices: 0 });
+        assert.equal(await page.evaluate(() => document.body.dataset.resizingSidebar), undefined);
         assert.equal(
           await page.evaluate(() => window.applicationLifecycle.observers()),
           0,

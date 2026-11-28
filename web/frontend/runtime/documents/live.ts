@@ -1,3 +1,4 @@
+import { element } from "../../types/elements";
 import { documentSession } from "../../state/document";
 import { shell } from "../../state/shell";
 
@@ -13,25 +14,25 @@ export function loadInlineEditor(): void {
   if (
     appState.inlineEditor.isReady() &&
     appState.inlineEditorPath === documentSession.current.path &&
-    appState.inlineEditor.getSource() === appState.ui.editor.value
+    appState.inlineEditor.getSource() === appState.editor.value
   )
     return;
   appState.inlineEditorPath = documentSession.current.path;
-  void appState.inlineEditor.load(appState.ui.editor.value, documentSession.current.path);
+  void appState.inlineEditor.load(appState.editor.value, documentSession.current.path);
 }
 
 export function loadInlineEditorAfterPaint(): void {
   if (
     !documentSession.current ||
     shell.view !== "rich" ||
-    !appState.inlineEditor.shouldDeferLoad(appState.ui.editor.value)
+    !appState.inlineEditor.shouldDeferLoad(appState.editor.value)
   ) {
     loadInlineEditor();
     return;
   }
   appState.inlineEditorPath = null;
   appState.inlineEditor.clear({ keepParsedBodies: true });
-  appState.element("rich-editor").setAttribute("aria-busy", "true");
+  element("rich-editor").setAttribute("aria-busy", "true");
   const id = documentSession.id;
   window.requestAnimationFrame(() =>
     window.setTimeout(() => {

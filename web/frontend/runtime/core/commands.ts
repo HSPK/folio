@@ -1,18 +1,20 @@
-import { fileLabel } from "../../models/library";
+import { fileLabel } from "@folio/model";
 import { projectModel } from "../../state/projects";
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
-import { libraryCatalog } from "../../state/library";
+import { activePanelPath, libraryCatalog } from "../../state/library";
 import { shell } from "../../state/shell";
+import { batch, createSignal } from "solid-js";
 import type { Command } from "../../types/domain";
-import { htmlChildren, requireValue } from "../../types/elements";
+import { element, requireValue } from "../../types/elements";
 import { closeMenus, setSidebar, toggleFocusMode } from "../accounts/authentication";
 import { collaborationLocked } from "../collaboration/collaboration";
 import { showDialog } from "../dialogs/dialogs";
 import { openHistory } from "../documents/history";
 import { navigateTo } from "../documents/navigation";
 import { saveDocument } from "../documents/saving";
-import { openNewNote, openRenameDialog, setView } from "../navigation/files";
+import { startTreeRename, setView } from "../navigation/files";
+import { createTreeEntry } from "../navigation/creation";
 import { refreshFiles } from "../navigation/library";
 import { openSettings } from "../preferences/settings";
 
@@ -23,40 +25,41 @@ import { openWorkspace } from "../workspace/workspace";
 import { appState, dirty } from "./bootstrap";
 import { documentNotice } from "./dom";
 import { setPageWidth } from "./layout";
-class CommandState {
-  commandIndex!: number;
-  visibleCommands!: Command[];
-  primaryKey!: string;
-  commandItems!: Command[];
-}
-export const commandState = new CommandState();
+const [commandIndex, setCommandIndex] = createSignal(0);
+const [visibleCommands, setVisibleCommands] = createSignal<readonly Command[]>([], {
+  equals: (previous, next) =>
+    previous.length === next.length && previous.every((command, index) => command === next[index]),
+});
+export { commandIndex, visibleCommands };
+let commandItems: Command[];
 export function initializeCoreCommands(): void {
-  commandState.commandIndex = 0;
-  commandState.visibleCommands = [];
-  commandState.primaryKey = navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl";
-  commandState.commandItems = [
+  const noteVisible = () => Boolean(!activePanelPath() && documentSession.current);
+  setCommandIndex(0);
+  setVisibleCommands([]);
+  const primaryKey = navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl";
+  commandItems = [
     {
       name: "New note",
-      action: openNewNote,
-      enabled: () => appState.connectionState === "ready" && !appState.creating && !appState.movingEntry,
+      action: () => createTreeEntry("file"),
+      enabled: () => !element("new-note").disabled,
     },
     {
       name: "Save note",
-      key: `${commandState.primaryKey}+S`,
+      key: `${primaryKey}+S`,
       action: () => void saveDocument(),
-      enabled: () => Boolean(documentSession.current && dirty() && !documentSession.saving && !appState.creating),
+      enabled: () => noteVisible() && dirty() && !documentSession.saving && !appState.creating,
     },
-    { name: "View: Live", action: () => setView("rich", true), enabled: () => Boolean(documentSession.current) },
-    { name: "View: Source", action: () => setView("editor", true), enabled: () => Boolean(documentSession.current) },
-    { name: "View: Compare", action: () => setView("split", true), enabled: () => Boolean(documentSession.current) },
-    { name: "View: Read", action: () => setView("preview", true), enabled: () => Boolean(documentSession.current) },
+    { name: "View: Live", action: () => setView("rich", true), enabled: noteVisible },
+    { name: "View: Source", action: () => setView("editor", true), enabled: noteVisible },
+    { name: "View: Compare", action: () => setView("split", true), enabled: noteVisible },
+    { name: "View: Read", action: () => setView("preview", true), enabled: noteVisible },
     { name: "Page width: Focused", action: () => setPageWidth("focused", true) },
     { name: "Page width: Balanced", action: () => setPageWidth("balanced", true) },
     { name: "Page width: Wide", action: () => setPageWidth("wide", true) },
     {
       name: "Toggle sidebar",
-      key: `${commandState.primaryKey}+Shift+L`,
-      action: () => setSidebar(document.body.dataset.sidebar !== "open"),
+      key: `${primaryKey}+Shift+L`,
+      action: () => setSidebar(document.body.dataset.sidebar !== "open", true),
     },
     { name: "Distraction free", action: toggleFocusMode },
     { name: "Open settings", action: () => openSettings() },
@@ -67,7 +70,7 @@ export function initializeCoreCommands(): void {
     },
     {
       name: "Search notes",
-      key: `${commandState.primaryKey}+P`,
+      key: `${primaryKey}+P`,
       action: () => void openWorkspaceSearch(),
       enabled: () => authenticationSession.mode === "users" && !publicState.publicView,
     },
@@ -80,52 +83,54 @@ export function initializeCoreCommands(): void {
       name: "Rename current file",
       action: () => {
         appState.contextFile = { path: requireValue(documentSession.current).path, kind: "file" };
-        openRenameDialog();
+        startTreeRename();
       },
-      enabled: () => Boolean(documentSession.current && projectCanCreate() && !publicState.publicView),
+      enabled: () =>
+        Boolean(noteVisible() && documentSession.resourceId && projectCanCreate() && !publicState.publicView),
     },
     {
       name: "Version history",
       action: () => void openHistory(),
-      enabled: () => Boolean(documentSession.current && projectModel.active?.owned && !publicState.publicView),
+      enabled: () =>
+        Boolean(noteVisible() && documentSession.resourceId && projectModel.active?.owned && !publicState.publicView),
     },
     {
       name: "Edit current link",
       action: () => {
         if (!appState.inlineEditor.editLink()) documentNotice("No link at cursor", "warning");
       },
-      enabled: () => Boolean(documentSession.current && shell.view === "rich"),
+      enabled: () => Boolean(noteVisible() && shell.view === "rich" && projectWritable() && !collaborationLocked()),
     },
     ...["Table", "Task list", "Image", "Formula"].map((name) => ({
       name: `Insert ${name.toLowerCase()}`,
       action: () => {
         if (!appState.inlineEditor.insertBlock(name)) documentNotice("No editable paragraph at cursor", "warning");
       },
-      enabled: () =>
-        Boolean(documentSession.current && shell.view === "rich" && projectWritable() && !collaborationLocked()),
+      enabled: () => Boolean(noteVisible() && shell.view === "rich" && projectWritable() && !collaborationLocked()),
     })),
   ];
 }
 export function selectCommand(index: number): void {
-  if (!commandState.visibleCommands.length) return;
-  commandState.commandIndex = (index + commandState.visibleCommands.length) % commandState.visibleCommands.length;
-  for (const [buttonIndex, button] of htmlChildren(appState.ui.commandList).entries()) {
-    button.setAttribute("aria-selected", String(buttonIndex === commandState.commandIndex));
-  }
-  appState.ui.commandList.children[commandState.commandIndex]?.scrollIntoView({ block: "nearest" });
+  const length = visibleCommands().length;
+  if (!length) return;
+  const next = (index + length) % length;
+  if (next === commandIndex()) return;
+  setCommandIndex(next);
+  element("command-list").children[next]?.scrollIntoView({ block: "nearest" });
 }
-export function renderCommandPanel(): void {
-  const query = appState.ui.commandQuery.value.trim().toLowerCase();
-  commandState.visibleCommands = commandState.commandItems.filter(
+export function filterCommands(): void {
+  element("command-list").scrollTop = 0;
+  const query = element("command-query").value.trim().toLowerCase();
+  const commands = commandItems.filter(
     (command) =>
       command.enabled?.() !== false &&
       (!publicState.publicView ||
-        !["New note", "Open settings", "Refresh files", "Toggle sidebar"].includes(command.name)) &&
+        !["New note", "Open settings", "Refresh files", "Toggle sidebar", "Distraction free"].includes(command.name)) &&
       (!query || command.name.toLowerCase().includes(query)),
   );
   // One search reaches notes as well as actions: matching notes follow the commands.
   if (query)
-    commandState.visibleCommands.push(
+    commands.push(
       ...libraryCatalog.files
         .filter((file) => fileLabel(file).toLowerCase().includes(query) || file.path.toLowerCase().includes(query))
         .slice(0, 12)
@@ -135,46 +140,23 @@ export function renderCommandPanel(): void {
           action: () => void navigateTo(file.id ?? file.path),
         })),
     );
-  commandState.commandIndex = Math.min(commandState.commandIndex, Math.max(0, commandState.visibleCommands.length - 1));
-  appState.ui.commandList.replaceChildren(
-    ...commandState.visibleCommands.map((command, index) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.setAttribute("role", "option");
-      button.setAttribute("aria-selected", String(index === commandState.commandIndex));
-      const name = document.createElement("span");
-      name.className = "command-name";
-      name.textContent = command.name;
-      button.append(name);
-      if (command.key) {
-        const key = document.createElement("span");
-        key.className = "command-key";
-        key.textContent = command.key;
-        button.append(key);
-      }
-      button.addEventListener("pointermove", () => selectCommand(index));
-      button.addEventListener("click", () => runCommand(index));
-      return button;
-    }),
-  );
-  appState.ui.commandEmpty.hidden = commandState.visibleCommands.length > 0;
+  batch(() => {
+    setVisibleCommands(commands);
+    setCommandIndex(0);
+  });
 }
 export function openCommandPanel(): void {
-  if (appState.ui.commandDialog.open || !appState.ui.authScreen.hidden) return;
+  if (element("command-dialog").open || !element("auth-screen").hidden) return;
   closeMenus();
-  appState.ui.commandQuery.value = "";
-  commandState.commandIndex = 0;
-  renderCommandPanel();
-  showDialog(appState.ui.commandDialog);
-  appState.ui.commandQuery.focus();
+  element("command-query").value = "";
+  filterCommands();
+  showDialog(element("command-dialog"));
+  element("command-query").focus();
 }
-export function closeCommandPanel(): void {
-  if (appState.ui.commandDialog.open) appState.ui.commandDialog.close();
-}
-export function runCommand(index = commandState.commandIndex): void {
-  const command = commandState.visibleCommands[index];
+export function runCommand(index = commandIndex()): void {
+  const command = visibleCommands()[index];
   if (!command) return;
-  closeCommandPanel();
+  element("command-dialog").close();
   command.action();
 }
 export function opensCommandPanel(event: KeyboardEvent) {

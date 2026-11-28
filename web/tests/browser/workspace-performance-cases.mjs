@@ -3,6 +3,147 @@ import { collaborativeLibrary } from "./collaboration-cases.mjs";
 import { addPermissionOverrides, measureClickFrame, summarizeTimings } from "./performance-helpers.mjs";
 import { createHash } from "node:crypto";
 
+test("first paint and usable note on a fresh bookmark and reload", async ({ browser, browserName }) => {
+  test.skip(!process.env.FOLIO_BENCH_PAINT || browserName !== "chromium", "Opt-in navigation timing.");
+  test.setTimeout(90000);
+  const library = await collaborativeLibrary(browser, { participants: 1, sharing: "private" });
+  try {
+    const [owner] = library.pages;
+    expect(new URL(owner.url()).pathname).toMatch(/^\/n\/[A-Za-z0-9_-]{8}$/);
+    const cookies = await owner.context().cookies();
+    const timings = {};
+    for (let i = 0; i < 5; i++) {
+      const context = await browser.newContext();
+      try {
+        await context.addCookies(cookies);
+        await context.addInitScript(() => {
+          window.bootTimes = {};
+          function sample() {
+            const now = performance.now(), times = window.bootTimes;
+            if (!times.tree && document.querySelector('#file-list button[data-path="Shared.md"]')?.getClientRects().length) times.tree = now;
+            if (!times.editor && document.querySelector('.ProseMirror[contenteditable="true"]')?.textContent.includes("Alpha")) times.editor = now;
+            if (!times.tree || !times.editor) requestAnimationFrame(sample);
+          }
+          requestAnimationFrame(sample);
+        });
+        const page = await context.newPage();
+        const cdp = await context.newCDPSession(page);
+        await cdp.send("Network.enable");
+        await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 80, downloadThroughput: 2_000_000, uploadThroughput: 1_000_000 });
+        for (const kind of ["cold", "reload"]) {
+          if (kind === "cold") await page.goto(owner.url()); else await page.reload();
+          await page.waitForFunction(() => window.bootTimes.tree && window.bootTimes.editor && performance.getEntriesByName("first-contentful-paint").length);
+          if (!i && process.env.FOLIO_BENCH_TRACE) console.log(kind, await page.evaluate(() => performance.getEntriesByType("resource").map(e =>
+            [new URL(e.name).pathname, Math.round(e.startTime), Math.round(e.responseEnd), e.transferSize])));
+          const samples = await page.evaluate(() => {
+            const reads = performance.getEntriesByType("resource");
+            const start = (path, suffix = "") => reads.find(e => new URL(e.name).pathname === path && e.name.includes(suffix))?.startTime;
+            return { ...window.bootTimes, paint: performance.getEntriesByName("first-contentful-paint")[0].startTime,
+              workspaceRequest: start("/api/workspace"), noteRequest: start("/api/document", "render=source") };
+          });
+          expect(samples.workspaceRequest).toBeGreaterThan(0);
+          expect(samples.noteRequest).toBeGreaterThan(0);
+          for (const [key, value] of Object.entries(samples)) (timings[`${kind}_${key}`] ??= []).push(Math.round(value));
+        }
+      } finally { await context.close(); }
+    }
+    console.log("PAINT", process.env.FOLIO_BENCH_PAINT, JSON.stringify(Object.fromEntries(Object.entries(timings).map(([k,v]) => [k, v.sort((a,b) => a-b)[2]]))));
+  } finally { await library.close(); }
+});
+
+test("cold workspace benchmark measures first visible project, rows and editable note", async ({ browser }) => {
+  test.skip(!process.env.FOLIO_BENCH_COLD, "Opt-in first-load measurement.");
+  const library = await collaborativeLibrary(browser, { participants: 1, source: false, sharing: "private" });
+  try {
+    const [page] = library.pages;
+    const lag = Number(process.env.FOLIO_BENCH_RTT_MS ?? 100);
+    if (lag) await page.route(/\/(?:api\/|app\.mjs)/, async route => { await delay(lag); await route.continue(); });
+    await page.addInitScript(() => {
+      window.visibleAt = {};
+      function sample() {
+        const seen = window.visibleAt;
+        const project = document.querySelector("#projects-open");
+        if (!seen.project && project?.getClientRects().length && project.textContent !== "Projects") seen.project = performance.now();
+        if (!seen.tree && document.querySelector('#file-list [data-path="Shared.md"]')?.getClientRects().length) seen.tree = performance.now();
+        if (!seen.editor && document.querySelector('.ProseMirror[contenteditable="true"]')?.textContent.includes("Alpha")) seen.editor = performance.now();
+        if (!seen.project || !seen.tree || !seen.editor) requestAnimationFrame(sample);
+      }
+      requestAnimationFrame(sample);
+    });
+    const timings = {};
+    const bookmark = page.url();
+    for (let i = 0; i < 8; ++i) {
+      const kind = i % 2 ? "bookmark" : "home";
+      await page.goto(i % 2 ? bookmark : new URL("/", library.url).href);
+      await page.waitForFunction(() => window.visibleAt.tree && window.visibleAt.editor && window.visibleAt.project);
+      for (const [metric, value] of Object.entries(await page.evaluate(() => window.visibleAt))) (timings[`${kind}_${metric}`] ??= []).push(value);
+    }
+    if (process.env.FOLIO_BENCH_TRACE) console.log("LAST BOOKMARK", await page.evaluate(() => performance.getEntriesByType("resource")
+      .map(e => [new URL(e.name).pathname, Math.round(e.startTime), Math.round(e.responseEnd), e.transferSize])));
+    for (const pointer of [false, true]) {
+      const switches = timings[pointer ? "hover_click_editor" : "click_editor"] = [];
+      for (let i = 0; i < 12; ++i) {
+        const target = i % 2 ? "Shared" : "Other";
+        if (pointer) {
+          await page.locator(`button[data-path="${target}.md"]`).hover();
+          await delay(230);
+        }
+        switches.push(await page.evaluate(name => new Promise(resolve => {
+          const button = document.querySelector(`button[data-path="${name}.md"]`);
+          const started = performance.now();
+          button.click();
+          function frame() {
+            if (button.getAttribute("aria-current") === "page" &&
+                document.querySelector('.ProseMirror[contenteditable="true"]')?.textContent.includes(name))
+              resolve(performance.now() - started);
+            else requestAnimationFrame(frame);
+          }
+          requestAnimationFrame(frame);
+        }), target));
+      }
+    }
+    console.log("STARTUP", process.env.FOLIO_BENCH_COLD, "added delay", lag, JSON.stringify(summarizeTimings(timings)));
+  } finally { await library.close(); }
+});
+
+test("project switch benchmark measures click to usable tree across a delayed connection", async ({ browser }) => {
+  test.skip(!process.env.FOLIO_BENCH_SWITCH, "Opt-in project switch measurement.");
+  const library = await collaborativeLibrary(browser, { participants: 1, source: true, sharing: "private" });
+  try {
+    const [page] = library.pages;
+    // Playwright routing disables the HTTP cache for this cold-load sample.
+    await page.route("**/*.mjs", route => route.continue());
+    await page.reload();
+    await expect(page.locator("#editor")).toHaveValue(/Alpha/);
+    const coldBytes = await page.evaluate(() => performance.getEntriesByType("resource")
+      .filter(entry => /\.(mjs|css)$/.test(new URL(entry.name).pathname))
+      .reduce((bytes, entry) => bytes + entry.encodedBodySize, 0));
+    const created = await page.request.post(new URL("/api/projects", library.url).href, {
+      data: { action: "create", name: "Second library", kind: "new" },
+    });
+    expect(created.ok()).toBe(true);
+    const secondary = (await created.json()).id;
+    const note = await page.request.post(new URL("/api/document", library.url).href, {
+      headers: { "X-Folio-Project": secondary }, data: { path: "Scratch.md", content: "# Scratch\n" },
+    });
+    expect(note.ok()).toBe(true);
+    await page.route(/\/api\/(session|tree|preferences)$/, async route => {
+      await delay(100);
+      await route.continue();
+    });
+    const times = [];
+    for (let i = 0; i < 8; ++i) {
+      await page.locator("#projects-open").click();
+      const id = i % 2 ? "default" : secondary;
+      const file = i % 2 ? "Shared.md" : "Scratch.md";
+      const switcher = `.project-open[data-project="${id}"]`;
+      await expect(page.locator(switcher)).toBeVisible();
+      times.push((await measureClickFrame(page, switcher, `#file-list button[data-path="${file}"]`, "#file-list")).feedbackMs);
+    }
+    console.log("SWITCH", process.env.FOLIO_BENCH_SWITCH, coldBytes, JSON.stringify(summarizeTimings({ treeReadyMs: times })));
+  } finally { await library.close(); }
+});
+
 test("workspace write benchmark distinguishes unchanged actions from real recent-note changes", async ({ browser }) => {
   test.skip(!process.env.FOLIO_BENCH_WORKSPACE_WRITES, "Opt-in workspace write measurement.");
   const library = await collaborativeLibrary(browser, { participants: 1, source: true, sharing: "private" });
@@ -110,7 +251,7 @@ test("workspace interaction benchmark measures project navigation and search res
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(page.locator('[data-path="Bench0511.md"]')).toBeAttached();
     const search = async () => {
-      await page.locator("#more-menu > summary").click();
+      await page.locator("#more-menu > button").click();
       const result = await measureClickFrame(page, "#workspace-search-open", "#search-results button", "#search-results");
       for (const request of result.requests) {
         if (request.path === "/api/search") record("searchRequestMs", request.ms);

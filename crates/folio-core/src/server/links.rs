@@ -272,7 +272,7 @@ pub(super) fn rewrite(
             },
         ));
     }
-    edits.sort_by(|a, b| b.0.start.cmp(&a.0.start));
+    edits.sort_by_key(|edit| std::cmp::Reverse(edit.0.start));
     edits.dedup_by(|a, b| a.0 == b.0);
     let mut result = source.to_owned();
     let mut previous = source.len();

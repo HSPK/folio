@@ -3,6 +3,7 @@ import type { Node as ProseNode } from "@milkdown/prose/model";
 import type { EditorView } from "@milkdown/prose/view";
 import type { Root } from "mdast";
 import type { JSONRecord } from "@milkdown/transformer";
+import type { LiveEdit } from "../markdown-history.ts";
 
 export interface TextSelectionRange {
   from: number;
@@ -101,7 +102,8 @@ export interface WikiDocument {
 
 export interface InlineEditorOptions {
   root: HTMLElement;
-  onChange: (source: string) => void;
+  tableLayoutScope?: () => string | null;
+  onChange: (source: string, edit?: LiveEdit) => void;
   onFallback: (message: string) => void;
   onLink: (url: string) => void;
   onReady?: () => void;

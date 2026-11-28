@@ -2,29 +2,39 @@ import { projectModel } from "../../state/projects";
 import { projectViewState as projectState } from "./view-state";
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
-import { libraryModel } from "../../state/library";
+import { libraryModel, libraryView } from "../../state/library";
 import { createProjectTransitions } from "../../services/project-transitions";
-import { documentSharing, projectSharing, projectSource, type ProjectChange } from "../../models/projects";
-import { createIcon } from "@folio/editor-runtime";
-import { isResourceId, readNoteRoute } from "@folio/model";
+import {
+  documentSharing,
+  projectSharing,
+  projectSource,
+  type ProjectChange,
+  compactPageUrl,
+  expandedPageUrl,
+  isResourceId,
+  readNoteRoute,
+} from "@folio/model";
+import { createButton } from "@folio/editor-runtime";
 import type { Project, RouteMode } from "../../types/domain";
-import { requiredQuery, requireValue } from "../../types/elements";
+import { element, requiredQuery, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { closeMenus } from "../accounts/authentication";
 import { pollDocumentParticipation } from "../collaboration/participation";
 import { appState } from "../core/bootstrap";
 import { ApiError, documentNotice, notice, setText } from "../core/dom";
 import { connect } from "../core/connection";
+import { api } from "../core/api";
+import { decodedResource } from "../../api/contracts";
 import { readLayoutPreference, storeLayoutPreference } from "../core/layout";
-import { hasDialogConfirmation } from "../dialogs/dialogs";
+import { confirmAction, hasDialogConfirmation } from "../dialogs/dialogs";
 import { captureDraft, discardLocalDraft } from "../documents/drafts";
-import { imageState } from "../documents/images";
+import { imageUploading } from "../documents/images";
 import { cancelDocumentLoad, clearDocument, commitUrl, restoreCommittedUrl } from "../documents/navigation";
 import { documentResource, requestResourceLink, resourceState } from "../documents/resources";
 import { cancelAutoSave, saveBeforeLeaving, scheduleAutoSave } from "../documents/saving";
 import { applicationSignal, listen, onApplicationDispose } from "../lifecycle";
 import { renderFiles } from "../navigation/library";
-import { treeState } from "../navigation/tree";
+import { clearTreePrefetch } from "../navigation/tree";
 import { cancelSettings } from "../preferences/settings";
 import { changeProject, loadProjectCatalog as loadProjects } from "./gateway";
 import { publicShareUrl, publicState, refreshSharingCopy, renderPublicShareFields } from "../sharing/public";
@@ -75,12 +85,12 @@ export function initializeProjectsProjects(): void {
       activation = null;
     }
   });
-  listen(appState.element("projects-open"), "click", () => void openProjects());
-  listen(appState.element("settings-projects-open"), "click", () => {
+  listen(element("projects-open"), "click", () => void openProjects());
+  listen(element("settings-projects-open"), "click", () => {
     cancelSettings();
     void openProjects();
   });
-  listen(appState.element("project-create-form"), "submit", async (event) => {
+  listen(element("project-create-form"), "submit", async (event) => {
     if (!(event.target instanceof Element)) return;
     event.preventDefault();
     if (projectState.projectCreating) return;
@@ -89,7 +99,7 @@ export function initializeProjectsProjects(): void {
     const current = () => !owner.aborted && authenticationSession.isCurrent(scope);
     projectState.projectCreating = true;
     refreshProjectBusy();
-    const controls = [...appState.element("project-create-form").elements].filter(
+    const controls = [...element("project-create-form").elements].filter(
       (control): control is HTMLInputElement | HTMLSelectElement | HTMLButtonElement =>
         control instanceof HTMLInputElement ||
         control instanceof HTMLSelectElement ||
@@ -97,15 +107,15 @@ export function initializeProjectsProjects(): void {
     );
     const body = {
       action: "create",
-      name: appState.element("project-name").value,
-      kind: appState.element("project-kind").value,
-      source: appState.element("project-source").value.trim(),
+      name: element("project-name").value,
+      kind: element("project-kind").value,
+      source: element("project-source").value.trim(),
     } as const;
     controls.forEach((control) => {
       control.disabled = true;
     });
-    setText(appState.element("project-create"), "Creating…");
-    notice(appState.element("project-error"), "");
+    setText(element("project-create"), "Creating…");
+    notice(element("project-error"), "");
     documentNotice("Creating project…");
     try {
       const project = await changeProject({ ...body, kind: projectSource(body.kind) });
@@ -119,7 +129,7 @@ export function initializeProjectsProjects(): void {
     } catch (errorCause) {
       if (!current()) return;
       const error = errorContext(errorCause);
-      notice(appState.element("project-error"), error.message, "error");
+      notice(element("project-error"), error.message, "error");
       documentNotice(`Create failed: ${error.message}`, "error");
     } finally {
       if (!owner.aborted) {
@@ -127,45 +137,62 @@ export function initializeProjectsProjects(): void {
         controls.forEach((control) => {
           control.disabled = false;
         });
-        setText(appState.element("project-create"), "Create project");
+        setText(element("project-create"), "Create project");
         syncProjectSource();
         refreshProjectBusy();
       }
     }
   });
-  listen(appState.element("share-page"), "click", () => {
+  listen(element("share-page"), "click", () => {
     closeMenus();
     void openSharing(requireValue(projectModel.active), requireValue(documentSession.current).path);
   });
-  listen(appState.element("sharing-cancel"), "click", () => {
+  listen(element("sharing-cancel"), "click", () => {
     if (projectDialogState.projectSessionOrigin === "document") closeProjectManager();
     else void backProjectView({ discard: true });
   });
-  listen(appState.element("sharing-form"), "submit", (event) => {
+  listen(element("sharing-form"), "submit", (event) => {
     event.preventDefault();
     void saveSharing();
   });
-  listen(appState.element("sharing-copy-link"), "click", async () => {
-    if (appState.element("sharing-copy-link").disabled) return;
-    notice(appState.element("sharing-error"), "");
+  listen(element("sharing-copy-link"), "click", async () => {
+    if (element("sharing-copy-link").disabled) return;
+    notice(element("sharing-error"), "");
     const target = requireValue(projectState.sharingTarget, "Sharing target");
-    const url = new URL(window.location.href);
+    const url = new URL("/", window.location.href);
     url.searchParams.set("project", target.project.id);
-    if (target.path) url.searchParams.set("document", requireValue(target.document, "Shared document identity"));
+    if (target.path)
+      url.searchParams.set(
+        /\.(md|markdown)$/i.test(target.path) ? "document" : "asset",
+        requireValue(target.document, "Shared file identity"),
+      );
     else url.searchParams.delete("document");
     url.hash = "";
     try {
       const link = target.path ? target.project.publicLinks?.[target.path] : undefined;
-      if (appState.element("sharing-level").value === "publicRead" && !link) throw new Error("Save permissions first");
-      await copyPlainText(link ? publicShareUrl(link.token) : url.href);
+      if (element("sharing-level").value === "publicRead" && !link) throw new Error("Save permissions first");
+      if (
+        !link &&
+        target.path &&
+        /\.(md|markdown)$/i.test(target.path) &&
+        target.document &&
+        compactPageUrl(url).pathname.length !== "/n/".length + 8
+      ) {
+        await api(`/api/resource?id=${target.document}`, {
+          decode: decodedResource,
+          signal: authenticationSession.scope.signal,
+        });
+        if (projectState.sharingTarget !== target) return;
+      }
+      await copyPlainText(link ? publicShareUrl(link.token) : compactPageUrl(url).href);
       if (projectState.sharingTarget !== target || !projectManagerOpen()) return;
-      setText(appState.element("sharing-copy-link"), "Copied");
-      setText(appState.element("sharing-feedback"), "Link copied");
-      appState.element("sharing-feedback").hidden = false;
+      setText(element("sharing-copy-link"), "Copied");
+      setText(element("sharing-feedback"), "Link copied");
+      element("sharing-feedback").hidden = false;
       documentNotice("");
     } catch (errorCause) {
       const error = errorContext(errorCause);
-      notice(appState.element("sharing-error"), `Copy failed: ${error.message}`, "error");
+      notice(element("sharing-error"), `Copy failed: ${error.message}`, "error");
     }
   });
 }
@@ -178,7 +205,7 @@ export function projectUrl(
   documentPath: string | undefined = documentSession.current?.path,
 ) {
   if (!value || !value.startsWith("/")) return value ?? null;
-  const url = new URL(value, window.location.href);
+  const url = expandedPageUrl(new URL(value, window.location.href));
   const project = documentSession.current?.project ?? projectModel.active?.id ?? "local";
   const asset = url.pathname === "/assets" && isResourceId(url.searchParams.get("id"));
   const document = url.pathname === "/" && isResourceId(url.searchParams.get("document"));
@@ -200,7 +227,7 @@ export function projectUrl(
   }
   const context =
     resourceState.resourceLocations.get(resourceState.resourceLocation(project, documentPath ?? ""))?.id ??
-    documentSession.current?.id;
+    documentSession.resourceId;
   if (publicState.publicView) {
     if (url.pathname === "/assets") {
       url.pathname = "/api/public/assets";
@@ -208,9 +235,8 @@ export function projectUrl(
       if (context) url.searchParams.set("document", context);
     } else if (url.pathname === "/") {
       if (url.searchParams.get("document") !== documentSession.current?.id) return null;
-      url.pathname = "/share";
-      url.search = "";
-      url.searchParams.set("share", requireValue(publicState.publicToken, "Public link identity"));
+      const shared = new URL(publicShareUrl(publicState.publicToken));
+      return shared.pathname + url.hash;
     }
     return url.pathname + url.search + url.hash;
   }
@@ -218,30 +244,35 @@ export function projectUrl(
     url.searchParams.set("project", project);
   }
   if (url.pathname === "/assets" && context) url.searchParams.set("document", context);
-  return url.pathname + url.search + url.hash;
+  const target = url.pathname === "/" ? compactPageUrl(url) : url;
+  return target.pathname + target.search + target.hash;
 }
 export function updateProjectControls(): void {
-  appState.ui.settingsOpen.hidden = publicState.publicView;
-  appState.ui.sidebarToggle.hidden = publicState.publicView;
-  appState.element("sidebar-settings-open").hidden = publicState.publicView;
-  appState.element("projects-open").hidden = authenticationSession.mode !== "users";
-  appState.element("app-name").hidden = authenticationSession.mode === "users";
-  setText(appState.element("projects-open"), projectModel.active?.name ?? "Projects");
-  appState.element("share-page").hidden = !projectModel.active?.owned || !documentSession.current;
+  element("settings-open").hidden = publicState.publicView;
+  element("sidebar-toggle").hidden = publicState.publicView;
+  element("sidebar-settings-open").hidden = publicState.publicView;
+  element("projects-open").hidden = authenticationSession.mode !== "users";
+  element("app-name").hidden = authenticationSession.mode === "users";
+  setText(element("projects-open"), projectModel.active?.name ?? "Projects");
+  element("share-page").hidden = !projectModel.active?.owned || !documentSession.resourceId;
 }
 export async function ensureProject(isCurrent = () => true) {
   if (authenticationSession.mode !== "users") return true;
   const scope = authenticationSession.scope;
   const current = () => isCurrent() && authenticationSession.isCurrent(scope);
-  await loadProjects();
   if (!current()) return false;
   const url = new URL(appState.committedUrl);
   let requested = url.searchParams.get("project");
   const documentRoute = readNoteRoute(url);
-  if (!requested && documentRoute.id) {
-    const resource = await documentResource(documentRoute.id, scope.signal);
-    if (!current()) return false;
-    requested = resource.project;
+  const resourceId = documentRoute.id ?? url.searchParams.get("asset");
+  if (!requested && isResourceId(resourceId)) {
+    try {
+      const resource = await documentResource(resourceId, scope.signal);
+      if (!current()) return false;
+      requested = resource.project;
+    } catch (error) {
+      if (documentRoute.id || !(error instanceof ApiError) || ![403, 404, 410].includes(error.status)) throw error;
+    }
   }
   const chosen = requested ?? projectModel.active?.id ?? readLayoutPreference(projectStorageKey());
   const project =
@@ -287,29 +318,31 @@ export async function switchProject(
     return false;
   }
 }
-export function projectOperationPending() {
+function projectOperationPending() {
   return (
     documentSession.saving ||
     appState.creating ||
     appState.movingEntry ||
     projectState.projectCreating ||
-    imageState.imageUploading
+    imageUploading
   );
 }
-export async function allowProjectSwitch(action: string, signal?: AbortSignal) {
+async function allowProjectSwitch(action: string, signal?: AbortSignal) {
   if (signal?.aborted) return false;
-  if (appState.creating || appState.movingEntry || projectState.projectCreating || imageState.imageUploading) {
+  if (appState.creating || appState.movingEntry || projectState.projectCreating || imageUploading) {
     documentNotice("Operation in progress");
     return false;
   }
   if (!(await saveBeforeLeaving(action, signal)) || signal?.aborted) return false;
+  if (libraryView.pending.length && !(await confirmAction("Leave with unsynced files?", { label: "Leave", signal })))
+    return false;
   if (projectOperationPending()) {
     documentNotice("Operation in progress");
     return false;
   }
   return true;
 }
-export async function activateProject(
+async function activateProject(
   project: Project,
   {
     url = null,
@@ -328,17 +361,18 @@ export async function activateProject(
   if (owner.aborted || scope.signal.aborted || signal?.aborted) return false;
   const discardedDraft = directoryChanged ? captureDraft() : null;
   const id = project.id;
-  const next = new URL(url ?? appState.committedUrl);
+  const next = expandedPageUrl(url ?? appState.committedUrl);
   next.searchParams.set("project", id);
   if (!url) {
     next.searchParams.delete("document");
+    next.searchParams.delete("asset");
     next.hash = "";
   }
   commitUrl(next, mode);
   const operation = Symbol("project-activation");
   activation = operation;
   const current = () => !owner.aborted && authenticationSession.isCurrent(scope) && activation === operation;
-  treeState.documentPrefetch.clear();
+  clearTreePrefetch();
   cancelDocumentLoad(false);
   appState.treeController?.abort();
   appState.treeGate.invalidate();
@@ -349,7 +383,7 @@ export async function activateProject(
   projectModel.select(project.id, true);
   appState.currentRoot = null;
   libraryModel.reset();
-  appState.ui.filter.value = "";
+  element("file-filter").value = "";
   storeLayoutPreference(projectStorageKey(), id);
   closeProjectManager();
   renderFiles();
@@ -357,19 +391,19 @@ export async function activateProject(
   try {
     await discardLocalDraft(discardedDraft);
   } finally {
-    if (current()) await connect({ restoreWorkspace: !directoryChanged });
+    if (current()) await connect({ restoreWorkspace: !directoryChanged, selectedProject: projectModel.selection });
   }
   return current();
 }
-export async function openProjects(): Promise<void> {
+async function openProjects(): Promise<void> {
   const owner = applicationSignal();
   const scope = authenticationSession.scope;
   closeMenus();
-  requiredQuery(appState.element("project-kind"), '[value="folder"]', HTMLElement).hidden =
+  requiredQuery(element("project-kind"), '[value="folder"]', HTMLElement).hidden =
     authenticationSession.user?.role !== "admin";
-  if (authenticationSession.user?.role !== "admin" && appState.element("project-kind").value === "folder")
-    appState.element("project-kind").value = "new";
-  appState.element("projects-filter").value = "";
+  if (authenticationSession.user?.role !== "admin" && element("project-kind").value === "folder")
+    element("project-kind").value = "new";
+  element("projects-filter").value = "";
   showProjectBrowse();
   openProjectManager();
   focusProjectList();
@@ -378,13 +412,13 @@ export async function openProjects(): Promise<void> {
     if (
       projectManagerOpen() &&
       projectDialogState.projectView === "browse" &&
-      (document.activeElement === document.body || document.activeElement === appState.element("projects-close"))
+      (document.activeElement === document.body || document.activeElement === element("projects-close"))
     )
       focusProjectList();
   } catch (errorCause) {
     if (owner.aborted || !authenticationSession.isCurrent(scope)) return;
     const error = errorContext(errorCause);
-    notice(appState.element("project-error"), error.message, "error");
+    notice(element("project-error"), error.message, "error");
   }
 }
 export async function openSharing(
@@ -419,64 +453,60 @@ export async function openSharing(
   projectDialogState.projectParent = parent;
   projectState.sharingTarget = { project, path, document: resourceId };
   projectDialogState.projectDialog.dataset.scope = path ? "document" : "project";
-  setText(appState.element("sharing-title"), path ? "Document permissions" : "Project settings");
-  setText(appState.element("sharing-description"), path ?? project.name);
+  const file = Boolean(path && !/\.(md|markdown)$/i.test(path));
+  const readOnly = Boolean(path && /\.(pdf|xlsx)$/i.test(path));
+  setText(element("sharing-title"), path ? (file ? "File permissions" : "Document permissions") : "Project settings");
+  setText(element("sharing-description"), path ?? project.name);
   const options = [
     ...(path ? [["inherit", "Inherit Project permission"]] : []),
     ["private", "Private (owner only)"],
     ["read", "Signed-in users can read"],
-    ["edit", "Signed-in users can edit"],
+    ...(!readOnly ? [["edit", "Signed-in users can edit"]] : []),
     ...(path ? [["publicRead", "Public link (no login required)"]] : []),
   ];
-  appState.element("sharing-level").replaceChildren(...options.map(([value, label]) => new Option(label, value)));
+  element("sharing-level").replaceChildren(...options.map(([value, label]) => new Option(label, value)));
   const link = path ? project.publicLinks?.[path] : null;
-  appState.element("sharing-level").value = path
-    ? link
-      ? "publicRead"
-      : (project.pages[path] ?? "inherit")
-    : project.shared;
-  appState.element("sharing-public-edit").checked = link?.access === "edit";
+  element("sharing-level").value = path ? (link ? "publicRead" : (project.pages[path] ?? "inherit")) : project.shared;
+  element("sharing-public-edit").checked = !file && link?.access === "edit";
+  element("sharing-public-edit").disabled = file;
+  element("sharing-public-edit").closest("label")!.hidden = file;
   const expiration = link?.expiresAt ? new Date(link.expiresAt) : null;
-  appState.element("sharing-expires").value = expiration
+  element("sharing-expires").value = expiration
     ? new Date(expiration.getTime() - expiration.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
     : "";
-  appState.element("sharing-password").value = "";
-  appState.element("sharing-password").disabled = false;
-  appState.element("sharing-clear-password").checked = false;
-  appState.element("sharing-clear-password-field").hidden = !link?.passwordRequired;
+  element("sharing-password").value = "";
+  element("sharing-password").disabled = false;
+  element("sharing-clear-password").checked = false;
+  element("sharing-clear-password-field").hidden = !link?.passwordRequired;
   renderPublicShareFields();
   const documents = [...new Set([...Object.keys(project.pages), ...Object.keys(project.publicLinks ?? {})])].sort();
-  appState.element("sharing-documents").replaceChildren(
+  element("sharing-documents").replaceChildren(
     ...(path ? [] : documents).map((documentPath) => {
-      const button = document.createElement("button");
-      button.type = "button";
+      const button = createButton({
+        label: documentPath,
+        icon: project.publicLinks?.[documentPath] ? "globe" : "file",
+        text: documentPath,
+        onClick: () => void openSharing(project, documentPath, project.documentIds?.[documentPath]),
+      });
       button.className = "project-open";
-      button.append(
-        createIcon(project.publicLinks?.[documentPath] ? "globe" : "file"),
-        document.createTextNode(documentPath),
-      );
-      button.addEventListener(
-        "click",
-        () => void openSharing(project, documentPath, project.documentIds?.[documentPath]),
-      );
       return button;
     }),
   );
-  appState.element("sharing-documents-section").hidden = Boolean(path) || !documents.length;
-  appState.element("sharing-project-fields").hidden = Boolean(path);
-  appState.element("sharing-name").value = project.name;
-  appState.element("sharing-root").value = project.root ?? "";
-  appState.element("sharing-root").readOnly = authenticationSession.user?.role !== "admin";
-  appState.element("sharing-image-directory").value = project.imageDirectory;
-  appState.element("sharing-name").required = !path;
-  appState.element("sharing-root").required = !path;
-  appState.element("sharing-image-directory").required = !path;
-  notice(appState.element("sharing-error"), "");
+  element("sharing-documents-section").hidden = Boolean(path) || !documents.length;
+  element("sharing-project-fields").hidden = Boolean(path);
+  element("sharing-name").value = project.name;
+  element("sharing-root").value = project.root ?? "";
+  element("sharing-root").readOnly = authenticationSession.user?.role !== "admin";
+  element("sharing-image-directory").value = project.imageDirectory;
+  element("sharing-name").required = !path;
+  element("sharing-root").required = !path;
+  element("sharing-image-directory").required = !path;
+  notice(element("sharing-error"), "");
   setProjectView("sharing");
   projectDialogState.projectFormSnapshot = projectFormState();
   refreshSharingCopy();
   openProjectManager();
-  appState.element(path ? "sharing-level" : "sharing-name").focus();
+  element(path ? "sharing-level" : "sharing-name").focus();
 }
 export async function saveSharing(resetLink = false): Promise<void> {
   if (projectDialogState.sharingSaving || hasDialogConfirmation(projectDialogState.projectDialog)) return;
@@ -486,24 +516,24 @@ export async function saveSharing(resetLink = false): Promise<void> {
   const target = requireValue(projectState.sharingTarget, "Sharing target");
   const { project, path, document } = target;
   const selection = projectModel.selection;
-  const root = appState.element("sharing-root").value.trim();
+  const root = element("sharing-root").value.trim();
   const fields = {
-    name: appState.element("sharing-name").value,
-    imageDirectory: appState.element("sharing-image-directory").value.trim(),
-    permission: appState.element("sharing-level").value,
-    publicEdit: appState.element("sharing-public-edit").checked,
-    expiration: appState.element("sharing-expires").value,
-    password: appState.element("sharing-password").value || null,
-    clearPassword: appState.element("sharing-clear-password").checked,
+    name: element("sharing-name").value,
+    imageDirectory: element("sharing-image-directory").value.trim(),
+    permission: element("sharing-level").value,
+    publicEdit: element("sharing-public-edit").checked,
+    expiration: element("sharing-expires").value,
+    password: element("sharing-password").value || null,
+    clearPassword: element("sharing-clear-password").checked,
   };
-  const changingRoot = !path && !appState.element("sharing-root").readOnly && root !== project.root;
+  const changingRoot = !path && !element("sharing-root").readOnly && root !== project.root;
   const changingActiveRoot = changingRoot && projectModel.active?.id === project.id;
   projectDialogState.sharingSaving = true;
   refreshProjectBusy();
-  appState.element("sharing-save").disabled = true;
-  setText(appState.element("sharing-save"), "Saving…");
-  appState.element("sharing-reset-link").disabled = true;
-  notice(appState.element("sharing-error"), "");
+  element("sharing-save").disabled = true;
+  setText(element("sharing-save"), "Saving…");
+  element("sharing-reset-link").disabled = true;
+  notice(element("sharing-error"), "");
   try {
     let body: ProjectChange;
     if (path) {
@@ -553,9 +583,9 @@ export async function saveSharing(resetLink = false): Promise<void> {
     if (!changedActiveRoot) void pollDocumentParticipation();
     if (projectState.sharingTarget !== target) return;
     target.project = next;
-    appState.element("sharing-password").value = "";
-    appState.element("sharing-clear-password").checked = false;
-    appState.element("sharing-clear-password-field").hidden = !path || !next.publicLinks?.[path]?.passwordRequired;
+    element("sharing-password").value = "";
+    element("sharing-clear-password").checked = false;
+    element("sharing-clear-password-field").hidden = !path || !next.publicLinks?.[path]?.passwordRequired;
     projectDialogState.projectFormSnapshot = null;
     if (changedActiveRoot) {
       await activateProject(next, { directoryChanged: true });
@@ -571,13 +601,13 @@ export async function saveSharing(resetLink = false): Promise<void> {
   } catch (errorCause) {
     if (!current()) return;
     const error = errorContext(errorCause);
-    notice(appState.element("sharing-error"), error.message, "error");
+    notice(element("sharing-error"), error.message, "error");
   } finally {
     if (!owner.aborted) {
       projectDialogState.sharingSaving = false;
-      appState.element("sharing-save").disabled = false;
-      setText(appState.element("sharing-save"), "Save");
-      appState.element("sharing-reset-link").disabled = false;
+      element("sharing-save").disabled = false;
+      setText(element("sharing-save"), "Save");
+      element("sharing-reset-link").disabled = false;
       refreshProjectBusy();
       refreshSharingCopy();
       if (changingActiveRoot && selection === projectModel.selection) scheduleAutoSave();

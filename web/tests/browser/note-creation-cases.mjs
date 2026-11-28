@@ -4,10 +4,10 @@ test("title-only creation keeps metadata exact and creation time stable through 
   const title = '研究: "A/B"?';
   const filename = "研究- -A-B-.md";
   const before = Date.now();
-  await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
+  await page.locator("#new-menu > button").click(); await page.locator("#new-from-template").click();
   await expect(page.locator("#new-note-path")).toHaveCount(0);
   await page.getByRole("textbox", { name: "Title", exact: true }).fill(title);
-  await expect(page.locator("#new-note-hint")).toHaveText(`File: ${filename}`);
+  await expect(page.locator("#new-note-hint")).toHaveText(`File: ${filename.slice(0, -3)}`);
   await page.screenshot({ path: path.join(buildRoot, "title-first-new-note.png") });
   await page.locator("#create-note").click();
   await expect(page.locator("#new-note-dialog")).toBeHidden();
@@ -47,7 +47,7 @@ test("template selection preserves a custom title and every template creates met
     ["weekly", "Custom weekly title", "Highlights"],
     ["meeting", "Custom meeting title", "Attendees"],
   ]) {
-    await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
+    await page.locator("#new-menu > button").click(); await page.locator("#new-from-template").click();
     await page.locator("#new-note-title").fill(title);
     await page.locator("#new-note-template").selectOption(kind);
     await expect(page.locator("#new-note-title")).toHaveValue(title);

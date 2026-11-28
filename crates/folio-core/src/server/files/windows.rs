@@ -83,7 +83,23 @@ impl Directory {
         let path = self
             .child_path(name)
             .map_err(|error| ApiError::io("Invalid document folder name", error))?;
-        Self::open(&path, check_hidden)
+        let child = Self::open(&path, check_hidden)?;
+        if check_hidden {
+            // A DOS short-name alias need not start with '.' even when the
+            // actual directory does. Check the long name while it is pinned.
+            let canonical = fs::canonicalize(&path)
+                .map_err(|e| ApiError::io("Could not verify the folder name", e))?;
+            if canonical
+                .file_name()
+                .and_then(OsStr::to_str)
+                .is_some_and(super::super::ignored_directory)
+            {
+                return Err(ApiError::forbidden(
+                    "Hidden and dependency folders are not accessible.",
+                ));
+            }
+        }
+        Ok(child)
     }
 
     pub(in super::super) fn try_clone(&self) -> Result<Self, ApiError> {
@@ -139,6 +155,10 @@ impl Directory {
 
     pub(in super::super) fn create_dir(&self, name: &OsStr) -> io::Result<()> {
         fs::create_dir(self.child_path(name)?)
+    }
+
+    pub(in super::super) fn create_private_dir(&self, name: &OsStr) -> io::Result<()> {
+        self.create_dir(name)
     }
 
     pub(in super::super) fn move_entry_to(

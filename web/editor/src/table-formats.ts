@@ -1,7 +1,7 @@
 import { escapeImageAttribute } from "./image-syntax.ts";
 import type { Node } from "@milkdown/prose/model";
 
-export function tableRows(table: Node) {
+function tableRows(table: Node) {
   const rows: string[][] = [];
   table.forEach((row) => {
     const cells: string[] = [];

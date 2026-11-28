@@ -5,17 +5,12 @@ use pulldown_cmark::{CowStr, Event, LinkType, Options, Tag, TagEnd, html};
 
 use super::{files, frontmatter};
 
-#[path = "markdown/auto_links.rs"]
 mod auto_links;
-#[path = "markdown/image_html.rs"]
 pub(super) mod image_html;
-#[path = "markdown/image_source.rs"]
 pub(super) mod image_source;
-#[path = "markdown/source_positions.rs"]
 mod source_positions;
 
 #[cfg(test)]
-#[path = "markdown/render_tests.rs"]
 mod render_tests;
 
 const URL_COMPONENT: &AsciiSet = &NON_ALPHANUMERIC

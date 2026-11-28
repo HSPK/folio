@@ -156,6 +156,7 @@ pub(in crate::server) async fn list(
         user.ok_or_else(|| ApiError::forbidden("Public-link management requires a user account."))?;
     blocking(state, work, move |state, _| {
         let registry = state
+            .shared
             .projects
             .as_ref()
             .ok_or_else(|| ApiError::internal("Projects are unavailable."))?;

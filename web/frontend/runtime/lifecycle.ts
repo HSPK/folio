@@ -32,46 +32,9 @@ export function ownApplicationResource<T extends { destroy(): void }>(resource: 
   return resource;
 }
 
-/** Bind persistent controller listeners to the application lifetime. */
-type ListenerTarget = Pick<EventTarget, "addEventListener">;
-
-export function listen<K extends keyof WindowEventMap>(
-  target: Window,
-  type: K,
-  listener: (event: WindowEventMap[K]) => void,
-  options?: boolean | AddEventListenerOptions,
-): void;
-export function listen<K extends keyof DocumentEventMap>(
-  target: Document,
-  type: K,
-  listener: (event: DocumentEventMap[K]) => void,
-  options?: boolean | AddEventListenerOptions,
-): void;
-export function listen<K extends keyof HTMLElementEventMap>(
-  target: ListenerTarget,
-  type: K,
-  listener: (event: HTMLElementEventMap[K]) => void,
-  options?: boolean | AddEventListenerOptions,
-): void;
-export function listen(
-  target: ListenerTarget,
-  type: string,
-  listener: EventListenerOrEventListenerObject,
-  options?: boolean | AddEventListenerOptions,
-): void;
-export function listen(
-  target: ListenerTarget,
+export const listen: Lifetime["listen"] = (
+  target: Pick<EventTarget, "addEventListener">,
   type: string,
   listener: unknown,
   options?: boolean | AddEventListenerOptions,
-) {
-  const isListener = (value: unknown): value is EventListenerOrEventListenerObject =>
-    typeof value === "function" ||
-    (value !== null && typeof value === "object" && "handleEvent" in value && typeof value.handleEvent === "function");
-  if (!isListener(listener)) throw new Error(`Invalid event listener for ${type}.`);
-  const configuration = typeof options === "boolean" ? { capture: options } : options;
-  const signal = configuration?.signal
-    ? AbortSignal.any([configuration.signal, applicationSignal()])
-    : applicationSignal();
-  target.addEventListener(type, listener, { ...configuration, signal });
-}
+) => applicationLifetime().listen(target, type, listener as EventListenerOrEventListenerObject, options);

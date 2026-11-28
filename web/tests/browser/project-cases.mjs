@@ -1,4 +1,4 @@
-import { test, expect, fs, path, buildRoot, chooseView, userDocumentUrl, userResourceId, confirmDialog, primaryModifier, openSettingsDialog } from "./fixture.mjs";
+import { browserPageUrl, test, expect, fs, path, buildRoot, chooseView, userDocumentUrl, userResourceId, confirmDialog, primaryModifier, openSettingsDialog } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
 async function projectApi(page, library, body) {
@@ -6,6 +6,129 @@ async function projectApi(page, library, body) {
   expect(response.ok(), await response.text()).toBe(true);
   return response.json();
 }
+
+test("project switches show the destination before a slow session and short bookmarks read one catalog", async ({ browser }) => {
+  const library = await collaborativeLibrary(browser, { participants: 1, source: true, sharing: "private" });
+  let resume;
+  const pause = new Promise(resolve => { resume = resolve; });
+  try {
+    const [page] = library.pages;
+    const project = await projectApi(page, library, { action: "create", name: "Slow destination", kind: "new" });
+    await page.locator("#projects-open").click();
+    const target = page.locator(`.project-open[data-project="${project.id}"]`);
+    await expect(target).toBeVisible();
+    const rowGeometry = () => page.locator("#projects-list .project-open").evaluateAll(buttons =>
+      Object.fromEntries(buttons.map(button => {
+        const row = button.getBoundingClientRect();
+        const parts = [...button.querySelectorAll(".project-symbol, strong, small")].map(node => {
+          const r = node.getBoundingClientRect();
+          return [r.x - row.x, r.y - row.y, r.width, r.height];
+        });
+        return [button.dataset.project, [row.height, ...parts]];
+      })));
+    const layout = await rowGeometry();
+    const catalogs = [];
+    page.on("request", r => {
+      if (new URL(r.url()).pathname === "/api/projects" && r.method() === "GET") catalogs.push(r);
+    });
+    await page.route("**/api/session", async route => { await pause; await route.continue(); }, { times: 1 });
+    const tree = page.waitForResponse(r => new URL(r.url()).pathname === "/api/tree" && r.request().headers()["x-folio-project"] === project.id);
+    await target.click();
+    await expect(page.locator("#projects-dialog")).toBeHidden();
+    await expect(page.locator("#projects-open")).toHaveText("Slow destination");
+    await expect(page.locator("#tree-message")).toHaveText("Loading…");
+    expect((await tree).status()).toBe(200);
+    resume();
+    await expect(page.locator("#tree-message")).toHaveText("No notes yet");
+    expect(catalogs).toHaveLength(0);
+    await page.reload();
+    await expect(page.locator("#projects-open")).toHaveText("Slow destination");
+    await expect(page.locator("#tree-message")).toHaveText("No notes yet");
+    expect(catalogs).toHaveLength(1);
+    await page.locator("#projects-open").click();
+    await expect(target).toHaveAttribute("aria-current", "true");
+    expect(await rowGeometry()).toEqual(layout);
+  } finally { resume(); await library.close(); }
+});
+
+test("home and reload remember the selected project even when the last note belongs elsewhere", async ({ browser }) => {
+      const lib = await collaborativeLibrary(browser, { participants: 1, source: true, sharing: "private" });
+      try {
+        const [page] = lib.pages;
+        const bookmark = page.url();
+        const target = await projectApi(page, lib, {action:"create",name:"Reports",kind:"new"});
+        await page.locator("#projects-open").click();
+        await page.locator(`.project-open[data-project="${target.id}"]`).click();
+        await expect(page.locator("#tree-message")).toHaveText("No notes yet");
+        const reads = [];
+        page.on("request", r => { if (new URL(r.url()).pathname === "/api/document" && r.method() === "GET") reads.push(r.url()); });
+        await page.goto(new URL("/",lib.url).href);
+        await expect(page.locator("#projects-open")).toHaveText("Reports");
+        await page.reload();
+        await expect(page.locator("#projects-open")).toHaveText("Reports");
+        await expect(page.locator("#tree-message")).toHaveText("No notes yet");
+        expect(reads).toEqual([]);
+        await page.goto(bookmark);
+        await expect(page.locator("#editor")).toHaveValue(/Alpha/);
+        await expect(page.locator("#projects-open")).not.toHaveText("Reports");
+      } finally { await lib.close(); }
+});
+
+test("startup reads a bookmarked note once and ignores a stale restore hint", async ({ browser }) => {
+  const library = await collaborativeLibrary(browser, { participants: 1, source: true, sharing: "private" });
+  try {
+    const [page] = library.pages;
+    const shared = await userResourceId(page.context(), library.url, "Shared.md");
+    const other = await userResourceId(page.context(), library.url, "Other.md");
+    const requests = [];
+    page.on("request", request => {
+      const url = new URL(request.url());
+      if (url.pathname === "/api/document" && request.method() === "GET") requests.push(url.searchParams.get("id"));
+    });
+    for (const hint of ["matching", "stale", "absent"]) {
+      if (hint === "absent") await page.evaluate(() => sessionStorage.removeItem("folio.start.note"));
+      if (hint === "stale") await page.evaluate(id => {
+        const value = JSON.parse(sessionStorage.getItem("folio.start.note"));
+        sessionStorage.setItem("folio.start.note", JSON.stringify({...value, id}));
+      }, other);
+      requests.length = 0;
+      await page.reload();
+      await expect(page.locator("#editor")).toHaveValue(/Alpha/);
+      await expect(page.locator('button[data-path="Shared.md"]')).toHaveAttribute("aria-current", "page");
+      expect(requests.filter(id => id === shared)).toHaveLength(1);
+    }
+  } finally { await library.close(); }
+});
+
+test("fresh bookmarks and home fetch the authorized note before the application script is ready", async ({ browser }) => {
+  const library = await collaborativeLibrary(browser, { participants: 1, sharing: "private" });
+  try {
+    const [owner] = library.pages;
+    const id = await userResourceId(owner.context(), library.url, "Shared.md");
+    await expect.poll(async () => (await (await owner.request.get(new URL("/api/workspace", library.url).href)).json()).workspace.recent[0]?.id).toBe(id);
+    for (const url of [owner.url(), new URL("/", library.url).href]) {
+      const context = await browser.newContext();
+      let resume;
+      const paused = new Promise(resolve => { resume = resolve; });
+      try {
+        await context.addCookies(await owner.context().cookies());
+        const page = await context.newPage();
+        await page.route(/\/app\.mjs(?:\?|$)/, async route => { await paused; await route.continue(); });
+        const reads = [];
+        page.on("response", response => {
+          const path = new URL(response.url());
+          if (path.pathname === "/api/document" && response.request().method() === "GET") reads.push([path.searchParams.get("id"), response.status()]);
+        });
+        await page.goto(url, { waitUntil: "commit" });
+        await expect.poll(() => reads).toEqual([[id, 200]]);
+        await expect(page.locator("#folio-boot")).toBeVisible();
+        resume();
+        await expect(page.locator('.ProseMirror[contenteditable="true"]')).toContainText("Alpha");
+        expect(reads).toEqual([[id, 200]]);
+      } finally { resume(); await context.close(); }
+    }
+  } finally { await library.close(); }
+});
 
 test("a rejected project route preserves the active note and leaves the project switch retryable", async ({ browser }) => {
   const library = await collaborativeLibrary(browser, { participants: 1, source: true });
@@ -35,7 +158,7 @@ test("a rejected project route preserves the active note and leaves the project 
     await target.click();
     await expect(page.locator("#projects-open")).toHaveText("Retryable project");
     await expect(page.locator("#projects-dialog")).toBeHidden();
-    expect(new URL(page.url()).searchParams.get("project")).toBe(project.id);
+    expect((await browserPageUrl(page)).searchParams.get("project")).toBe(project.id);
   } finally { await library.close(); }
 });
 
@@ -71,7 +194,12 @@ test("users create private projects and share a single page without exposing sib
     await alice.locator("#project-create").click();
     await expect(alice.locator("#projects-dialog")).toBeHidden();
     await expect(alice.locator("#projects-open")).toHaveText("Personal notebook");
-    const id = new URL(alice.url()).searchParams.get("project");
+    const projectUrl = alice.url();
+    expect(new URL(projectUrl).pathname).toMatch(/^\/p\/[A-Za-z0-9_-]{8}$/);
+    await alice.reload();
+    await expect(alice.locator("#projects-open")).toHaveText("Personal notebook");
+    await expect(alice).toHaveURL(projectUrl);
+    const id = (await browserPageUrl(alice)).searchParams.get("project");
     for (const [name, content] of [["Shared.md", "# Project-specific content\n"], ["Secret.md", "# Private sibling\n"]]) {
       const created = await alice.request.post(new URL("/api/document", library.url).href, {
         headers: { "X-Folio-Project": id }, data: { path: name, content },
@@ -84,7 +212,7 @@ test("users create private projects and share a single page without exposing sib
     await bob.locator("#projects-open").click();
     await expect(bob.locator("#projects-list")).not.toContainText("Personal notebook");
     await bob.locator("#projects-close").click();
-    await alice.locator("#more-menu > summary").click();
+    await alice.locator("#more-menu > button").click();
     await alice.locator("#share-page").click();
     await alice.locator("#sharing-level").selectOption("read");
     await alice.locator("#sharing-save").click();
@@ -227,7 +355,7 @@ test("project manager uses one lightweight dialog without nested frames or page 
     await page.locator('.project-open[data-project="default"]').click();
     await page.locator('#file-list [data-path="Shared.md"]').click();
 
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await page.locator("#share-page").click();
     await page.locator("#sharing-level").selectOption("publicRead");
     await page.locator("#sharing-save").click();
@@ -342,7 +470,7 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     await expect(page.locator('#file-list [data-path="Replacement.md"]')).toBeVisible();
     await expect(page.locator('#file-list [data-path="Other.md"]')).toHaveCount(0);
     await expect(page.locator("#editor")).toHaveValue("");
-    expect(new URL(page.url()).searchParams.has("document")).toBe(false);
+    expect((await browserPageUrl(page)).searchParams.has("document")).toBe(false);
     await page.locator('#file-list [data-path="Shared.md"]').click();
     await expect(page.locator("#editor")).toHaveValue("# New shared note\n");
     await expect(page.locator("#draft-recovery-dialog")).toBeHidden();
@@ -427,7 +555,7 @@ test("clipboard images use the configured project directory in Live and Source, 
   const library = await collaborativeLibrary(browser);
   try {
     const [alice, bob] = library.pages;
-    const document = new URL(alice.url()).searchParams.get("document");
+    const document = (await browserPageUrl(alice)).searchParams.get("document");
     await openSettingsDialog(alice);
     await alice.locator('[data-settings-tab="library"]').click();
     await alice.locator("#settings-image-directory").fill("media/pasted");
@@ -474,7 +602,7 @@ test("loading and warnings float at bottom right without shifting editor or side
   const sidebar = await page.locator("#file-nav").boundingBox();
   try {
     await page.locator('[data-path="Second.md"]').click();
-    await expect(page.locator("#loading-message")).toContainText("Opening");
+    await expect(page.locator("#loading-message")).toHaveText("Opening “Second”…");
     expect(await page.locator("#loading-message").evaluate(node => Boolean(node.closest(".status-notices")))).toBe(true);
     expect(await page.locator("#loading-message").evaluate(node => Boolean(node.closest(".status-bar")))).toBe(false);
     expect(await page.locator("#document-panes").boundingBox()).toEqual(before);
@@ -488,7 +616,7 @@ test("loading and warnings float at bottom right without shifting editor or side
     expect(viewport.height - bounds.y - bounds.height).toBeCloseTo(18, 0);
     if (browserName !== "webkit") await page.screenshot({ path: test.info().outputPath("floating-loading.png"), caret: "initial" });
   } finally { release(); }
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
+  await expect(page.locator("#document-title")).toHaveText("Second");
   await page.route("**/api/tree", (route) => route.fulfill({
     status: 422, contentType: "application/json", body: JSON.stringify({ error: "Invalid file list for status layout test" }),
   }));

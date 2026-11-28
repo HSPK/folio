@@ -5,10 +5,8 @@ import { Fragment, Slice } from "@milkdown/prose/model";
 import type { DOMOutputSpec, Node, NodeType, ResolvedPos } from "@milkdown/prose/model";
 import { NodeSelection, Selection, TextSelection } from "@milkdown/prose/state";
 import type { EditorState, Transaction } from "@milkdown/prose/state";
-import type { EditorView } from "@milkdown/prose/view";
 import { GapCursor } from "@milkdown/prose/gapcursor";
 import { closeHistory } from "@milkdown/prose/history";
-import { currentViewSelection } from "./cursor-coordinates.ts";
 import {
   escapeImageAttribute,
   imageAttributes,
@@ -403,10 +401,12 @@ export function imageInsertionTransaction(
     images,
     selection = state.selection,
     block = false,
+    background = false,
   }: {
     images: readonly Node[];
     selection?: Selection;
     block?: boolean;
+    background?: boolean;
   },
 ) {
   if (!images.length || images.some((node) => !isImageNode(node))) throw new Error("No images to insert");
@@ -427,41 +427,24 @@ export function imageInsertionTransaction(
   const transaction = closeHistory(state.tr)
     .setSelection(selection)
     .replaceSelection(new Slice(Fragment.from(content), 0, 0));
-  const inserted = insertedImages(transaction, 0).at(-1);
+  const placed = insertedImages(transaction, 0);
+  const inserted = placed.at(-1);
   if (!inserted) throw new Error("Cannot insert image here");
   const end = inserted.position + inserted.node.nodeSize;
+  if (background) transaction.setMeta("folioImagePlacement", { before: placed[0].position, after: end });
   const next = inline ? TextSelection.create(transaction.doc, end) : imageBoundarySelection(transaction.doc, end);
-  return transaction.setSelection(next).setMeta("uiEvent", "paste").scrollIntoView();
-}
-
-export function createImageInsertion({
-  view,
-  parse_fn,
-  active_fn,
-  block = false,
-}: {
-  view: EditorView;
-  parse_fn: (markdown: string) => Node;
-  active_fn: () => boolean;
-  block?: boolean;
-}) {
-  const document = view.state.doc;
-  const current = currentViewSelection(view);
-  const selection =
-    view.state.selection instanceof TextSelection
-      ? TextSelection.create(document, current.anchor, current.head)
-      : view.state.selection;
-  return (markdown: string) => {
-    if (!active_fn() || view.state.doc !== document) return false;
-    const images: ImageNode[] = [];
-    let invalid = false;
-    parse_fn(markdown).descendants((node) => {
-      if (isImageNode(node)) images.push(node);
-      else if (node.isText && node.text?.trim()) invalid = true;
-    });
-    if (!images.length || invalid) throw new Error("Cannot insert image here");
-    view.dispatch(imageInsertionTransaction(view.state, { images, selection, block }));
-    view.focus();
-    return true;
-  };
+  transaction.setMeta("uiEvent", "paste");
+  if (background && !(state.selection.empty && state.selection.from === selection.to)) {
+    if (state.selection instanceof TextSelection && !state.selection.empty) {
+      const { from, to, anchor } = state.selection;
+      const start = transaction.doc.resolve(transaction.mapping.map(from, 1));
+      const end = transaction.doc.resolve(transaction.mapping.map(to, -1));
+      return transaction.setSelection(
+        TextSelection.between(anchor === from ? start : end, anchor === from ? end : start),
+      );
+    }
+    return transaction.setSelection(state.selection.map(transaction.doc, transaction.mapping));
+  }
+  transaction.setSelection(next);
+  return background ? transaction : transaction.scrollIntoView();
 }

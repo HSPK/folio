@@ -1,4 +1,4 @@
-import { test, expect, fs, path, userDocumentUrl, userResourceId, confirmDialog, openMoreAction } from "./fixture.mjs";
+import { browserPageUrl, test, expect, fs, path, userDocumentUrl, userResourceId, openMoreAction } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
 async function loginPage(browser, library, username) {
@@ -9,6 +9,38 @@ async function loginPage(browser, library, username) {
   expect(login.ok()).toBe(true);
   return { context, page: await context.newPage() };
 }
+
+test("sidebar drag order stays with its account and never moves files for a reader", async ({ browser }) => {
+  const library = await collaborativeLibrary(browser, { participants: 1, sharing: "read", source: true });
+  try {
+    const [page] = library.pages;
+    const context = page.context();
+    await fs.mkdir(path.join(library.notes, "Box"));
+    await page.reload();
+    const note = page.locator('button[data-entry-path="Other.md"]');
+    const folder = page.locator('summary[data-entry-path="Box"]');
+    const first = page.locator("#file-list > li").first().locator("[data-entry-path]").first();
+    await note.dragTo(folder, { targetPosition: { x: 24, y: 2 } });
+    await expect(first).toHaveAttribute("data-entry-path", "Other.md");
+
+    await page.goto("about:blank");
+    await context.clearCookies(); // Keep this browser's local layout storage.
+    const login = await context.request.post(new URL("/api/auth/login", library.url).href, {
+      data: { username: "bob", password: "bob test password long enough" },
+    });
+    expect(login.ok()).toBe(true);
+    await page.goto(await userDocumentUrl(context, library.url, "Other.md"));
+    await expect(first).toHaveAttribute("data-entry-path", "Box");
+    const moves = [];
+    page.on("request", r => { if (r.method() === "PATCH") moves.push(r.url()); });
+    await note.dragTo(folder);
+    await expect(note).toBeVisible();
+    await note.dragTo(folder, { targetPosition: { x: 24, y: 2 } });
+    await expect(first).toHaveAttribute("data-entry-path", "Other.md");
+    expect(moves).toEqual([]);
+    expect(await fs.stat(path.join(library.notes, "Other.md"))).toBeTruthy();
+  } finally { await library.close(); }
+});
 
 test("private notes save normally without collaboration rooms or sockets on open", async ({ browser }) => {
   const library = await collaborativeLibrary(browser, { participants: 1, sharing: "private", source: true });
@@ -28,7 +60,7 @@ test("private notes save normally without collaboration rooms or sockets on open
     expect(sockets).toBe(0);
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toContain("Solo edit");
     const denied = await page.request.post(new URL("/api/collaboration/join", library.url).href, {
-      data: { document: new URL(page.url()).searchParams.get("document") },
+      data: { document: (await browserPageUrl(page)).searchParams.get("document") },
     });
     expect(denied.status()).toBe(403);
   } finally { await library.close(); }
@@ -40,7 +72,7 @@ test("only another authorized identity activates collaboration and pending solo 
   const other = await loginPage(browser, library, "bob");
   try {
     const [alice] = library.pages;
-    const document = new URL(alice.url()).searchParams.get("document");
+    const document = (await browserPageUrl(alice)).searchParams.get("document");
     await same.page.goto(await userDocumentUrl(same.context, library.url, "Shared.md"));
     await expect(same.page.locator("#editor")).toBeEnabled();
     const policy = await same.page.request.post(new URL("/api/collaboration/presence", library.url).href, {
@@ -66,11 +98,31 @@ test("only another authorized identity activates collaboration and pending solo 
   } finally { await same.context.close(); await other.context.close(); await library.close(); }
 });
 
+test("downgrading an editor to a reader keeps saved changes visible without a writable room", async ({ browser }) => {
+  const library = await collaborativeLibrary(browser, { source: true });
+  try {
+    const [owner, reader] = library.pages;
+    await reader.locator("#editor").fill("Saved by Bob");
+    await expect(owner.locator("#editor")).toHaveValue("Saved by Bob");
+    await expect(reader.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
+    const response = await owner.request.post(new URL("/api/projects", library.url).href, {
+      data: { action: "share", id: "default", shared: "read" },
+    });
+    expect(response.ok()).toBe(true);
+    await expect(reader.locator("#editor")).toHaveJSProperty("readOnly", true);
+    await expect(reader.locator("#collaboration-join")).toBeHidden();
+    await owner.locator("#editor").fill("New version from Alice");
+    await expect(reader.locator("#editor")).toHaveValue("New version from Alice");
+    await expect(reader.locator("#editor")).toHaveJSProperty("readOnly", true);
+    expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe("New version from Alice");
+  } finally { await library.close(); }
+});
+
 test("private page overrides disable collaboration even for an owner in an editable project", async ({ browser }) => {
   const library = await collaborativeLibrary(browser, { participants: 1, source: true });
   try {
     const [owner] = library.pages;
-    const document = new URL(owner.url()).searchParams.get("document");
+    const document = (await browserPageUrl(owner)).searchParams.get("document");
     const response = await owner.request.post(new URL("/api/projects", library.url).href, {
       data: { action: "document", id: "default", document, permission: "private" },
     });
@@ -128,8 +180,9 @@ test("a delayed handoff cannot save or enter collaboration in a subsequently ope
     await other.page.goto(await userDocumentUrl(other.context, library.url, "Shared.md"));
     await expect(alice.locator("#editor")).toBeDisabled();
     await alice.locator('[data-path="Other.md"]').click();
-    await confirmDialog(alice);
-    await expect(alice.locator("#document-title")).toHaveText("Other.md");
+    await expect(alice.locator("#document-title")).toHaveText("Other");
+    await expect(alice.locator("[data-confirmation-region]:visible")).toHaveCount(0);
+    expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe("# Old document draft\n");
     await expect(alice.locator("#editor")).toBeEnabled();
     const target = await userResourceId(alice.context(), library.url, "Other.md");
     let saves = 0;

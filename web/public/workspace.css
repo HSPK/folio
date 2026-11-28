@@ -48,30 +48,28 @@
 .history-diff span { display: block; }
 .history-diff .is-added { background: color-mix(in srgb, var(--success) 12%, transparent); }
 .history-diff .is-removed { background: color-mix(in srgb, var(--error) 12%, transparent); }
-.workspace-list { display: grid; gap: 8px; max-height: 55vh; overflow: auto; }
+.workspace-list { display: grid; gap: 1px; max-height: 55vh; overflow: auto; }
+.workspace-list:empty { display: none; }
+.workspace-list > div { display: flex; align-items: center; gap: 10px; padding: 0 6px 0 10px; border-radius: 8px; background: transparent; transition: background-color var(--motion-hover-duration) ease-out; }
+.workspace-list > div:is(:hover, :focus-within) { background: var(--control-hover-background); }
+.workspace-list > div > .folio-icon { width: 16px; height: 16px; color: var(--muted); }
+.workspace-list > div button:not(.workspace-item-name) { flex: none; min-height: 28px; padding: 3px 8px; color: var(--muted); font-size: 12px; }
+.workspace-list .workspace-item-name { --control-hover-background: transparent; --control-focus-background: transparent; flex: 1; min-width: 0; min-height: 44px; padding: 5px 0; overflow-wrap: anywhere; text-align: left; font-size: 13px; }
+.workspace-list small { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
 /* Favorites and recent notes behave as a quick switcher: one filter row and a flat list. */
-#workspace-dialog { width: min(560px, calc(100vw - 32px)); padding: 0; overflow: hidden; }
+#workspace-dialog { width: min(520px, calc(100vw - 32px)); padding: 0; overflow: hidden; }
 #workspace-dialog[open] { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-#workspace-dialog .workspace-filters { grid-area: 1 / 1; flex-wrap: nowrap; gap: 6px; margin: 0; padding: 10px 4px 10px 10px; }
-#workspace-dialog .workspace-heading { grid-area: 1 / 2; margin: 0; padding-inline-end: 10px; }
+#workspace-dialog .workspace-filters { grid-area: 1 / 1; flex-wrap: nowrap; gap: 6px; margin: 0; padding: 10px 4px 10px var(--list-inset); }
+#workspace-dialog .workspace-heading { grid-area: 1 / 2; margin: 0; padding-inline-end: var(--list-inset); }
 #workspace-dialog .workspace-heading h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 #workspace-dialog #workspace-filter { height: 34px; border-color: transparent; background-color: var(--field-quiet-fill); font-size: 13px; }
 #workspace-dialog select { flex: none; width: auto; }
 #workspace-dialog .workspace-list, #workspace-dialog #workspace-message { grid-column: 1 / -1; }
-#workspace-dialog .workspace-list { gap: 1px; max-height: min(56dvh, 480px); padding: 6px; border-top: 1px solid var(--border); scrollbar-width: thin; }
-#workspace-dialog .workspace-list:empty { display: none; }
-#workspace-dialog .workspace-list > div { gap: 10px; padding: 0 6px 0 10px; border-radius: 8px; background: transparent; transition: background-color var(--motion-hover-duration) ease-out; }
-#workspace-dialog .workspace-list > div:is(:hover, :focus-within) { background: var(--control-hover-background); }
-#workspace-dialog .workspace-list > div > .folio-icon { width: 16px; height: 16px; color: var(--muted); }
-#workspace-dialog .workspace-item-name { --control-hover-background: transparent; --control-focus-background: transparent; min-height: 46px; padding: 6px 0; }
+#workspace-dialog .workspace-list { max-height: min(56dvh, 480px); padding: 6px var(--list-inset); border-top: 1px solid var(--border); }
 #workspace-dialog .workspace-list small { margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#workspace-dialog .workspace-list > div > button:not(.workspace-item-name) { min-height: 28px; padding: 3px 8px; opacity: 0; }
+#workspace-dialog .workspace-list > div > button:not(.workspace-item-name) { opacity: 0; }
 #workspace-dialog .workspace-list > div:is(:hover, :focus-within) > button:not(.workspace-item-name) { opacity: 1; }
 #workspace-dialog #workspace-message { margin: 0; padding: 28px 16px; border-top: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--muted); text-align: center; }
-.workspace-list > div { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 12px; border-radius: 10px; background: var(--subtle-surface); }
-.workspace-list > div button:not(.workspace-item-name) { flex: none; color: var(--muted); font-size: 12px; }
-.workspace-list .workspace-item-name { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; font-size: 13px; }
-.workspace-list small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
 .recovery-source { width: 100%; max-height: 50vh; padding: 10px 12px; resize: vertical; border: 1px solid var(--field-border); border-radius: 10px; background: var(--subtle-surface); font: 12px/1.6 var(--code-font); }
 @media (max-width: 650px) {
   .workspace-dialog { margin-block: auto; padding: 18px; }

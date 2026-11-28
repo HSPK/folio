@@ -1,5 +1,5 @@
 import { isRecord } from "../../shared/objects";
-import { createPreferenceDefaults, type Preferences, type WebPreferences } from "../models/preferences";
+import { createPreferenceDefaults, type Preferences, type WebPreferences } from "@folio/model";
 import { ApiError } from "./error";
 
 export function decodedPreferences(value: unknown): Preferences {

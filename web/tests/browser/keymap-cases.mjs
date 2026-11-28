@@ -1,5 +1,59 @@
 import { test, expect, fs, path, root, openFixture, chooseView, primaryModifier } from "./fixture.mjs";
 
+test("Live Backspace and Delete remove whole Unicode graphemes in either direction", async ({ page }) => {
+  const clusters = ["e\u0301", "👨‍👩‍👧‍👦", "🇨🇳", "👍🏽"];
+  const text = `A ${clusters.join("")} Z`;
+  await openFixture(page, "Grapheme-keys.md", `# Grapheme editing\n\n${text}\n\n${text}\n`);
+  for (const backward of [false, true]) {
+    const body = page.locator(".ProseMirror > p").nth(Number(backward));
+    await body.click();
+    await page.keyboard.press(backward ? "End" : "Home");
+    for (let i = 0; i < 2; i++) await page.keyboard.press(backward ? "ArrowLeft" : "ArrowRight");
+    const remaining = [...clusters];
+    for (let i = 0; i < clusters.length; i++) {
+      await page.keyboard.press(backward ? "Backspace" : "Delete");
+      if (backward) remaining.pop();
+      else remaining.shift();
+      await expect(body).toHaveText(`A ${remaining.join("")} Z`);
+    }
+  }
+});
+
+test("Source and Live share undo and redo in both directions, only for the open document", async ({ page }) => {
+  await openFixture(page, "View-history.md", "# View history\n\nAlpha.\n");
+  const source = page.locator("#editor"), body = page.locator(".ProseMirror p").first();
+  await chooseView(page, "editor");
+  await source.focus();
+  await source.evaluate(el => el.setSelectionRange(el.value.indexOf("Alpha"), el.value.indexOf("Alpha")));
+  await page.keyboard.insertText("Source ");
+  await chooseView(page, "rich");
+  await expect(body).toHaveText("Source Alpha.");
+  await body.click();
+  await page.keyboard.press(`${primaryModifier}+z`);
+  await expect(body).toHaveText("Alpha.");
+  await chooseView(page, "editor");
+  await source.focus();
+  await page.keyboard.press(`${primaryModifier}+Shift+z`);
+  await expect(source).toHaveValue(/Source Alpha\./);
+  await chooseView(page, "rich");
+  await body.click();
+  await page.keyboard.press("End");
+  await page.keyboard.insertText(" Live");
+  await chooseView(page, "editor");
+  await source.focus();
+  await page.keyboard.press(`${primaryModifier}+z`);
+  await expect(source).toHaveValue("# View history\n\nSource Alpha.\n");
+  await chooseView(page, "rich");
+  await body.click();
+  await page.keyboard.press(`${primaryModifier}+Shift+z`);
+  await expect(body).toHaveText("Source Alpha. Live");
+  await page.locator('[data-path="Second.md"]').click();
+  await expect(page.locator("#document-title")).toHaveText("Second");
+  await body.click();
+  await page.keyboard.press(`${primaryModifier}+z`);
+  await expect(body).toHaveText("Another note.");
+});
+
 test("VS Code shortcuts edit native Source lines with independent undo and selection", async ({ page }) => {
   const original = "Alpha\nBeta\nGamma\n";
   await openFixture(page, "Native-line-keys.md", original);
@@ -64,7 +118,7 @@ test("native Source history keeps typing and composition separate from line comm
   await page.keyboard.press(`${primaryModifier}+z`);
   await expect(source).toHaveValue("Alpha\nBeta typed\n");
   await page.locator('[data-path="Second.md"]').click();
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
+  await expect(page.locator("#document-title")).toHaveText("Second");
   await expect(source).toHaveValue("# Second\n\nAnother note.\n");
   await source.focus();
   await page.keyboard.press(`${primaryModifier}+z`);

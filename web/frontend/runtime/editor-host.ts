@@ -3,7 +3,7 @@ import { makeNoteUrl, readNoteRoute } from "@folio/model";
 import { documentSession } from "../state/document";
 import { shell } from "../state/shell";
 import type { Heading } from "../types/domain";
-import { requiredQuery } from "../types/elements";
+import { element, requiredQuery } from "../types/elements";
 import { refreshDocumentTitle } from "./accounts/authentication";
 import { appState } from "./core/bootstrap";
 import { notice } from "./core/notice";
@@ -26,7 +26,8 @@ export function initializeEditorHost(): void {
   onApplicationDispose(() => extractor.clear());
   appState.inlineEditor = ownApplicationResource(
     createInlineEditor({
-      root: appState.element("rich-editor"),
+      root: element("rich-editor"),
+      tableLayoutScope: () => documentSession.resourceId,
       outlineExtractor: extractor,
       styleNonce: requiredQuery(document, 'meta[name="folio-style-nonce"]', HTMLMetaElement).content,
       transformUrl: (url, path) => projectUrl(url, path),
@@ -36,9 +37,7 @@ export function initializeEditorHost(): void {
       onCreateLink: (path) => openLinkedNote(path),
       onNotice: (message, kind = "warning", source) =>
         notice(
-          appState.element(
-            source === "image" ? "image-message" : source === "table" ? "table-message" : "metadata-message",
-          ),
+          element(source === "image" ? "image-message" : source === "table" ? "table-message" : "metadata-message"),
           message,
           kind,
         ),
@@ -47,7 +46,7 @@ export function initializeEditorHost(): void {
       wikiDocuments: () => (publicState.publicView ? [] : visibleLibraryFiles()),
       onOutline(items: Heading[]): void {
         if (!documentSession.current || shell.view !== "rich") return;
-        appState.outlineSource = appState.ui.editor.value;
+        appState.outlineSource = appState.editor.value;
         renderOutline(items);
       },
       onHeadingSelection: setCurrentOutline,
@@ -56,13 +55,13 @@ export function initializeEditorHost(): void {
         documentSession.setTitle(title);
         refreshDocumentTitle();
       },
-      onChange(text: string): void {
+      onChange(text, edit): void {
         if (!documentSession.current || shell.view !== "rich") return;
-        appState.ui.editor.value = text;
-        appState.ui.editor.dispatchEvent(new Event("input"));
+        appState.editor.mirrorLive(text, edit ?? "metadata");
+        appState.editor.dispatchEvent(new Event("input"));
       },
       onFallback(message: string): void {
-        notice(appState.element("rich-warning"), message, "warning");
+        notice(element("rich-warning"), message, "warning");
         setView("editor");
       },
       onReady(): void {

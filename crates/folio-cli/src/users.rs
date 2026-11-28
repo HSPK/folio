@@ -27,7 +27,9 @@ enum UserCommand {
 
 pub(crate) fn run(args: &[OsString]) -> Result<(), String> {
     let command = parse(args)?;
-    let store = store(command_auth_file(&command))?;
+    let store = command_auth_file(&command)
+        .map(UserStore::new)
+        .map_or_else(UserStore::platform_default, Ok)?;
     match command {
         UserCommand::List { .. } => {
             for user in store.list()? {
@@ -40,7 +42,7 @@ pub(crate) fn run(args: &[OsString]) -> Result<(), String> {
             password_stdin,
             ..
         } => {
-            let password = read_password(password_stdin, true)?;
+            let password = read_password(password_stdin)?;
             let user = store.add(&username, &password, role)?;
             println!("Added {} ({})", user.username, role_name(user.role));
         }
@@ -49,7 +51,7 @@ pub(crate) fn run(args: &[OsString]) -> Result<(), String> {
             password_stdin,
             ..
         } => {
-            let password = read_password(password_stdin, true)?;
+            let password = read_password(password_stdin)?;
             store.set_password(&username, &password)?;
             println!(
                 "Updated the password for {username}. Restart running Folio services to revoke existing sessions."
@@ -151,12 +153,7 @@ fn command_auth_file(command: &UserCommand) -> Option<&PathBuf> {
     }
 }
 
-fn store(path: Option<&PathBuf>) -> Result<UserStore, String> {
-    path.map(|path| Ok(UserStore::new(path)))
-        .unwrap_or_else(UserStore::platform_default)
-}
-
-fn read_password(from_stdin: bool, confirm: bool) -> Result<Zeroizing<String>, String> {
+fn read_password(from_stdin: bool) -> Result<Zeroizing<String>, String> {
     let password = if from_stdin {
         let mut input = String::new();
         std::io::stdin()
@@ -179,7 +176,7 @@ fn read_password(from_stdin: bool, confirm: bool) -> Result<Zeroizing<String>, S
         )
     };
     validate_password(&password)?;
-    if confirm && !from_stdin {
+    if !from_stdin {
         let confirmation = Zeroizing::new(
             rpassword::prompt_password("Confirm password: ")
                 .map_err(|error| format!("Could not read the password confirmation: {error}"))?,

@@ -16,26 +16,18 @@ use crate::{
 
 use super::{ApiError, Library, files, hex};
 
-#[path = "projects/access.rs"]
 mod access;
-#[path = "projects/api.rs"]
 pub(super) mod api;
-#[path = "projects/identities.rs"]
 mod identities;
-#[path = "projects/public.rs"]
 pub(super) mod public;
-#[path = "projects/settings.rs"]
 mod settings;
-#[path = "projects/shares.rs"]
 pub(super) mod shares;
-#[path = "projects/watch_access.rs"]
 pub(super) mod watch_access;
 pub(super) use access::Access;
 use public::{PublicLink, PublicLinkInfo};
 use settings::SettingsUpdate;
 
 #[cfg(test)]
-#[path = "projects/access_tests.rs"]
 mod access_tests;
 
 #[derive(Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -76,6 +68,7 @@ struct Catalog {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Summary {
+    code: String,
     pub(in crate::server) id: String,
     pub(in crate::server) name: String,
     owner: Option<String>,
@@ -125,6 +118,7 @@ pub(super) struct Registry {
     users: UserStore,
     cache: Mutex<Option<(std::time::SystemTime, u64, Arc<Catalog>)>>,
     storage: Mutex<Option<Arc<super::state_store::Store>>>,
+    short_link_misses: Mutex<public::MissBudget>,
 }
 
 impl Registry {
@@ -150,6 +144,7 @@ impl Registry {
             users: users.clone(),
             cache: Mutex::new(None),
             storage: Mutex::new(None),
+            short_link_misses: Mutex::new(public::MissBudget::default()),
         };
         if registry.load().map_err(|error| error.message)?.is_some() {
             registry
@@ -266,7 +261,7 @@ impl Registry {
                     "The project catalog is unsupported or too large.",
                 ));
             }
-            for (id, project) in &catalog.projects {
+            for (id, project) in &mut catalog.projects {
                 if !valid_id(id)
                     || project.name.is_empty()
                     || !project.root.is_absolute()
@@ -277,11 +272,14 @@ impl Registry {
                     ));
                 }
                 for path in project.pages.keys() {
-                    files::validate_document_path(path)?;
+                    files::panels::share_kind(path)?;
                 }
-                for (path, link) in &project.public_links {
-                    files::validate_document_path(path)?;
+                for (path, link) in &mut project.public_links {
+                    files::panels::share_kind(path)?;
                     link.validate()?;
+                    link.code = self
+                        .storage()?
+                        .page_code("s", &public::digest(&link.token))?;
                     if project.pages.get(path) != Some(&link.access) {
                         return Err(ApiError::internal(
                             "Public link permissions do not match the document.",
@@ -289,8 +287,19 @@ impl Registry {
                     }
                     if catalog
                         .public_index
-                        .insert(public::digest(&link.token), (id.clone(), path.clone()))
+                        .insert(public::digest(&link.code), (id.clone(), path.clone()))
                         .is_some()
+                        || catalog
+                            .public_index
+                            .insert(public::digest(&link.token), (id.clone(), path.clone()))
+                            .is_some()
+                        || catalog
+                            .public_index
+                            .insert(
+                                public::digest(&link.short_id()?),
+                                (id.clone(), path.clone()),
+                            )
+                            .is_some()
                     {
                         return Err(ApiError::internal(
                             "Duplicate public link in project storage.",

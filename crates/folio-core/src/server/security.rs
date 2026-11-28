@@ -21,9 +21,10 @@ pub(super) async fn guard(
     next: Next,
 ) -> Response {
     let asset_request = matches!(request.uri().path(), "/assets" | "/api/public/assets");
+    let diagram_frame = request.uri().path() == "/mermaid-renderer.html";
     let response = match check_request(&state, &request) {
         Err(error) => error.into_response(),
-        Ok(user) => match state.requests.clone().try_acquire_owned() {
+        Ok(user) => match state.shared.requests.clone().try_acquire_owned() {
             Err(_) => ApiError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "The local server is busy. Please try again.",
@@ -49,7 +50,7 @@ pub(super) async fn guard(
                 let work = Arc::new(Work {
                     cancelled: AtomicBool::new(false),
                     deadline: Instant::now() + timeout,
-                    health: state.health.clone(),
+                    health: state.shared.health.clone(),
                 });
                 request.extensions_mut().insert(work.clone());
                 let _cancel = CancelWork(work);
@@ -59,6 +60,10 @@ pub(super) async fn guard(
                         request.uri().clone(),
                         request.headers().clone(),
                         request.extensions().get::<AuthenticatedUser>().cloned(),
+                        request
+                            .extensions()
+                            .get::<axum::extract::ConnectInfo<super::net::ConnectionInfo>>()
+                            .map(|info| info.0.1),
                     )
                     .await;
                     if let Ok(scoped) = &scoped {
@@ -77,7 +82,40 @@ pub(super) async fn guard(
             }
         },
     };
-    secure_headers(response, asset_request, &state.content_policy)
+    let start_policy = response
+        .extensions()
+        .get::<super::routes::StartPagePolicy>();
+    let policy = start_policy
+        .map(|value| &value.0)
+        .unwrap_or(&state.shared.content_policy)
+        .clone();
+    let pdf_preview = response
+        .extensions()
+        .get::<super::files::panels::pdf::Preview>()
+        .is_some();
+    let mut response = secure_headers(response, asset_request, &policy);
+    if pdf_preview {
+        response.headers_mut().insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("default-src 'none'; frame-ancestors 'self'"),
+        );
+        response.headers_mut().insert(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("SAMEORIGIN"),
+        );
+    }
+    if diagram_frame && response.status().is_success() {
+        let headers = response.headers_mut();
+        headers.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(include_str!("../../../../web/public/mermaid-renderer.csp")),
+        );
+        headers.insert(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("SAMEORIGIN"),
+        );
+    }
+    response
 }
 
 fn check_request(
@@ -85,14 +123,14 @@ fn check_request(
     request: &Request,
 ) -> Result<Option<AuthenticatedUser>, ApiError> {
     let headers = request.headers();
-    let host = request_host(headers, state.host, &state.allowed_hosts)?;
+    let host = request_host(headers, state.shared.host, &state.shared.allowed_hosts)?;
     if headers.get_all(header::ORIGIN).iter().count() > 1
         || headers.get(header::ORIGIN).is_some_and(|value| {
             value
                 .to_str()
                 .ok()
                 .and_then(http_origin)
-                .is_none_or(|origin| !same_authority(&host, &origin))
+                .is_none_or(|(origin, default_port)| !same_authority(&host, &origin, default_port))
         })
     {
         return Err(ApiError::forbidden(
@@ -101,12 +139,18 @@ fn check_request(
     }
     let path = request.uri().path();
     let authenticated = authenticated_user(headers, state);
+    // A cookie may change in another tab between fetching the shell and its early reads.
+    if let Some(expected) = headers.get("x-folio-start-reader")
+        && authenticated.as_ref().map(|user| user.username.as_bytes()) != Some(expected.as_bytes())
+    {
+        return Err(ApiError::forbidden("The signed-in account has changed."));
+    }
     // Socket upgrades use a short-lived, single-use ticket issued by an authenticated POST.
     if path.starts_with("/api/")
         && path != "/api/collaboration/socket"
         && !super::projects::public::endpoint(path)
     {
-        if state.user_auth.is_some() {
+        if state.shared.user_auth.is_some() {
             let public_auth_endpoint = matches!(
                 path,
                 "/api/auth/status" | "/api/auth/setup" | "/api/auth/login" | "/api/auth/register"
@@ -124,8 +168,8 @@ fn check_request(
             ));
         }
     }
-    if path == "/assets"
-        && if state.user_auth.is_some() {
+    if matches!(path, "/assets" | "/assets/pdf")
+        && if state.shared.user_auth.is_some() {
             authenticated.is_none()
         } else {
             !has_session_cookie(headers, state)
@@ -153,7 +197,7 @@ pub(super) fn has_launch_authorization(headers: &HeaderMap, state: &AppState) ->
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
     headers.get_all(header::AUTHORIZATION).iter().count() == 1
-        && secret_eq(authorization, &state.authorization)
+        && secret_eq(authorization, &state.shared.authorization)
 }
 
 /// An explicitly trusted ASCII DNS hostname, without a scheme, port, or wildcard.
@@ -227,17 +271,27 @@ fn request_host(
     Ok(authority)
 }
 
-fn http_origin(value: &str) -> Option<Authority> {
+fn http_origin(value: &str) -> Option<(Authority, u16)> {
     let (scheme, authority) = value.split_once("://")?;
-    if !scheme.eq_ignore_ascii_case("http")
-        || authority.is_empty()
+    let default_port = if scheme.eq_ignore_ascii_case("http") {
+        80
+    } else if scheme.eq_ignore_ascii_case("https") {
+        443
+    } else {
+        return None;
+    };
+    if authority.is_empty()
         || authority
             .bytes()
             .any(|byte| matches!(byte, b'/' | b'?' | b'#' | b'@'))
     {
         return None;
     }
-    authority.parse::<Authority>().ok().filter(valid_port)
+    authority
+        .parse::<Authority>()
+        .ok()
+        .filter(valid_port)
+        .map(|authority| (authority, default_port))
 }
 
 fn valid_port(authority: &Authority) -> bool {
@@ -258,15 +312,11 @@ fn valid_port(authority: &Authority) -> bool {
     }
 }
 
-fn same_authority(host: &Authority, origin: &Authority) -> bool {
+fn same_authority(host: &Authority, origin: &Authority, default_port: u16) -> bool {
     let host_name = request_host_name(host);
     host_name.is_some()
         && host_name == request_host_name(origin)
-        && effective_port(host) == effective_port(origin)
-}
-
-fn effective_port(authority: &Authority) -> u16 {
-    authority.port_u16().unwrap_or(80)
+        && host.port_u16().unwrap_or(default_port) == origin.port_u16().unwrap_or(default_port)
 }
 
 fn request_host_name(authority: &Authority) -> Option<RequestHost> {
@@ -297,15 +347,16 @@ fn secret_eq(left: &str, right: &str) -> bool {
 }
 
 fn has_session_cookie(headers: &HeaderMap, state: &AppState) -> bool {
-    cookie_value(headers, &state.cookie_name).is_some_and(|value| secret_eq(value, &state.token))
+    cookie_value(headers, &state.shared.cookie_name)
+        .is_some_and(|value| secret_eq(value, &state.shared.token))
 }
 
 pub(super) fn authenticated_user(
     headers: &HeaderMap,
     state: &AppState,
 ) -> Option<AuthenticatedUser> {
-    let auth = state.user_auth.as_ref()?;
-    let token = cookie_value(headers, &state.user_cookie_name)?;
+    let auth = state.shared.user_auth.as_ref()?;
+    let token = cookie_value(headers, &state.shared.user_cookie_name)?;
     auth.authenticate(token)
 }
 
@@ -345,7 +396,9 @@ fn secure_headers(mut response: Response, asset: bool, content_policy: &HeaderVa
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
     );
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers
+        .entry(header::CACHE_CONTROL)
+        .or_insert(HeaderValue::from_static("no-store"));
     headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     headers.insert(
         "cross-origin-resource-policy",

@@ -29,7 +29,7 @@ test("unsaved title marker stays visible for long titles and clears on undo and 
   await expect(status).toHaveText("");
   expect(await page.locator("#document-panes").boundingBox()).toEqual(panes);
   const markerBounds = await marker.boundingBox();
-  const triggerBounds = await page.locator("#more-menu > summary").boundingBox();
+  const triggerBounds = await page.locator("#more-menu > button").boundingBox();
   expect(markerBounds.x + markerBounds.width).toBeLessThanOrEqual(triggerBounds.x + triggerBounds.width);
   await page.screenshot({ path: path.join(buildRoot, "quiet-save-status-dirty.png") });
   await page.keyboard.press(`${primaryModifier}+z`);
@@ -58,7 +58,7 @@ test("unsaved title marker stays visible for long titles and clears on undo and 
   await expect(page).toHaveTitle(`${title} — Folio`);
   expect(await fs.readFile(path.join(root, "Status.md"), "utf8")).toContain("Unfinished");
   await page.locator('[data-path="Second.md"]').click();
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
+  await expect(page.locator("#document-title")).toHaveText("Second");
   await expect(marker).toBeHidden();
   await page.screenshot({ path: path.join(buildRoot, "quiet-save-status-clean.png") });
 });
@@ -120,7 +120,10 @@ test("a timed-out uncommitted save unlocks retry without losing editor text", as
     await firstStarted;
     await page.clock.fastForward(15001);
     await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
-    await expect(page.locator("#document-message")).toContainText("timed out");
+    await expect(page.locator("#connection-label")).toHaveText("Disconnected");
+    await expect(page.locator("#connection-label")).toBeVisible();
+    await page.clock.fastForward(2001);
+    await expect(page.locator("#connection-label")).toHaveAttribute("data-state", "ready");
     await expect(page.locator("#document-modified")).toBeVisible();
     expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe(initialText);
     await page.keyboard.press(`${primaryModifier}+s`);
@@ -172,8 +175,8 @@ test("save failures keep the title marker and explicit error feedback", async ({
   await page.keyboard.press("Control+s");
   await expect(page.locator("#document-message")).toContainText("Save failed:");
   await expect(page.locator("#document-message")).toBeVisible();
-  await expect(page.locator("#document-title")).toHaveText("README.md *");
-  await expect(page).toHaveTitle("README.md * — Folio");
+  await expect(page.locator("#document-title")).toHaveText("README *");
+  await expect(page).toHaveTitle("README * — Folio");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
   await expect(page.locator("#dirty-indicator")).toBeHidden();
   expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe(initialText);

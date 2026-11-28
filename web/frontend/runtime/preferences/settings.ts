@@ -3,21 +3,19 @@ import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
 import { libraryCatalog } from "../../state/library";
 import { decodedPreferences as validatedPreferences } from "../../api/preferences";
-import { createPreferenceDefaults } from "../../models/preferences";
+import { createPreferenceDefaults, createHiddenPathMatcher, parseHiddenPatterns } from "@folio/model";
 import { beginSettingsView, initializeSettingsSaving, preferencesRevision } from "./saving";
 import { applyAppearance } from "@folio/editor-runtime";
-import { createHiddenPathMatcher, parseHiddenPatterns } from "@folio/model";
 import type { Appearance, Preferences, SettingsSnapshot, WebPreferences } from "../../types/domain";
-import { datasetValue, htmlChildren, requiredQuery, requireValue } from "../../types/elements";
+import { element, datasetValue, htmlChildren, requiredQuery, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { loadAccounts } from "../accounts/accounts";
-import { closeMenus, handleAuthenticationFailure, selectNavigation, setSidebar } from "../accounts/authentication";
+import { closeMenus, handleAuthenticationFailure, selectNavigation, restoreSidebar } from "../accounts/authentication";
 import { api } from "../core/api";
 import { appearanceNotice } from "../core/appearance";
 import { appState } from "../core/bootstrap";
-import { closeCommandPanel } from "../core/commands";
 import { notice, setText } from "../core/dom";
-import { readLayoutPreference, setPageWidth, setSidebarWidth, storeLayoutPreference } from "../core/layout";
+import { readLayoutPreference, setPageWidth, setSidebarWidth } from "../core/layout";
 import { hasDialogConfirmation, showDialog } from "../dialogs/dialogs";
 import { applicationSignal, listen, onApplicationDispose } from "../lifecycle";
 import { setView } from "../navigation/files";
@@ -38,7 +36,7 @@ class SettingsState {
   } | null;
   settingsSearchFrame!: number;
   settingsSearchStatus!: HTMLSpanElement;
-  settingsUi!: ReturnType<typeof createSettingsUi>;
+
   settingsSectionSelect!: HTMLSelectElement;
   settingsSectionButtons!: HTMLButtonElement[];
   settingsSectionOptions!: Map<string, HTMLOptionElement>;
@@ -70,8 +68,8 @@ export function initializePreferencesSettings(): void {
   });
   settingsState.settingsSearchStatus.className = "visually-hidden";
   settingsState.settingsSearchStatus.setAttribute("role", "status");
-  appState.ui.settingsSearch.after(settingsState.settingsSearchStatus);
-  settingsState.settingsUi = createSettingsUi();
+  element("settings-search").after(settingsState.settingsSearchStatus);
+
   initializeSettingsSaving({
     collect: collectSettings,
     apply: applySharedPreferences,
@@ -81,7 +79,7 @@ export function initializePreferencesSettings(): void {
       settingsState.settingsSnapshot = snapshot;
     },
   });
-  settingsState.settingsSectionSelect = appState.element("settings-section");
+  settingsState.settingsSectionSelect = element("settings-section");
   settingsState.settingsSectionButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-settings-tab]")];
   settingsState.settingsSectionOptions = new Map();
   for (const group of document.querySelectorAll<HTMLElement>("[data-settings-group]")) {
@@ -104,40 +102,47 @@ export function initializePreferencesSettings(): void {
     settingsState.settingsSectionSelect.append(options);
   }
   updateCommandShortcut(appState.commandShortcut);
-  listen(appState.ui.settingsOpen, "click", () => {
-    requiredQuery(document, "#more-menu > summary", HTMLElement).focus({ preventScroll: true });
+  listen(element("settings-open"), "click", () => {
+    requiredQuery(document, "#more-menu > button", HTMLElement).focus({ preventScroll: true });
     openSettings();
   });
-  listen(appState.ui.settingsClose, "click", cancelSettings);
-  listen(appState.ui.settingsCancel, "click", cancelSettings);
+  listen(element("settings-close"), "click", cancelSettings);
+  listen(element("settings-cancel"), "click", cancelSettings);
 
-  listen(appState.ui.settingsDialog, "cancel", (event) => {
+  listen(element("settings-dialog"), "cancel", (event) => {
     event.preventDefault();
     cancelSettings();
   });
   // The panel sits beside the library; pressing anywhere outside it returns to the document.
-  listen(appState.ui.settingsDialog, "pointerdown", (event) => {
-    if (event.target !== appState.ui.settingsDialog) return;
-    const bounds = appState.ui.settingsDialog.getBoundingClientRect();
+  listen(element("settings-dialog"), "pointerdown", (event) => {
+    if (event.target !== element("settings-dialog")) return;
+    const bounds = element("settings-dialog").getBoundingClientRect();
     const inside =
       event.clientX >= bounds.left &&
       event.clientX <= bounds.right &&
       event.clientY >= bounds.top &&
       event.clientY <= bounds.bottom;
-    if (!inside && !hasDialogConfirmation(appState.ui.settingsDialog)) cancelSettings();
+    if (!inside && !hasDialogConfirmation(element("settings-dialog"))) cancelSettings();
   });
-  listen(appState.ui.settingsSearch, "input", filterSettings);
-  listen(appState.ui.settingsPageWidth, "change", () => setPageWidth(appState.ui.settingsPageWidth.value));
-  listen(appState.ui.settingsSidebarWidth, "input", () => {
-    const width = Number(appState.ui.settingsSidebarWidth.value);
-    appState.ui.settingsSidebarValue.value = `${width} px`;
+  listen(element("settings-search"), "input", filterSettings);
+  listen(element("settings-page-width"), "change", () => setPageWidth(element("settings-page-width").value));
+  listen(element("settings-sidebar-width"), "input", () => {
+    const width = Number(element("settings-sidebar-width").value);
+    element("settings-sidebar-value").value = `${width} px`;
     setSidebarWidth(width);
   });
-  listen(appState.ui.settingsCommandShortcut, "change", () => {
-    updateCommandShortcut(appState.ui.settingsCommandShortcut.value);
+  listen(element("settings-command-shortcut"), "change", () => {
+    updateCommandShortcut(element("settings-command-shortcut").value);
   });
-  for (const name of ["theme", "latin_font", "cjk_font", "font_size", "line_height", "density"] as const) {
-    listen(settingsState.settingsUi[name], "input", previewAppearanceSettings);
+  for (const id of [
+    "settings-theme",
+    "settings-latin-font",
+    "settings-cjk-font",
+    "settings-font-size",
+    "settings-line-height",
+    "settings-density",
+  ] as const) {
+    listen(element(id), "input", previewAppearanceSettings);
   }
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-settings-tab]")) {
     listen(button, "click", () => selectSettingsTab(datasetValue(button, "settingsTab")));
@@ -166,7 +171,7 @@ export function visibleLibraryFiles() {
 export function visibleLibraryDirectories() {
   return libraryCatalog.directories.filter((directory) => !settingsState.hiddenPath(directory.path));
 }
-export function selectSettingsTab(tab: string): void {
+function selectSettingsTab(tab: string): void {
   if (!settingsState.settingsSectionOptions.has(tab)) throw new Error(`Unknown settings section: ${tab}`);
   if (tab === "users" && authenticationSession.user?.role !== "admin") tab = "editor";
   settingsState.selectedSettingsTab = tab;
@@ -174,31 +179,31 @@ export function selectSettingsTab(tab: string): void {
     const selected = button.dataset.settingsTab === tab;
     button.setAttribute("aria-selected", String(selected));
     button.tabIndex = selected ? 0 : -1;
-    if (selected && appState.ui.settingsDialog.open && button.getClientRects().length) {
+    if (selected && element("settings-dialog").open && button.getClientRects().length) {
       button.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
   }
   for (const panel of document.querySelectorAll<HTMLElement>("[data-settings-panel]")) {
     panel.hidden = panel.dataset.settingsPanel !== tab;
   }
-  appState.element("settings-empty").hidden = true;
+  element("settings-empty").hidden = true;
   syncSettingsNavigation();
   locateSettingsMatch();
   if (tab === "users") void loadAccounts();
 }
-export function locateSettingsMatch(): void {
+function locateSettingsMatch(): void {
   cancelAnimationFrame(settingsState.settingsSearchFrame);
-  if (!appState.ui.settingsSearch.value.trim()) return;
+  if (!element("settings-search").value.trim()) return;
   settingsState.settingsSearchFrame = requestAnimationFrame(() => {
     settingsState.settingsSearchFrame = 0;
-    if (!appState.ui.settingsDialog.open || !appState.ui.settingsSearch.value.trim()) return;
-    const content = appState.ui.settingsDialog.querySelector<HTMLElement>(".settings-content");
+    if (!element("settings-dialog").open || !element("settings-search").value.trim()) return;
+    const content = element("settings-dialog").querySelector<HTMLElement>(".settings-content");
     const matches = [
-      ...appState.ui.settingsDialog.querySelectorAll<HTMLElement>(".settings-panel:not([hidden]) [data-search-match]"),
+      ...element("settings-dialog").querySelectorAll<HTMLElement>(".settings-panel:not([hidden]) [data-search-match]"),
     ];
     settingsState.settingsSearchStatus.textContent = matches.length
       ? `${matches.length} matching setting${matches.length === 1 ? "" : "s"} in this section.`
-      : appState.element("settings-empty").hidden
+      : element("settings-empty").hidden
         ? "Matching section."
         : "No matching settings.";
     if (matches[0])
@@ -207,7 +212,7 @@ export function locateSettingsMatch(): void {
     else requireValue(content).scrollTop = 0;
   });
 }
-export function syncSettingsNavigation(): void {
+function syncSettingsNavigation(): void {
   let visible = 0;
   for (const button of settingsState.settingsSectionButtons) {
     const option = settingsState.settingsSectionOptions.get(datasetValue(button, "settingsTab"));
@@ -224,12 +229,12 @@ export function syncSettingsNavigation(): void {
     ? ""
     : settingsState.selectedSettingsTab;
 }
-export function filterSettings(): void {
-  const query = appState.ui.settingsSearch.value.trim().toLowerCase();
+function filterSettings(): void {
+  const query = element("settings-search").value.trim().toLowerCase();
   cancelAnimationFrame(settingsState.settingsSearchFrame);
-  const content = appState.ui.settingsDialog.querySelector<HTMLElement>(".settings-content");
+  const content = element("settings-dialog").querySelector<HTMLElement>(".settings-content");
   if (!query) {
-    for (const card of appState.ui.settingsDialog.querySelectorAll<HTMLElement>("[data-search-match]"))
+    for (const card of element("settings-dialog").querySelectorAll<HTMLElement>("[data-search-match]"))
       card.removeAttribute("data-search-match");
     for (const button of settingsState.settingsSectionButtons) {
       button.hidden = button.hasAttribute("data-admin-only") && authenticationSession.user?.role !== "admin";
@@ -264,21 +269,18 @@ export function filterSettings(): void {
   if (!selectedVisible && firstVisible) selectSettingsTab(firstVisible);
   if (!firstVisible) {
     for (const panel of document.querySelectorAll<HTMLElement>("[data-settings-panel]")) panel.hidden = true;
-    appState.element("settings-empty").hidden = false;
+    element("settings-empty").hidden = false;
   }
   syncSettingsNavigation();
   locateSettingsMatch();
 }
-export function commandShortcutLabel(value = appState.commandShortcut) {
-  return value === "primary-shift-p" ? "Ctrl/Cmd+Shift+P" : "Ctrl/Cmd+K";
-}
-export function updateCommandShortcut(value: string, persist = false): void {
+function updateCommandShortcut(value: string): void {
   appState.commandShortcut = value === "primary-shift-p" ? value : "primary-k";
-  appState.ui.commandOpen.title = `Commands (${commandShortcutLabel()})`;
-  if (persist) storeLayoutPreference(appState.COMMAND_SHORTCUT_KEY, appState.commandShortcut);
+  element("command-palette-open").title =
+    `Commands (${appState.commandShortcut === "primary-shift-p" ? "Ctrl/Cmd+Shift+P" : "Ctrl/Cmd+K"})`;
 }
 
-export function applySharedPreferences(value: Preferences, initial = false): void {
+function applySharedPreferences(value: Preferences, initial = false): void {
   settingsState.sharedAppearance = value.appearance;
   settingsState.webPreferences = value.web;
   settingsState.hiddenPatterns = parseHiddenPatterns(settingsState.webPreferences.hiddenPatterns.join("\n"));
@@ -291,8 +293,8 @@ export function applySharedPreferences(value: Preferences, initial = false): voi
   root.dataset.reducedMotion = String(settingsState.webPreferences.reducedMotion);
   root.dataset.highContrast = String(settingsState.webPreferences.highContrast);
   root.dataset.strongFocus = String(settingsState.webPreferences.strongFocus);
-  appState.ui.editor.setLineWrapping(settingsState.webPreferences.sourceLineWrap);
-  appState.ui.editor.setThreshold(settingsState.webPreferences.largeDocumentThresholdKib * 1024);
+  appState.editor.setLineWrapping(settingsState.webPreferences.sourceLineWrap);
+  appState.editor.setThreshold(settingsState.webPreferences.largeDocumentThresholdKib * 1024);
   appState.inlineEditor.setSpellcheck(settingsState.webPreferences.spellcheck);
   void applyAppearance(settingsState.sharedAppearance).then((result) => appearanceNotice(result.warning));
   if (initial && !documentSession.current) {
@@ -305,14 +307,18 @@ export function applySharedPreferences(value: Preferences, initial = false): voi
       }[settingsState.webPreferences.defaultView],
     );
     selectNavigation(settingsState.webPreferences.defaultSidebar);
-    setSidebar(!appState.compactLayout.matches && settingsState.webPreferences.sidebarOpen);
+    restoreSidebar(!appState.compactLayout.matches && settingsState.webPreferences.sidebarOpen);
   }
   if (libraryCatalog.loaded) renderFiles();
   scheduleTreeRefresh();
 }
-export async function refreshSharedPreferences(signal?: AbortSignal): Promise<void> {
+let recentPreferences: { owner: symbol; time: number } | undefined;
+export async function refreshSharedPreferences(signal?: AbortSignal, reuseRecent = false): Promise<void> {
+  if (publicState.publicView) return;
   const owner = applicationSignal();
   const scope = authenticationSession.scope;
+  if (reuseRecent && recentPreferences?.owner === scope.key && performance.now() - recentPreferences.time < 30_000)
+    return;
   const revision = preferencesRevision();
   const requestSignal = AbortSignal.any([owner, scope.signal, ...(signal ? [signal] : [])]);
   const current = () =>
@@ -329,6 +335,7 @@ export async function refreshSharedPreferences(signal?: AbortSignal): Promise<vo
     }
     applySharedPreferences(preferences, !settingsState.preferencesLoaded);
     settingsState.preferencesLoaded = true;
+    recentPreferences = { owner: scope.key, time: performance.now() };
   } catch (errorCause) {
     if (!current()) return;
     const error = errorContext(errorCause);
@@ -336,89 +343,88 @@ export async function refreshSharedPreferences(signal?: AbortSignal): Promise<vo
     if (!handleAuthenticationFailure(error)) appearanceNotice(`Settings failed: ${error.message}`);
   }
 }
-export function populateSettings(): void {
-  appState.element("settings-image-compression").value = settingsState.webPreferences.imageCompression;
-  appState.element("settings-image-max-edge").value = String(settingsState.webPreferences.imageMaxEdge);
-  appState.element("settings-image-quality").value = String(settingsState.webPreferences.imageQuality);
-  appState.element("settings-image-directory").value =
+function populateSettings(): void {
+  element("settings-image-compression").value = settingsState.webPreferences.imageCompression;
+  element("settings-image-max-edge").value = String(settingsState.webPreferences.imageMaxEdge);
+  element("settings-image-quality").value = String(settingsState.webPreferences.imageQuality);
+  element("settings-image-directory").value =
     projectModel.active?.imageDirectory ?? settingsState.webPreferences.imageDirectory;
-  appState.element("settings-image-directory").disabled =
-    authenticationSession.mode === "users" && !projectModel.active?.owned;
-  settingsState.settingsUi.auto_save.value = String(settingsState.webPreferences.autoSaveDelayMs);
-  settingsState.settingsUi.default_view.value = settingsState.webPreferences.defaultView;
-  settingsState.settingsUi.line_wrap.checked = settingsState.webPreferences.sourceLineWrap;
-  settingsState.settingsUi.spellcheck.checked = settingsState.webPreferences.spellcheck;
-  settingsState.settingsUi.theme.value = settingsState.sharedAppearance.theme;
-  settingsState.settingsUi.latin_font.value = settingsState.sharedAppearance.latinFont;
-  settingsState.settingsUi.cjk_font.value = settingsState.sharedAppearance.cjkFont;
-  settingsState.settingsUi.font_size.value = String(settingsState.webPreferences.fontSizePx);
-  settingsState.settingsUi.font_size_value.value = `${settingsState.webPreferences.fontSizePx} px`;
-  settingsState.settingsUi.line_height.value = String(settingsState.webPreferences.lineHeightPercent);
-  settingsState.settingsUi.line_height_value.value = `${settingsState.webPreferences.lineHeightPercent}%`;
-  settingsState.settingsUi.density.value = settingsState.webPreferences.density;
-  setText(appState.element("settings-library-label"), projectModel.active ? "Current project" : "Current folder");
-  appState.element("settings-projects-open").hidden = authenticationSession.mode !== "users";
-  settingsState.settingsUi.library_root.value =
+  element("settings-image-directory").disabled = authenticationSession.mode === "users" && !projectModel.active?.owned;
+  element("settings-auto-save").value = String(settingsState.webPreferences.autoSaveDelayMs);
+  element("settings-default-view").value = settingsState.webPreferences.defaultView;
+  element("settings-line-wrap").checked = settingsState.webPreferences.sourceLineWrap;
+  element("settings-spellcheck").checked = settingsState.webPreferences.spellcheck;
+  element("settings-theme").value = settingsState.sharedAppearance.theme;
+  element("settings-latin-font").value = settingsState.sharedAppearance.latinFont;
+  element("settings-cjk-font").value = settingsState.sharedAppearance.cjkFont;
+  element("settings-font-size").value = String(settingsState.webPreferences.fontSizePx);
+  element("settings-font-size-value").value = `${settingsState.webPreferences.fontSizePx} px`;
+  element("settings-line-height").value = String(settingsState.webPreferences.lineHeightPercent);
+  element("settings-line-height-value").value = `${settingsState.webPreferences.lineHeightPercent}%`;
+  element("settings-density").value = settingsState.webPreferences.density;
+  setText(element("settings-library-label"), projectModel.active ? "Current project" : "Current folder");
+  element("settings-projects-open").hidden = authenticationSession.mode !== "users";
+  element("settings-library-root").value =
     projectModel.active?.name ??
     appState.currentRoot?.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, "") ??
     "Not connected";
-  appState.ui.settingsHiddenPatterns.value = settingsState.hiddenPatterns.join("\n");
-  settingsState.settingsUi.tree_refresh.value = String(settingsState.webPreferences.treeRefreshSeconds);
-  appState.ui.settingsPageWidth.value = document.documentElement.dataset.pageWidth || "balanced";
-  appState.ui.settingsSidebarWidth.value = String(appState.preferredSidebarWidth);
-  appState.ui.settingsSidebarValue.value = `${appState.preferredSidebarWidth} px`;
-  settingsState.settingsUi.default_sidebar.value = settingsState.webPreferences.defaultSidebar;
-  settingsState.settingsUi.sidebar_open.checked = settingsState.webPreferences.sidebarOpen;
-  settingsState.settingsUi.large_threshold.value = String(settingsState.webPreferences.largeDocumentThresholdKib);
-  settingsState.settingsUi.preview_delay.value = String(settingsState.webPreferences.previewDelayMs);
-  settingsState.settingsUi.outline_delay.value = String(settingsState.webPreferences.outlineDelayMs);
-  settingsState.settingsUi.reduced_motion.checked = settingsState.webPreferences.reducedMotion;
-  settingsState.settingsUi.high_contrast.checked = settingsState.webPreferences.highContrast;
-  settingsState.settingsUi.strong_focus.checked = settingsState.webPreferences.strongFocus;
-  appState.ui.settingsCommandShortcut.value = appState.commandShortcut;
+  element("hidden-patterns").value = settingsState.hiddenPatterns.join("\n");
+  element("settings-tree-refresh").value = String(settingsState.webPreferences.treeRefreshSeconds);
+  element("settings-page-width").value = document.documentElement.dataset.pageWidth || "balanced";
+  element("settings-sidebar-width").value = String(appState.preferredSidebarWidth);
+  element("settings-sidebar-value").value = `${appState.preferredSidebarWidth} px`;
+  element("settings-default-sidebar").value = settingsState.webPreferences.defaultSidebar;
+  element("settings-sidebar-open").checked = settingsState.webPreferences.sidebarOpen;
+  element("settings-large-threshold").value = String(settingsState.webPreferences.largeDocumentThresholdKib);
+  element("settings-preview-delay").value = String(settingsState.webPreferences.previewDelayMs);
+  element("settings-outline-delay").value = String(settingsState.webPreferences.outlineDelayMs);
+  element("settings-reduced-motion").checked = settingsState.webPreferences.reducedMotion;
+  element("settings-high-contrast").checked = settingsState.webPreferences.highContrast;
+  element("settings-strong-focus").checked = settingsState.webPreferences.strongFocus;
+  element("settings-command-shortcut").value = appState.commandShortcut;
 }
-export function collectSettings() {
-  const patterns = parseHiddenPatterns(appState.ui.settingsHiddenPatterns.value);
+function collectSettings() {
+  const patterns = parseHiddenPatterns(element("hidden-patterns").value);
   return validatedPreferences({
     appearance: {
-      theme: settingsState.settingsUi.theme.value,
-      latinFont: settingsState.settingsUi.latin_font.value.trim(),
-      cjkFont: settingsState.settingsUi.cjk_font.value.trim(),
+      theme: element("settings-theme").value,
+      latinFont: element("settings-latin-font").value.trim(),
+      cjkFont: element("settings-cjk-font").value.trim(),
     },
     web: {
-      imageCompression: appState.element("settings-image-compression").value,
-      imageMaxEdge: Number(appState.element("settings-image-max-edge").value),
-      imageQuality: Number(appState.element("settings-image-quality").value),
+      imageCompression: element("settings-image-compression").value,
+      imageMaxEdge: Number(element("settings-image-max-edge").value),
+      imageQuality: Number(element("settings-image-quality").value),
       imageDirectory: projectModel.active
         ? settingsState.webPreferences.imageDirectory
-        : appState.element("settings-image-directory").value.trim(),
-      autoSaveDelayMs: Number(settingsState.settingsUi.auto_save.value),
-      defaultView: settingsState.settingsUi.default_view.value,
-      sourceLineWrap: settingsState.settingsUi.line_wrap.checked,
-      spellcheck: settingsState.settingsUi.spellcheck.checked,
-      fontSizePx: Number(settingsState.settingsUi.font_size.value),
-      lineHeightPercent: Number(settingsState.settingsUi.line_height.value),
-      density: settingsState.settingsUi.density.value,
-      defaultSidebar: settingsState.settingsUi.default_sidebar.value,
-      sidebarOpen: settingsState.settingsUi.sidebar_open.checked,
+        : element("settings-image-directory").value.trim(),
+      autoSaveDelayMs: Number(element("settings-auto-save").value),
+      defaultView: element("settings-default-view").value,
+      sourceLineWrap: element("settings-line-wrap").checked,
+      spellcheck: element("settings-spellcheck").checked,
+      fontSizePx: Number(element("settings-font-size").value),
+      lineHeightPercent: Number(element("settings-line-height").value),
+      density: element("settings-density").value,
+      defaultSidebar: element("settings-default-sidebar").value,
+      sidebarOpen: element("settings-sidebar-open").checked,
       hiddenPatterns: patterns,
-      treeRefreshSeconds: Number(settingsState.settingsUi.tree_refresh.value),
-      largeDocumentThresholdKib: Number(settingsState.settingsUi.large_threshold.value),
-      previewDelayMs: Number(settingsState.settingsUi.preview_delay.value),
-      outlineDelayMs: Number(settingsState.settingsUi.outline_delay.value),
-      reducedMotion: settingsState.settingsUi.reduced_motion.checked,
-      highContrast: settingsState.settingsUi.high_contrast.checked,
-      strongFocus: settingsState.settingsUi.strong_focus.checked,
+      treeRefreshSeconds: Number(element("settings-tree-refresh").value),
+      largeDocumentThresholdKib: Number(element("settings-large-threshold").value),
+      previewDelayMs: Number(element("settings-preview-delay").value),
+      outlineDelayMs: Number(element("settings-outline-delay").value),
+      reducedMotion: element("settings-reduced-motion").checked,
+      highContrast: element("settings-high-contrast").checked,
+      strongFocus: element("settings-strong-focus").checked,
     },
   });
 }
-export function openSettings(tab = settingsState.selectedSettingsTab): void {
+export function openSettings(): void {
+  const tab = settingsState.selectedSettingsTab;
   if (publicState.publicView) return;
-  if (appState.ui.settingsDialog.open || !appState.ui.authScreen.hidden) return;
+  if (element("settings-dialog").open || !element("auth-screen").hidden) return;
   closeMenus();
-  closeCommandPanel();
   populateSettings();
-  appState.ui.settingsSearch.value = "";
+  element("settings-search").value = "";
   settingsState.settingsSearchOrigin = null;
   settingsState.settingsSnapshot = {
     preferences: {
@@ -430,12 +436,12 @@ export function openSettings(tab = settingsState.selectedSettingsTab): void {
     commandShortcut: appState.commandShortcut,
   };
   beginSettingsView();
-  notice(appState.ui.settingsError, "");
+  notice(element("settings-error"), "");
   filterSettings();
-  showDialog(appState.ui.settingsDialog);
+  showDialog(element("settings-dialog"));
   selectSettingsTab(tab);
   // Opening settings is not a search: focus the dialog itself and leave the field for those who want it.
-  appState.ui.settingsDialog.focus({ preventScroll: true });
+  element("settings-dialog").focus({ preventScroll: true });
 }
 export function cancelSettings(): void {
   if (settingsState.settingsSnapshot) {
@@ -445,48 +451,22 @@ export function cancelSettings(): void {
     updateCommandShortcut(settingsState.settingsSnapshot.commandShortcut);
   }
   settingsState.settingsSnapshot = null;
-  if (appState.ui.settingsDialog.open) appState.ui.settingsDialog.close();
+  if (element("settings-dialog").open) element("settings-dialog").close();
 }
 
-export function previewAppearanceSettings(): void {
-  const fontSize = Number(settingsState.settingsUi.font_size.value);
-  const lineHeight = Number(settingsState.settingsUi.line_height.value);
-  settingsState.settingsUi.font_size_value.value = `${fontSize} px`;
-  settingsState.settingsUi.line_height_value.value = `${lineHeight}%`;
+function previewAppearanceSettings(): void {
+  const fontSize = Number(element("settings-font-size").value);
+  const lineHeight = Number(element("settings-line-height").value);
+  element("settings-font-size-value").value = `${fontSize} px`;
+  element("settings-line-height-value").value = `${lineHeight}%`;
   document.documentElement.style.setProperty("--document-size", `${fontSize}px`);
   document.documentElement.style.setProperty("--document-line-height", String(lineHeight / 100));
-  document.documentElement.dataset.density = settingsState.settingsUi.density.value;
+  document.documentElement.dataset.density = element("settings-density").value;
   void applyAppearance({
-    theme: settingsState.settingsUi.theme.value,
-    latinFont: settingsState.settingsUi.latin_font.value.trim() || settingsState.sharedAppearance.latinFont,
-    cjkFont: settingsState.settingsUi.cjk_font.value.trim() || settingsState.sharedAppearance.cjkFont,
+    theme: element("settings-theme").value,
+    latinFont: element("settings-latin-font").value.trim() || settingsState.sharedAppearance.latinFont,
+    cjkFont: element("settings-cjk-font").value.trim() || settingsState.sharedAppearance.cjkFont,
   });
 }
-function createSettingsUi() {
-  return {
-    auto_save: appState.element("settings-auto-save"),
-    default_view: appState.element("settings-default-view"),
-    line_wrap: appState.element("settings-line-wrap"),
-    spellcheck: appState.element("settings-spellcheck"),
-    theme: appState.element("settings-theme"),
-    latin_font: appState.element("settings-latin-font"),
-    cjk_font: appState.element("settings-cjk-font"),
-    font_size: appState.element("settings-font-size"),
-    font_size_value: appState.element("settings-font-size-value"),
-    line_height: appState.element("settings-line-height"),
-    line_height_value: appState.element("settings-line-height-value"),
-    density: appState.element("settings-density"),
-    library_root: appState.element("settings-library-root"),
-    tree_refresh: appState.element("settings-tree-refresh"),
-    default_sidebar: appState.element("settings-default-sidebar"),
-    sidebar_open: appState.element("settings-sidebar-open"),
-    large_threshold: appState.element("settings-large-threshold"),
-    preview_delay: appState.element("settings-preview-delay"),
-    outline_delay: appState.element("settings-outline-delay"),
-    reduced_motion: appState.element("settings-reduced-motion"),
-    high_contrast: appState.element("settings-high-contrast"),
-    strong_focus: appState.element("settings-strong-focus"),
-    save: appState.element("settings-save"),
-  };
-}
+
 import { isConnectionLoss } from "../core/recovery";

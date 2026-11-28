@@ -3,12 +3,15 @@ import { validatedDocumentPermissions } from "./contracts";
 import { ApiError, isAbortError } from "./error";
 
 export interface ApiOptions {
+  responseType?: "blob";
   timeoutMs?: number;
   method?: string;
   body?: unknown;
   signal?: AbortSignal;
   keepalive?: boolean;
+  revalidate?: { etag: string | null };
 }
+export const notModified = Symbol("not-modified");
 export type Decoder<T> = (payload: unknown) => T;
 export type DecodedApiOptions<T> = ApiOptions & { decode: Decoder<T> };
 type RequestOptions = ApiOptions & { decode?: Decoder<unknown> };
@@ -37,12 +40,13 @@ export function createApiClient({
 }: ApiClientOptions) {
   async function send(
     path: string,
-    { method = "GET", body, signal, keepalive = false, decode }: RequestOptions,
+    { method = "GET", body, signal, keepalive = false, decode, revalidate, responseType }: RequestOptions,
   ): Promise<unknown> {
     if (!keepalive) owner.throwIfAborted();
     signal = keepalive ? signal : signal ? AbortSignal.any([signal, owner]) : owner;
     const authEndpoint = path.startsWith("/api/auth/");
     const headers: Record<string, string> = { Accept: "application/json" };
+    if (revalidate?.etag) headers["If-None-Match"] = revalidate.etag;
     const binary = body instanceof Blob;
     if (body !== undefined) headers["Content-Type"] = binary ? body.type : "application/json";
     const request = context(path, headers);
@@ -63,9 +67,13 @@ export function createApiClient({
       if (isAbortError(error) || signal?.aborted) throw error;
       throw new ApiError("Folio is unreachable.", 0, true);
     }
+    if (response.status === 304 && revalidate?.etag) {
+      signal?.throwIfAborted();
+      return decode ? decode(notModified) : notModified;
+    }
     let payload: unknown;
     try {
-      payload = await response.json();
+      payload = response.ok && responseType === "blob" ? await response.blob() : await response.json();
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) throw error;
       throw new ApiError(`Unreadable response (HTTP ${response.status}).`, response.status);
@@ -95,6 +103,7 @@ export function createApiClient({
       }
     }
     const result = decode ? decode(payload) : payload;
+    if (revalidate) revalidate.etag = response.headers.get("etag");
     onResources(payload, request.resourceProject);
     return result;
   }

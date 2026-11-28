@@ -1,11 +1,11 @@
 import type { Ctx } from "@milkdown/ctx";
 import type { Node as ProseNode } from "@milkdown/prose/model";
-import { Decoration, DecorationSet, type EditorProps } from "@milkdown/prose/view";
+import { Decoration, DecorationSet, type EditorProps, type EditorView } from "@milkdown/prose/view";
 import { createMathNodeViews } from "./math.ts";
 import { wikiNodeView } from "./wiki.ts";
 import { Mapping, StepMap } from "@milkdown/prose/transform";
 import { indexedDecorations } from "./decoration-index.ts";
-import { codeBlockDecorations, codeBlockDecorationsAt, codeBlockNodeView } from "./code-block.ts";
+import { codeBlockDecorations, codeBlockDecorationsAt, codeBlockNodeView, loadCodeSyntax } from "./code-block.ts";
 import { linkMarkView } from "./links.ts";
 import type { createImageTools } from "./images.ts";
 import type { createTableTools } from "./tables.ts";
@@ -14,6 +14,7 @@ import type { DeferredScrollbars, InlineEditorOptions, MarkdownUrl, NodeActivity
 
 interface EditorViewsOptions extends NodeActivity {
   ctx: Ctx;
+  viewport: HTMLElement;
   path: string;
   transformUrl: MarkdownUrl;
   readOnly_fn: () => boolean;
@@ -27,6 +28,7 @@ interface EditorViewsOptions extends NodeActivity {
 
 export function createEditorViews({
   ctx,
+  viewport,
   path,
   transformUrl,
   active_fn,
@@ -39,8 +41,73 @@ export function createEditorViews({
   serialize_fn,
   headingsFor_fn,
 }: EditorViewsOptions): Pick<EditorProps, "nodeViews" | "markViews" | "decorations"> {
-  const decorations = new WeakMap<ProseNode, DecorationSet>();
+  let decorations = new WeakMap<ProseNode, DecorationSet>();
   let latest: { document: ProseNode; inner: DecorationSet } | null = null;
+  const waiting = new Map<Element, () => number | undefined>();
+  let observer: IntersectionObserver | null = null;
+  let deferCode: boolean | undefined;
+  let host: EditorView | undefined;
+  const pending = new Set<ProseNode>();
+  function queueHighlight(node: ProseNode) {
+    const first = !pending.size;
+    pending.add(node);
+    if (first)
+      void loadCodeSyntax()
+        .then(() => {
+          const view = host;
+          // Cached versions used by undo may have been decorated before syntax arrived.
+          decorations = new WeakMap();
+          if (!view || view.isDestroyed || latest?.document !== view.state.doc) return;
+          const fresh: Decoration[] = [];
+          view.state.doc.descendants((current, pos) => {
+            if (pending.has(current) && !latest!.inner.find(pos + 1, pos + current.nodeSize - 1).length)
+              codeBlockDecorationsAt(current, pos, fresh);
+            return !current.isTextblock;
+          });
+          if (!fresh.length) return;
+          latest.inner = latest.inner.add(view.state.doc, fresh);
+          decorations = new WeakMap([[view.state.doc, combine(view.state.doc, latest.inner)]]);
+          view.updateState(view.state);
+        })
+        .finally(() => pending.clear())
+        .catch(() => {}); // Plain code remains editable if the optional download fails.
+  }
+  function watchCode(dom: Element, view: EditorView, getPos: () => number | undefined) {
+    host = view;
+    if (!deferCode) return () => {};
+    waiting.set(dom, getPos);
+    observer ??= new IntersectionObserver(
+      (entries) => {
+        if (view.isDestroyed || latest?.document !== view.state.doc) return;
+        const fresh: Decoration[] = [];
+        for (const { target, isIntersecting } of entries) {
+          if (!isIntersecting) continue;
+          const pos = waiting.get(target)?.();
+          if (pos === undefined) continue;
+          observer?.unobserve(target);
+          waiting.delete(target);
+          const node = view.state.doc.nodeAt(pos);
+          if (!node || node.type.name !== "code_block" || latest.inner.find(pos + 1, pos + node.nodeSize - 1).length)
+            continue;
+          codeBlockDecorationsAt(node, pos, fresh, queueHighlight);
+        }
+        if (!fresh.length) return;
+        latest.inner = latest.inner.add(view.state.doc, fresh);
+        decorations = new WeakMap([[view.state.doc, combine(view.state.doc, latest.inner)]]);
+        view.updateState(view.state);
+      },
+      { root: viewport, rootMargin: "600px 0px" },
+    );
+    observer.observe(dom);
+    return () => {
+      observer?.unobserve(dom);
+      waiting.delete(dom);
+      if (!waiting.size) {
+        observer?.disconnect();
+        observer = null;
+      }
+    };
+  }
   const imageView = imageTools.nodeView({ active_fn, editable_fn, path, transformUrl, serialize_fn });
   return {
     nodeViews: {
@@ -97,15 +164,16 @@ export function createEditorViews({
           ignoreMutation: (mutation) => mutation.type !== "selection" && !contentDOM.contains(mutation.target),
         };
       },
-      code_block: codeBlockNodeView(scrollbars),
+      code_block: codeBlockNodeView(scrollbars, watchCode),
       image: imageView,
       image_block: imageView,
       table: tableTools.nodeView({ active_fn, editable_fn, serialize_fn }),
     },
     markViews: { link: (mark) => linkMarkView(mark, path, transformUrl) },
     decorations(state) {
+      deferCode ??= state.doc.content.size >= 16_384 && typeof IntersectionObserver !== "undefined";
       const cached = decorations.get(state.doc);
-      if (cached) return cached;
+      if (cached && ((!deferCode && !pending.size) || latest?.document === state.doc)) return cached;
       const inner = (latest && patchInner(latest.document, latest.inner, state.doc)) ?? buildInner(state.doc);
       const result = combine(state.doc, inner);
       decorations.set(state.doc, result);
@@ -134,7 +202,9 @@ export function createEditorViews({
   function buildInner(document: ProseNode) {
     return DecorationSet.create(document, [
       ...nestedHeadings(document).map(headingDecoration),
-      ...codeBlockDecorations(document),
+      // The initial view paints syntax just ahead of the viewport. Subsequent full rebuilds
+      // (e.g. a nested heading edit) must also cover existing, already observed node views.
+      ...(deferCode && !latest ? [] : codeBlockDecorations(document, queueHighlight)),
     ]);
   }
 
@@ -165,7 +235,7 @@ export function createEditorViews({
     const fresh: Decoration[] = [];
     let position = start;
     for (let index = from; index < endB; index += 1) {
-      codeBlockDecorationsAt(document.child(index), position, fresh);
+      codeBlockDecorationsAt(document.child(index), position, fresh, queueHighlight);
       position += document.child(index).nodeSize;
     }
     return mapped.remove(stale).add(document, fresh);

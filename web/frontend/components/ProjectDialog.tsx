@@ -1,22 +1,13 @@
-import { AppDialog } from "./primitives";
+import { IconButton } from "./primitives";
 
 /** Keep project browsing, creation, and sharing in one focused surface. */
 export function ProjectDialog() {
   return (
     <>
-      <AppDialog id="projects-dialog" class="projects-dialog" aria-labelledby="projects-title" data-view="browse">
+      <dialog id="projects-dialog" class="projects-dialog" aria-labelledby="projects-title" data-view="browse">
         <header class="projects-heading">
           <div class="project-heading-title">
-            <button
-              id="project-back"
-              class="icon-button"
-              type="button"
-              aria-label="Back to projects"
-              title="Back"
-              hidden
-            >
-              <svg data-icon="arrow-left" aria-hidden="true"></svg>
-            </button>
+            <IconButton id="project-back" label="Back to projects" title="Back" icon="arrow-left" hidden />
             <h2 id="projects-title">Projects</h2>
           </div>
           <div class="project-toolbar">
@@ -27,14 +18,9 @@ export function ProjectDialog() {
               </label>
               <input id="projects-filter" type="search" placeholder="Search projects" autocomplete="off" />
             </div>
-            <button id="project-new" class="icon-button" type="button" title="New project">
-              <svg data-icon="plus" aria-hidden="true"></svg>
-              <span class="visually-hidden">New project</span>
-            </button>
+            <IconButton id="project-new" label="New project" icon="plus" />
           </div>
-          <button id="projects-close" class="icon-button" type="button" aria-label="Close projects" autofocus>
-            <svg data-icon="x" aria-hidden="true"></svg>
-          </button>
+          <IconButton id="projects-close" label="Close projects" icon="x" autofocus />
         </header>
         <section id="project-confirm" class="project-confirm" role="alert" data-confirmation-region hidden>
           <p id="project-confirm-message" data-confirmation-message></p>
@@ -157,7 +143,7 @@ export function ProjectDialog() {
           </form>
         </section>
         <p id="project-error" class="notice is-error dialog-status" role="alert" hidden></p>
-      </AppDialog>
+      </dialog>
     </>
   );
 }

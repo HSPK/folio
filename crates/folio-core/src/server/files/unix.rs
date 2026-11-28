@@ -159,9 +159,17 @@ impl Directory {
     }
 
     pub(in super::super) fn create_dir(&self, name: &OsStr) -> io::Result<()> {
+        self.mkdir(name, 0o777)
+    }
+
+    pub(in super::super) fn create_private_dir(&self, name: &OsStr) -> io::Result<()> {
+        self.mkdir(name, 0o700)
+    }
+
+    fn mkdir(&self, name: &OsStr, mode: libc::mode_t) -> io::Result<()> {
         let name = child_name(name)?;
         // SAFETY: name is a validated, NUL-terminated child and the directory descriptor is live.
-        if unsafe { libc::mkdirat(self.file.as_raw_fd(), name.as_ptr(), 0o777) } == -1 {
+        if unsafe { libc::mkdirat(self.file.as_raw_fd(), name.as_ptr(), mode) } == -1 {
             Err(io::Error::last_os_error())
         } else {
             Ok(())

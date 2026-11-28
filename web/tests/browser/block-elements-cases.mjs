@@ -1,5 +1,5 @@
 import {
-  test, expect, fs, path, root, openFixture, primaryModifier, openBlockTools, hoverBlockTools, userDocumentUrl,
+  test, expect, fs, path, root, openFixture, primaryModifier, openBlockTools, activateBlockTools, userDocumentUrl,
 } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
@@ -56,11 +56,11 @@ for (const item of cases) {
     let menu = await openBlockTools(page, target(), item.label);
     expect(await first.boundingBox()).toEqual(bounds);
     await expect(menu.getByText(/Copy .*as/)).toHaveCount(0);
-    await menu.getByRole("menuitem", { name: "Duplicate block", exact: true }).click();
+    await menu.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
     await expect(blocks).toHaveCount(count + 1);
     expect(await snapshot(blocks.nth(1))).toEqual(original);
     menu = await openBlockTools(page, item.target ? blocks.nth(1).locator(item.target).first() : blocks.nth(1), item.label);
-    await menu.getByRole("menuitem", { name: "Delete block", exact: true }).click();
+    await menu.getByRole("menuitem", { name: "Delete", exact: true }).click();
     await expect(blocks).toHaveCount(count);
     await page.keyboard.press(`${primaryModifier}+z`);
     await expect(blocks).toHaveCount(count + 1);
@@ -68,7 +68,7 @@ for (const item of cases) {
     await expect(blocks).toHaveCount(count);
     await expect(page.locator("#editor")).toHaveValue(source);
     menu = await openBlockTools(page, target(), item.label);
-    await menu.getByRole("menuitem", { name: "Duplicate block", exact: true }).click();
+    await menu.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
     await page.keyboard.press(`${primaryModifier}+s`);
     await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     const saved = await fs.readFile(path.join(root, name), "utf8");
@@ -109,14 +109,14 @@ for (const item of [
     const first = blocks.first();
     const original = await snapshot(first);
     const target = () => item.target ? first.locator(item.target).first() : first;
-    await hoverBlockTools(page, target(), item.label);
-    await page.getByRole("button", { name: "Add block below", exact: true }).click();
+    await activateBlockTools(page, target(), item.label);
+    await page.getByRole("button", { name: "Add below", exact: true }).click();
     await expect(page.locator(".ProseMirror")).toBeFocused();
     await page.keyboard.press(`${primaryModifier}+z`);
     await expect(page.locator("#editor")).toHaveValue(source);
-    await hoverBlockTools(page, target(), item.label);
+    await activateBlockTools(page, target(), item.label);
     const previous = await first.elementHandle();
-    await page.getByRole("button", { name: "Add block below", exact: true }).click();
+    await page.getByRole("button", { name: "Add below", exact: true }).click();
     await page.keyboard.insertText("Added block.");
     const inserted = page.locator(".ProseMirror p").filter({ hasText: /^Added block\.$/ });
     await expect(inserted).toHaveCount(1);
@@ -141,12 +141,12 @@ for (const item of [
 }
 
 test("task block grips leave checkboxes reachable and checkbox edits undo and persist independently", async ({ page, browserName }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 651, height: 844 });
   const source = "- [x] Done **kept**\n- [ ] Pending\n  - [x] Nested\n\nTail.\n";
   await openFixture(page, "Block-task-pointer.md", source);
   const editor = page.locator(".ProseMirror");
   const item = editor.locator(":scope > ul > li").first();
-  await item.locator(":scope > div > p").hover();
+  await activateBlockTools(page, item.locator(":scope > div > p"), "List item");
   const handle = await page.locator(".folio-block-grip").boundingBox();
   const checkbox = item.locator(":scope > .folio-task-checkbox");
   const box = await checkbox.boundingBox();
@@ -171,7 +171,7 @@ test("deleting the last list item removes its nested blocks but leaves a writabl
   const source = "- [x] Only **task**\n\n  ```rust\n  kept();\n  ```\n\n  - [ ] Nested [source](https://example.com)\n";
   await openFixture(page, "Block-last-list.md", source);
   const menu = await openBlockTools(page, page.locator(".ProseMirror > ul > li > div > p").first(), "List item");
-  await menu.getByRole("menuitem", { name: "Delete block", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Delete", exact: true }).click();
   await expect(page.locator(".ProseMirror li")).toHaveCount(0);
   await expect(page.locator(".ProseMirror > p")).toHaveCount(1);
   await expect(page.locator("#editor")).toHaveValue(/^\s*$/);
@@ -206,7 +206,7 @@ test("read-only block elements disable task changes and all block mutations with
       [".folio-math-block", "Math block"], [".ProseMirror > hr", "Divider"],
     ]) {
       const menu = await openBlockTools(page, page.locator(selector).first(), label);
-      await expect(page.getByRole("button", { name: "Add block below", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Add below", exact: true })).toHaveCount(0);
       for (const button of await menu.getByRole("menuitem").all()) await expect(button).toBeDisabled();
       await expect(menu).toBeFocused();
       await expect(menu.getByText(/Copy .*as/)).toHaveCount(0);

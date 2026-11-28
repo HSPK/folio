@@ -1,24 +1,32 @@
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
-import { libraryModel } from "../../state/library";
+import { libraryCatalog, libraryModel } from "../../state/library";
 import { decodedAuthStatus, decodedAuthentication } from "../../api/contracts";
-import { MAX_MARKDOWN_BYTES, browserDocumentTitle, formatByteCount, readNoteRoute } from "@folio/model";
+import {
+  MAX_MARKDOWN_BYTES,
+  browserDocumentTitle,
+  formatByteCount,
+  noteDisplayTitle,
+  readNoteRoute,
+} from "@folio/model";
 import { updateShell } from "../../state/shell";
-import { clearTimer } from "../../types/elements";
+import { element, clearTimer } from "../../types/elements";
 import { errorContext, type RuntimeError } from "../../types/errors";
 import { isDocumentPayload } from "../../types/guards";
 import {
   collaborationLocked,
-  collaborationState,
+  collaboration,
   pauseCollaboration,
   stopCollaboration,
 } from "../collaboration/collaboration";
-import { participationState, stopDocumentParticipation } from "../collaboration/participation";
+import { documentParticipation, stopDocumentParticipation } from "../collaboration/participation";
 import { api } from "../core/api";
 import { stopAppearancePolling } from "../core/appearance";
 import { appState, currentEditorAnalysis, rootChanged } from "../core/bootstrap";
 import { ApiError, documentNotice, notice, previewStatus, setText } from "../core/dom";
 import { connect } from "../core/connection";
+import { finishStartupReads } from "../core/startup";
+import { readLayoutPreference, storeLayoutPreference } from "../core/layout";
 import {
   clearServiceOutage,
   connectivity,
@@ -32,7 +40,6 @@ import { cancelDocumentLoad, clearDocument, confirmDiscard } from "../documents/
 import { invalidatePreview, schedulePreview } from "../documents/preview";
 import { acceptDocumentPermissions } from "../documents/resources";
 import { cancelAutoSave, notifyDocumentSave } from "../documents/saving";
-import { renameChanged } from "../navigation/files";
 import { libraryState, renderFiles } from "../navigation/library";
 import { closeDocumentOutline, openDocumentOutline, refreshOutline } from "../navigation/outline";
 import { updateProjectControls } from "../projects/projects";
@@ -41,16 +48,14 @@ import { connectPublic, publicState } from "../sharing/public";
 import { refreshWorkspaceControls } from "../workspace/controls";
 import { loadUserWorkspace } from "../workspace/workspace";
 import { applicationSignal } from "../lifecycle";
-class AuthenticationState {
-  authInvitation!: boolean;
-}
-export const authenticationState = new AuthenticationState();
+let authInvitation: boolean;
+
 export function initializeAccountsAuthentication(): void {
-  authenticationState.authInvitation = false;
+  authInvitation = false;
   initializeConnectionRecovery(
     () => (authenticationSession.mode ? connect({ restoreWorkspace: false }) : bootstrapAuthentication()),
     () => {
-      if (appState.ui.authScreen.hidden && !appState.element("public-password-dialog").open) {
+      if (element("auth-screen").hidden && !element("public-password-dialog").open) {
         connectionFailure(errorContext(new ApiError("Disconnected", 0, true)));
       }
     },
@@ -75,8 +80,8 @@ export function handleAuthenticationFailure(error: RuntimeError) {
     ? {
         id: documentSession.id,
         resource: documentSession.current.id,
-        participant: participationState.documentParticipation?.participant ?? null,
-        ready: participationState.documentParticipation?.ready ?? false,
+        participant: documentParticipation?.participant ?? null,
+        ready: documentParticipation?.ready ?? false,
       }
     : null;
   appState.connectionState = "error";
@@ -93,7 +98,7 @@ export function handleAuthenticationFailure(error: RuntimeError) {
   clearTimer(libraryState.treeRefreshTimer);
   libraryState.treeRefreshTimer = null;
   invalidatePreview();
-  if (documentSession.current && !collaborationState.collaboration) void persistCurrentDraft().catch(console.error);
+  if (documentSession.current && !collaboration) void persistCurrentDraft().catch(console.error);
   stopDocumentParticipation({ notify: false });
   pauseCollaboration();
   if (documentSession.current) acceptDocumentPermissions({ writable: false, collaborative: false, owner: false });
@@ -103,7 +108,7 @@ export function handleAuthenticationFailure(error: RuntimeError) {
 export function connectionFailure(error: RuntimeError, force = false): void {
   if (handleAuthenticationFailure(error)) return;
   if (isConnectionLoss(error)) {
-    if (!appState.ui.authScreen.hidden || appState.element("public-password-dialog").open) return;
+    if (!element("auth-screen").hidden || element("public-password-dialog").open) return;
     appState.connectionState = "error";
     reportServiceOutage();
     refreshControls();
@@ -123,59 +128,59 @@ export function connectionFailure(error: RuntimeError, force = false): void {
   }
   if (!message) return;
   appState.connectionState = "error";
-  notice(appState.ui.connectionMessage, message, "error");
+  notice(element("connection-message"), message, "error");
   refreshControls();
 }
 export function showAuthentication(setup: boolean, message = "", registration = false): void {
   clearServiceOutage();
   closeAllDialogs();
   appState.authSetup = setup;
-  authenticationState.authInvitation = !setup && registration;
+  authInvitation = !setup && registration;
   appState.connectionState = "error";
   document.body.dataset.auth = "open";
-  appState.ui.appShell.inert = true;
-  appState.ui.authScreen.hidden = false;
+  element("app-shell").inert = true;
+  element("auth-screen").hidden = false;
   setText(
-    appState.ui.authTitle,
-    setup ? "Create the administrator" : authenticationState.authInvitation ? "Create your account" : "Log in to Folio",
+    element("auth-title"),
+    setup ? "Create the administrator" : authInvitation ? "Create your account" : "Log in to Folio",
   );
-  appState.element("auth-invitation-field").hidden = !authenticationState.authInvitation;
-  appState.element("auth-invitation").required = authenticationState.authInvitation;
-  appState.element("auth-use-invitation").hidden = setup || authenticationState.authInvitation;
-  appState.element("auth-back-login").hidden = !authenticationState.authInvitation;
-  appState.ui.authConfirmField.hidden = !(setup || authenticationState.authInvitation);
-  appState.ui.authConfirm.required = setup || authenticationState.authInvitation;
-  appState.ui.authPassword.autocomplete =
-    setup || authenticationState.authInvitation ? "new-password" : "current-password";
-  appState.ui.authConfirm.autocomplete = "new-password";
-  notice(appState.ui.authError, message, message ? "error" : "");
-  setText(
-    appState.ui.authSubmit,
-    setup ? "Create administrator" : authenticationState.authInvitation ? "Create account" : "Log in",
-  );
-  appState.ui.logout.hidden = true;
+  element("auth-invitation-field").hidden = !authInvitation;
+  element("auth-invitation").required = authInvitation;
+  element("auth-use-invitation").hidden = setup || authInvitation;
+  element("auth-back-login").hidden = !authInvitation;
+  element("auth-confirm-field").hidden = !(setup || authInvitation);
+  element("auth-confirm").required = setup || authInvitation;
+  element("auth-password").autocomplete = setup || authInvitation ? "new-password" : "current-password";
+  element("auth-confirm").autocomplete = "new-password";
+  notice(element("auth-error"), message, message ? "error" : "");
+  setText(element("auth-submit"), setup ? "Create administrator" : authInvitation ? "Create account" : "Log in");
+  element("logout").hidden = true;
   refreshControls();
   window.requestAnimationFrame(() => {
     if (authenticationSession.user?.username && !setup)
-      appState.ui.authUsername.value = authenticationSession.user.username;
-    appState.ui.authUsername.focus();
+      element("auth-username").value = authenticationSession.user.username;
+    element("auth-username").focus();
   });
 }
 export function hideAuthentication(): void {
   delete document.body.dataset.auth;
-  appState.ui.appShell.inert = false;
-  appState.ui.authScreen.hidden = true;
-  notice(appState.ui.authError, "");
-  appState.ui.logout.hidden = authenticationSession.mode !== "users" || !authenticationSession.user;
+  element("app-shell").inert = false;
+  element("auth-screen").hidden = true;
+  notice(element("auth-error"), "");
+  element("logout").hidden = authenticationSession.mode !== "users" || !authenticationSession.user;
   if (authenticationSession.user) {
-    appState.ui.logout.textContent = `Log out ${authenticationSession.user.username}`;
+    element("logout").textContent = `Log out ${authenticationSession.user.username}`;
   }
 }
 export async function bootstrapAuthentication(): Promise<void> {
   const owner = applicationSignal();
   const scope = authenticationSession.scope;
   if (publicState.publicView) {
-    await connectPublic();
+    try {
+      await connectPublic();
+    } finally {
+      finishStartupReads();
+    }
     return;
   }
   appState.connectionState = "connecting";
@@ -203,48 +208,40 @@ export async function bootstrapAuthentication(): Promise<void> {
     }
     hideAuthentication();
     const workspace = loadUserWorkspace();
-    if (!readNoteRoute(window.location.href).id) await workspace;
-    if (owner.aborted) return;
-    await connect();
+    const restore = !/^\/[np]\//.test(window.location.pathname) && !readNoteRoute(window.location.href).id;
+    await connect({ workspace: restore ? workspace : undefined });
   } catch (errorCause) {
     if (owner.aborted) return;
     const error = errorContext(errorCause);
     connectionFailure(error, true);
+  } finally {
+    finishStartupReads();
   }
 }
 export async function submitAuthentication(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   const owner = applicationSignal();
   if (appState.authenticating) return;
-  if (
-    (appState.authSetup || authenticationState.authInvitation) &&
-    appState.ui.authPassword.value !== appState.ui.authConfirm.value
-  ) {
-    notice(appState.ui.authError, "Passwords do not match", "error");
-    appState.ui.authConfirm.focus();
+  if ((appState.authSetup || authInvitation) && element("auth-password").value !== element("auth-confirm").value) {
+    notice(element("auth-error"), "Passwords do not match", "error");
+    element("auth-confirm").focus();
     return;
   }
   appState.authenticating = true;
   const attempt = authenticationSession.beginAuthentication();
-  notice(appState.ui.authError, "");
-  setText(appState.ui.authSubmit, appState.authSetup ? "Creating…" : "Logging in…");
+  notice(element("auth-error"), "");
+  setText(element("auth-submit"), appState.authSetup ? "Creating…" : "Logging in…");
   refreshControls();
   try {
     const result = await api(
-      appState.authSetup
-        ? "/api/auth/setup"
-        : authenticationState.authInvitation
-          ? "/api/auth/register"
-          : "/api/auth/login",
+      appState.authSetup ? "/api/auth/setup" : authInvitation ? "/api/auth/register" : "/api/auth/login",
       {
         decode: decodedAuthentication,
         method: "POST",
         body: {
-          username: appState.ui.authUsername.value,
-          password: appState.ui.authPassword.value,
-          ...(authenticationState.authInvitation
-            ? { invitation: appState.element("auth-invitation").value.trim() }
-            : {}),
+          username: element("auth-username").value,
+          password: element("auth-password").value,
+          ...(authInvitation ? { invitation: element("auth-invitation").value.trim() } : {}),
         },
       },
     );
@@ -259,13 +256,11 @@ export async function submitAuthentication(event: SubmitEvent): Promise<void> {
       return;
     }
     authenticationSession.authenticate(result.user);
-    appState.ui.authPassword.value = "";
-    appState.ui.authConfirm.value = "";
-    appState.element("auth-invitation").value = "";
+    element("auth-password").value = "";
+    element("auth-confirm").value = "";
+    element("auth-invitation").value = "";
     hideAuthentication();
-    await loadUserWorkspace();
-    if (owner.aborted) return;
-    await connect();
+    await connect({ workspace: loadUserWorkspace() });
   } catch (errorCause) {
     if (owner.aborted) return;
     const error = errorContext(errorCause);
@@ -274,14 +269,14 @@ export async function submitAuthentication(event: SubmitEvent): Promise<void> {
       appState.authSetup = false;
       showAuthentication(false, "Setup already completed, log in");
     } else {
-      notice(appState.ui.authError, error.message, "error");
+      notice(element("auth-error"), error.message, "error");
     }
   } finally {
     if (!owner.aborted) {
       appState.authenticating = false;
       setText(
-        appState.ui.authSubmit,
-        appState.authSetup ? "Create administrator" : authenticationState.authInvitation ? "Create account" : "Log in",
+        element("auth-submit"),
+        appState.authSetup ? "Create administrator" : authInvitation ? "Create account" : "Log in",
       );
       refreshControls();
     }
@@ -291,7 +286,7 @@ export async function logout(): Promise<void> {
   if (authenticationSession.mode !== "users" || appState.authenticating || documentSession.saving || appState.creating)
     return;
   if (!(await confirmDiscard("log out"))) return;
-  appState.ui.logout.disabled = true;
+  element("logout").disabled = true;
   try {
     await api("/api/auth/logout", { method: "POST" });
     window.location.reload();
@@ -299,7 +294,7 @@ export async function logout(): Promise<void> {
     const error = errorContext(errorCause);
     documentNotice(`Logout failed: ${error.message}`, "error");
     connectionFailure(error);
-    appState.ui.logout.disabled = false;
+    element("logout").disabled = false;
   }
 }
 export function setRoot(root: string): void {
@@ -316,8 +311,8 @@ export function setRoot(root: string): void {
     else schedulePreview(0);
   }
 }
-export function refreshDocumentTitle(modified = !appState.ui.modified.hidden): void {
-  updateShell({ title: documentSession.current?.title ?? documentSession.current?.path ?? "Select a note" });
+export function refreshDocumentTitle(modified = !element("document-modified").hidden): void {
+  updateShell({ title: documentSession.current ? noteDisplayTitle(documentSession.current) : "Select a note" });
   const title = browserDocumentTitle(documentSession.current, modified);
   if (document.title !== title) document.title = title;
 }
@@ -327,23 +322,23 @@ export function renderDocumentStatus(changed: boolean): void {
   if (documentSession.current) {
     state = documentSession.conflict
       ? "conflict"
-      : documentSession.saving || collaborationState.collaboration?.saving
+      : documentSession.saving || collaboration?.saving
         ? "saving"
         : changed
           ? "dirty"
           : "saved";
     status = documentSession.conflict
-      ? "Disk conflict"
-      : documentSession.saving || collaborationState.collaboration?.saving
+      ? ""
+      : documentSession.saving || collaboration?.saving
         ? "Saving…"
         : projectWritable()
           ? ""
           : "Read only";
   }
-  appState.ui.dirty.dataset.state = state;
-  setText(appState.ui.dirty, status);
-  appState.ui.dirty.hidden = !status;
-  const modified = Boolean(documentSession.current && changed);
+  element("dirty-indicator").dataset.state = state;
+  setText(element("dirty-indicator"), status);
+  element("dirty-indicator").hidden = !status;
+  const modified = Boolean(documentSession.current && (changed || !documentSession.resourceId));
   updateShell({ modified });
   refreshDocumentTitle(modified);
 }
@@ -362,39 +357,34 @@ export function refreshControls(): void {
   const ready = appState.connectionState === "ready";
   const writing = Boolean(documentSession.saving || appState.creating || appState.movingEntry);
   const tooLarge = analysis.bytes > MAX_MARKDOWN_BYTES;
-  appState.ui.editor.disabled = !documentSession.current || collaborationLocked();
-  appState.ui.editor.setReadOnly(!projectWritable());
+  appState.editor.disabled = !documentSession.current || collaborationLocked();
+  appState.editor.setReadOnly(!projectWritable());
   appState.inlineEditor.setReadOnly(!projectWritable() || collaborationLocked());
-  appState.ui.reload.disabled = !documentSession.current || writing || !ready;
-  appState.ui.copy.disabled = !documentSession.current;
-  appState.ui.newNote.disabled = !ready || appState.creating || appState.movingEntry || !projectCanCreate();
-  appState.ui.newFolder.disabled = !ready || writing || !projectCanCreate();
-  appState.ui.emptyNew.disabled = appState.ui.newNote.disabled;
+  element("reload-document").disabled = !documentSession.resourceId || writing || !ready;
+  element("conflict-latest").disabled = element("reload-document").disabled;
+  element("copy-text").disabled = !documentSession.current;
+  element("new-note").disabled = !appState.currentRoot || !libraryCatalog.loaded || !projectCanCreate();
+  element("new-folder").disabled = element("new-note").disabled;
+  element("new-from-template").disabled = element("new-note").disabled;
+  element("file-list").toggleAttribute("data-can-add", !element("new-note").disabled);
+  element("empty-new-note").disabled = element("new-note").disabled;
   updateShell({ hasDocument: Boolean(documentSession.current) });
-  appState.ui.logout.disabled = appState.authenticating || writing || appState.connectionState === "connecting";
-  appState.ui.authUsername.disabled = appState.authenticating;
-  appState.ui.authPassword.disabled = appState.authenticating;
-  appState.ui.authConfirm.disabled = appState.authenticating;
-  appState.ui.authSubmit.disabled = appState.authenticating;
-  appState.ui.newTitle.disabled = appState.creating;
-  appState.element("new-note-template").disabled = appState.creating;
-  appState.ui.cancelNew.disabled = appState.creating;
-  appState.ui.create.disabled = appState.creating;
-  appState.ui.newFolderPath.disabled = appState.creating;
-  appState.ui.cancelNewFolder.disabled = appState.creating;
-  appState.ui.createFolder.disabled = appState.creating;
-  appState.ui.renamePath.disabled = appState.movingEntry;
-  appState.ui.cancelRename.disabled = appState.movingEntry;
-  appState.ui.confirmRename.disabled = appState.movingEntry || !renameChanged();
-  setText(appState.ui.create, appState.creating ? "Creating…" : "Create note");
-  setText(appState.ui.createFolder, appState.creating ? "Creating…" : "Create folder");
-  setText(appState.ui.confirmRename, appState.movingEntry ? "Moving…" : "Rename");
+  element("logout").disabled = appState.authenticating || writing || appState.connectionState === "connecting";
+  element("auth-username").disabled = appState.authenticating;
+  element("auth-password").disabled = appState.authenticating;
+  element("auth-confirm").disabled = appState.authenticating;
+  element("auth-submit").disabled = appState.authenticating;
+  element("new-note-title").disabled = appState.creating;
+  element("new-note-template").disabled = appState.creating;
+  element("cancel-new-note").disabled = appState.creating;
+  element("create-note").disabled = appState.creating;
+  setText(element("create-note"), appState.creating ? "Creating…" : "Create note");
   const disconnected = connectivity.serviceLost || connectivity.roomLost;
-  appState.ui.connectionLabel.dataset.state = disconnected ? "error" : appState.connectionState;
-  appState.ui.connectionLabel.classList.toggle("is-error", disconnected);
-  appState.ui.connectionLabel.hidden = !disconnected;
+  element("connection-label").dataset.state = disconnected ? "error" : appState.connectionState;
+  element("connection-label").classList.toggle("is-error", disconnected);
+  element("connection-label").hidden = !disconnected;
   setText(
-    appState.ui.connectionLabel,
+    element("connection-label"),
     disconnected
       ? "Disconnected"
       : ready
@@ -403,7 +393,7 @@ export function refreshControls(): void {
           ? "Connecting…"
           : "Disconnected",
   );
-  appState.ui.connectionLabel.title =
+  element("connection-label").title =
     ready && appState.currentPort ? `Connected on loopback port ${appState.currentPort}` : "";
   if (documentSession.current) {
     const ending =
@@ -412,8 +402,8 @@ export function refreshControls(): void {
         : documentSession.current.format.lineEnding === "\r"
           ? "CR"
           : "LF";
-    if (appState.wordSource !== appState.ui.editor.value) {
-      appState.wordSource = appState.ui.editor.value;
+    if (appState.wordSource !== appState.editor.value) {
+      appState.wordSource = appState.editor.value;
       appState.wordCount = appState.wordCounter.count(appState.wordSource);
     }
     updateShell({
@@ -424,46 +414,53 @@ export function refreshControls(): void {
     updateShell({ statistics: "", statisticsDetail: "" });
   }
   renderDocumentStatus(changed);
-  appState.ui.editor.setAttribute("aria-invalid", String(tooLarge));
+  appState.editor.setAttribute("aria-invalid", String(tooLarge));
   notice(
-    appState.ui.sizeWarning,
+    element("size-warning"),
     tooLarge ? `${formatByteCount(analysis.bytes)} exceeds the 4 MiB limit` : "",
     "error",
   );
-  notice(appState.ui.rootWarning, rootChanged() ? "Notes folder changed" : "", "warning");
+  notice(element("root-warning"), rootChanged() ? "Notes folder changed" : "", "warning");
   refreshOutline();
   updateProjectControls();
   refreshWorkspaceControls();
   notifyDocumentSave();
 }
-export function selectNavigation(destination: unknown, focus = false): void {
+export function selectNavigation(destination: unknown): void {
   if (destination === "outline") {
-    openDocumentOutline({ pin: true, focus });
+    openDocumentOutline({ pin: true });
     return;
   }
   closeDocumentOutline();
-  if (focus) appState.ui.filter.focus();
 }
-export function setSidebar(open: boolean): void {
+export function restoreSidebar(fallback = !appState.compactLayout.matches): void {
+  if (document.body.dataset.focus === "true") return;
+  const saved = readLayoutPreference(appState.SIDEBAR_STATE_KEY);
+  setSidebar(saved === "open" ? true : saved === "closed" ? false : fallback);
+}
+export function setSidebar(open: boolean, persist = false): void {
   if (publicState.publicView) open = false;
   const returnFocus =
     !open &&
-    (appState.ui.sidebar.contains(document.activeElement) || document.activeElement === appState.ui.sidebarToggle);
-  const openingFromToggle = open && document.activeElement === appState.ui.sidebarToggle;
+    (element("sidebar").contains(document.activeElement) || document.activeElement === element("sidebar-toggle"));
+  const openingFromToggle = open && document.activeElement === element("sidebar-toggle");
   document.body.dataset.sidebar = open ? "open" : "closed";
   updateShell({ sidebarOpen: open, compact: appState.compactLayout.matches });
-  appState.ui.sidebarResizer.tabIndex = open && !appState.compactLayout.matches ? 0 : -1;
-  if (returnFocus && !publicState.publicView) appState.ui.sidebarToggle.focus({ preventScroll: true });
-  if (openingFromToggle) appState.element("sidebar-hide").focus({ preventScroll: true });
+  if (persist && !publicState.publicView) storeLayoutPreference(appState.SIDEBAR_STATE_KEY, open ? "open" : "closed");
+  if (!open) element("new-menu-panel").hidePopover();
+  element("sidebar-resizer").tabIndex = open && !appState.compactLayout.matches ? 0 : -1;
+  if (returnFocus && !publicState.publicView) element("sidebar-toggle").focus({ preventScroll: true });
+  if (openingFromToggle) element("sidebar-hide").focus({ preventScroll: true });
 }
 export function closeMenus(): void {
-  for (const popup of document.querySelectorAll<HTMLDetailsElement>(".popup[open]")) popup.open = false;
+  for (const popup of document.querySelectorAll<HTMLElement>(".popup-panel:popover-open")) popup.hidePopover();
 }
 export function toggleFocusMode(): void {
+  if (publicState.publicView) return;
   const enabled = document.body.dataset.focus !== "true";
   if (enabled) appState.sidebarBeforeFocus = document.body.dataset.sidebar === "open";
   document.body.dataset.focus = String(enabled);
-  appState.ui.focusMode.setAttribute("aria-pressed", String(enabled));
+  element("focus-mode").setAttribute("aria-pressed", String(enabled));
   setSidebar(enabled ? false : appState.sidebarBeforeFocus);
   closeDocumentOutline();
   closeMenus();

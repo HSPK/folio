@@ -27,7 +27,7 @@ import { updateFileTitle } from "../navigation/library";
 
 import { projectWritable } from "../projects/permissions";
 import { publicState, requestPublicPassword } from "../sharing/public";
-import { participationState, stopDocumentParticipation } from "./participation";
+import { documentParticipation, stopDocumentParticipation } from "./participation";
 import {
   collaborationNotice,
   collaborativeSelection,
@@ -35,74 +35,88 @@ import {
   renderCollaborators,
   schedulePeerCursors,
 } from "./presence";
-class CollaborationState {
-  collaboration!: Collaboration | null;
-  collaborativeTarget!: (target: EventTarget | null) => Element | null | undefined;
-}
-export const collaborationState = new CollaborationState();
+export let collaboration: Collaboration | null;
+export let collaborativeTarget: (target: EventTarget | null) => Element | null | undefined;
+
 export function initializeCollaborationCollaboration(): void {
-  collaborationState.collaboration = null;
+  collaboration = null;
   onApplicationDispose(stopCollaboration);
-  collaborationState.collaborativeTarget = (target) =>
+  collaborativeTarget = (target) =>
     target instanceof Element
       ? target.closest<HTMLElement>("#editor, .virtual-source-editor .cm-content, #rich-editor .ProseMirror")
       : null;
   listen(document, "compositionstart", (event) => {
     if (!(event.target instanceof Element)) return;
-    if (collaborationState.collaboration && collaborationState.collaborativeTarget(event.target))
-      collaborationState.collaboration.composing = true;
+    if (collaboration && collaborativeTarget(event.target)) collaboration.composing = true;
   });
   listen(document, "compositionend", (event) => {
     if (!(event.target instanceof Element)) return;
-    if (!collaborationState.collaboration || !collaborationState.collaborativeTarget(event.target)) return;
-    const current = collaborationState.collaboration;
+    if (!collaboration || !collaborativeTarget(event.target)) return;
+    const current = collaboration;
     window.setTimeout(() => {
-      if (current !== collaborationState.collaboration) return;
+      if (current !== collaboration) return;
       collaborationChanged();
       current.composing = false;
       void drainCollaboration(current);
     }, 0);
   });
+  const history = (event: Event, kind: "undo" | "redo") => {
+    if (!event.cancelable || !documentSession.current || !projectWritable() || !collaborativeTarget(event.target))
+      return;
+    const current = collaboration;
+    const live = appState.inlineEditor;
+    if (shell.view === "rich") live.flushInput();
+    if (current) {
+      // Never fall through to a surface's private history while the room is locked.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!current.initialized || current.composing || current.unmerged || current.applying) return;
+      const selection = current.shared.relative(collaborativeSelection());
+      current.shared[kind]();
+      void displaySharedText(current, selection);
+    } else if (shell.view === "rich" && live.isReady() && !live.hasHistory(kind)) {
+      // ProseMirror keeps its native step/selection semantics for edits from this mount.
+      // Beyond that boundary, replay the same Markdown history as Source.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const source = appState.editor;
+      if (!source.runHistory(kind)) return;
+      const selection = source.getSelection();
+      if (live.replaceSource(source.value, true)) live.select(selection.from, selection.to, false, false);
+      else void live.load(source.value, documentSession.current.path);
+    }
+  };
   listen(
     document,
     "keydown",
     (event) => {
-      if (!(event.target instanceof Element)) return;
-      const current = collaborationState.collaboration;
-      if (
-        !projectWritable() ||
-        !current?.initialized ||
-        current.composing ||
-        current.unmerged ||
-        !collaborationState.collaborativeTarget(event.target) ||
-        !(event.ctrlKey || event.metaKey) ||
-        event.altKey ||
-        !["z", "y"].includes(event.key.toLowerCase())
-      )
-        return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const selection = current.shared.relative(collaborativeSelection());
-      if (event.shiftKey || event.key.toLowerCase() === "y") current.shared.redo();
-      else current.shared.undo();
-      void displaySharedText(current, selection);
+      if (event.isComposing || !(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "z" || key === "y") history(event, event.shiftKey || key === "y" ? "redo" : "undo");
     },
     true,
   );
-  listen(window, "pagehide", () => collaborationState.collaboration?.socket?.close());
+  listen(
+    document,
+    "beforeinput",
+    (event) => {
+      if (!(event instanceof InputEvent) || event.isComposing) return;
+      if (event.inputType === "historyUndo") history(event, "undo");
+      if (event.inputType === "historyRedo") history(event, "redo");
+    },
+    true,
+  );
+  listen(window, "pagehide", () => collaboration?.socket?.close());
 }
 export function collaborationLocked() {
   return Boolean(
-    participationState.documentParticipation?.preparing ||
-    (collaborationState.collaboration &&
-      (!collaborationState.collaboration.initialized ||
-        collaborationState.collaboration.connecting ||
-        collaborationState.collaboration.applying)),
+    documentParticipation?.preparing ||
+    (collaboration && (!collaboration.initialized || collaboration.connecting || collaboration.applying)),
   );
 }
 export function pauseCollaboration(): void {
   connectivity.roomLost = false;
-  const current = collaborationState.collaboration;
+  const current = collaboration;
   if (!current) return;
   void persistCurrentDraft().catch(console.error);
   clearTimer(current.retry);
@@ -118,9 +132,9 @@ export function pauseCollaboration(): void {
   socket?.close();
 }
 export function stopCollaboration(): void {
-  const old = collaborationState.collaboration;
+  const old = collaboration;
   pauseCollaboration();
-  collaborationState.collaboration = null;
+  collaboration = null;
   if (old) {
     old.closed = true;
     old.shared.destroy();
@@ -130,10 +144,10 @@ export function stopCollaboration(): void {
   renderCollaborators();
 }
 export async function startCollaboration(): Promise<void> {
-  if (!documentSession.current || collaborationState.collaboration) return;
+  if (!documentSession.current || !documentSession.resourceId || collaboration) return;
   if (
     (authenticationSession.mode === "users" || publicState.publicView) &&
-    (!resourceState.documentPermissions?.collaborative || !participationState.documentParticipation?.ready)
+    (!resourceState.documentPermissions?.collaborative || !documentParticipation?.ready)
   )
     return;
   if (dirty() || documentSession.saving) {
@@ -161,7 +175,6 @@ export async function startCollaboration(): Promise<void> {
     localModified: false,
     queue: [],
     processing: false,
-    selection: null,
     recoveryRecord: null,
     cursorSignature: null,
     initialized: false,
@@ -169,13 +182,13 @@ export async function startCollaboration(): Promise<void> {
     failed: false,
   };
   const current = Object.assign(initial, { shared: collaborativeModel(initial) });
-  collaborationState.collaboration = current;
+  collaboration = current;
   cancelAutoSave();
   await recoverDocumentDraft();
-  if (current !== collaborationState.collaboration) return;
+  if (current !== collaboration) return;
   await connectCollaboration(current);
 }
-export function collaborativeModel(current: Omit<Collaboration, "shared">) {
+function collaborativeModel(current: Omit<Collaboration, "shared">) {
   return createSharedText((update) => {
     const local = ++current.localSequence;
     current.localUpdates.set(local, update);
@@ -185,7 +198,7 @@ export function collaborativeModel(current: Omit<Collaboration, "shared">) {
     sendCollaborativeUpdate(current, update, [local]);
   });
 }
-export function sendCollaborativeUpdate(
+function sendCollaborativeUpdate(
   current: Omit<Collaboration, "shared">,
   update: Uint8Array,
   local: number[] = [...current.localUpdates.keys()],
@@ -201,7 +214,7 @@ export function sendCollaborativeUpdate(
 const joining = new WeakSet<Collaboration>();
 export async function connectCollaboration(current: Collaboration): Promise<void> {
   if (
-    current !== collaborationState.collaboration ||
+    current !== collaboration ||
     current.closed ||
     joining.has(current) ||
     current.socket?.readyState === WebSocket.OPEN ||
@@ -209,7 +222,7 @@ export async function connectCollaboration(current: Collaboration): Promise<void
   )
     return;
   if (current.unmerged) {
-    collaborationNotice("Unmerged local draft kept", true);
+    collaborationNotice("Your edits are still here. Copy them before reloading.", true);
     return;
   }
   clearTimer(current.retry);
@@ -227,10 +240,10 @@ export async function connectCollaboration(current: Collaboration): Promise<void
       body: {
         document: current.resource,
         roomId: current.room,
-        participant: participationState.documentParticipation?.participant ?? null,
+        participant: documentParticipation?.participant ?? null,
       },
     });
-    if (current !== collaborationState.collaboration) return;
+    if (current !== collaboration) return;
     current.room = joined.roomId;
     const url = new URL(
       publicState.publicView ? "/api/public/collaboration/socket" : "/api/collaboration/socket",
@@ -246,13 +259,13 @@ export async function connectCollaboration(current: Collaboration): Promise<void
     current.socket = socket;
     let snapshot = true;
     socket.onmessage = ({ data }) => {
-      if (socket !== current.socket || current !== collaborationState.collaboration) return;
+      if (socket !== current.socket || current !== collaboration) return;
       current.queue.push({ data, snapshot: data instanceof ArrayBuffer && snapshot });
       if (data instanceof ArrayBuffer) snapshot = false;
       void drainCollaboration(current);
     };
     socket.onclose = () => {
-      if (current !== collaborationState.collaboration || current.closed || socket !== current.socket) return;
+      if (current !== collaboration || current.closed || socket !== current.socket) return;
       current.connected = false;
       current.connecting = false;
       current.saving = false;
@@ -261,14 +274,14 @@ export async function connectCollaboration(current: Collaboration): Promise<void
       current.queue = [];
       appState.inlineEditor.setReadOnly(!current.initialized);
       connectivity.roomLost = !current.unmerged;
-      collaborationNotice(current.unmerged ? "Unmerged local draft kept" : "", true);
+      collaborationNotice(current.unmerged ? "Your edits are still here. Copy them before reloading." : "", true);
       renderCollaborators();
       refreshControls();
       if (!current.unmerged) current.retry = window.setTimeout(() => void connectCollaboration(current), 2000);
     };
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    if (current !== collaborationState.collaboration) return;
+    if (current !== collaboration) return;
     current.connecting = false;
     if (error.status === 425) {
       current.retry = window.setTimeout(() => void connectCollaboration(current), 1000);
@@ -294,34 +307,32 @@ export async function connectCollaboration(current: Collaboration): Promise<void
   }
 }
 export function collaborationChanged(): void {
-  const current = collaborationState.collaboration;
+  const current = collaboration;
   if (!current || current.applying || !current.initialized || !projectWritable()) return;
   try {
-    current.shared.replace(appState.ui.editor.value);
+    current.shared.replace(appState.editor.value);
     if (current.unmerged) {
       current.unmerged = null;
       current.failed = false;
       void connectCollaboration(current);
     }
-    current.selection = current.shared.relative(collaborativeSelection());
     publishCollaborativeCursor();
   } catch (errorCause) {
     const error = errorContext(errorCause);
     current.failed = true;
-    current.unmerged = appState.ui.editor.value;
+    current.unmerged = appState.editor.value;
     current.socket?.close();
     collaborationNotice(error.message, true);
   }
 }
 export function saveCollaboration() {
   if (!projectWritable()) return Promise.resolve(false);
-  const current = collaborationState.collaboration;
+  const current = collaboration;
   if (!current?.connected) {
     if (!connectivity.roomLost && !connectivity.serviceLost) collaborationNotice("Not connected, not saved", true);
     return Promise.resolve(false);
   }
   if (current.failed) {
-    collaborationNotice("Reconnect before saving", true);
     return Promise.resolve(false);
   }
   if (current.saveCompletion) {
@@ -333,7 +344,7 @@ export function saveCollaboration() {
   });
   current.saveCompletion = completion;
   current.saveTimer = window.setTimeout(() => {
-    if (current !== collaborationState.collaboration || !current.saveCompletion) return;
+    if (current !== collaboration || !current.saveCompletion) return;
     current.saving = false;
     collaborationNotice("Shared save timed out", true);
     finishCollaborationSave(current, false);
@@ -351,20 +362,19 @@ export function saveCollaboration() {
   refreshControls();
   return completion;
 }
-export function finishCollaborationSave(current: Collaboration, saved: boolean): void {
+function finishCollaborationSave(current: Collaboration, saved: boolean): void {
   clearTimer(current.saveTimer);
   const resolve = current.finishSave_fn;
   const again = current.saveAgain;
   current.saveCompletion = null;
   current.finishSave_fn = null;
   current.saveAgain = false;
-  if (saved && again && current === collaborationState.collaboration && (dirty() || current.pending.size))
-    void saveCollaboration();
+  if (saved && again && current === collaboration && (dirty() || current.pending.size)) void saveCollaboration();
   resolve?.(saved);
   notifyDocumentSave();
 }
-export function collaborativeSaved(current: Collaboration, payload: DocumentPayload): void {
-  if (current !== collaborationState.collaboration || payload.path !== current.path) return;
+function collaborativeSaved(current: Collaboration, payload: DocumentPayload): void {
+  if (current !== collaboration || payload.path !== current.path) return;
   rememberResources(payload, projectModel.active?.id ?? "local");
   documentSession.acceptRemote(payload, appState.currentRoot);
   current.saving = false;
@@ -380,59 +390,49 @@ export function collaborativeSaved(current: Collaboration, payload: DocumentPayl
   finishLocalDraft();
   finishCollaborationSave(current, true);
 }
-export async function displaySharedText(current: Collaboration, selection: RelativeSelection): Promise<void> {
+async function displaySharedText(current: Collaboration, selection: RelativeSelection): Promise<void> {
   const next = current.shared.value;
-  if (appState.ui.editor.value !== next) {
+  if (appState.editor.value !== next) {
     current.applying = true;
-    appState.inlineEditor.setReadOnly(true);
-    const focus = document.activeElement;
-    const inEditor = Boolean(focus?.closest<HTMLElement>("#rich-editor, .editor-pane"));
     try {
-      appState.ui.editor.value = next;
+      appState.editor.value = next;
       documentSession.edited();
-      if (shell.view === "rich") {
-        if (!(await appState.inlineEditor.replaceSource(next))) {
-          await appState.inlineEditor.load(next, current.path);
-        }
+      if (shell.view === "rich" && !appState.inlineEditor.replaceSource(next)) {
+        refreshControls();
+        await appState.inlineEditor.load(next, current.path);
       }
-      if (current !== collaborationState.collaboration) return;
-      current.applying = false;
-      appState.inlineEditor.setReadOnly(false);
-      refreshControls();
+      if (current !== collaboration) return;
       const restored = current.shared.resolve(selection);
-      if (restored && inEditor) {
-        if (shell.view === "rich") appState.inlineEditor.select(restored.from, restored.to);
-        else {
-          appState.ui.editor.setSelectionRange(restored.from, restored.to);
-          appState.ui.editor.focus({ preventScroll: true });
-        }
+      if (restored) {
+        if (shell.view === "rich") appState.inlineEditor.select(restored.from, restored.to, false, false);
+        else if (shell.view !== "preview") appState.editor.setSelectionRange(restored.from, restored.to);
       }
       schedulePreview();
     } finally {
       current.applying = false;
-      if (current === collaborationState.collaboration) {
-        appState.inlineEditor.setReadOnly(false);
-        refreshControls();
-      }
+      if (current === collaboration) refreshControls();
     }
   }
   schedulePeerCursors();
 }
-export async function drainCollaboration(current: Collaboration): Promise<void> {
-  if (current.processing || current.composing || current.unmerged || current !== collaborationState.collaboration)
-    return;
+async function drainCollaboration(current: Collaboration): Promise<void> {
+  if (current.processing || current.composing || current.unmerged || current !== collaboration) return;
   current.processing = true;
   try {
-    while (current.queue.length && !current.composing && current === collaborationState.collaboration) {
+    while (current.queue.length && !current.composing && current === collaboration) {
       const message = current.queue.shift();
       if (!message) break;
       const { data, snapshot } = message;
       if (data instanceof ArrayBuffer) {
+        if (current.initialized && shell.view === "rich") appState.inlineEditor.flushInput();
         const selection = current.initialized ? current.shared.relative(collaborativeSelection()) : null;
         const update = new Uint8Array(data, 4);
         current.shared.apply(update);
         if (snapshot) {
           const reconnect = current.initialized;
+          if (!reconnect && !current.recoveryRecord && current.id === documentSession.id) {
+            current.shared.adoptSoloHistory(appState.editor.historyState());
+          }
           current.connecting = false;
           current.connected = true;
           connectivity.roomLost = false;
@@ -447,9 +447,8 @@ export async function drainCollaboration(current: Collaboration): Promise<void> 
           renderCollaborators();
         }
         await displaySharedText(current, selection);
-        current.selection = current.shared.relative(collaborativeSelection());
         publishCollaborativeCursor();
-        refreshControls();
+        if (snapshot) refreshControls();
         finishLocalDraft();
       } else {
         const message = JSON.parse(data);

@@ -14,12 +14,14 @@ import {
 import { createOutlineExtractor, documentOffset, extractOutline, sourceOffset } from "../src/markdown.ts";
 import { normalizeSerializedBody } from "../src/roundtrip.ts";
 import type { SourcePosition } from "../src/types/editor.ts";
+import { lineColumn } from "../src/cursor-coordinates.ts";
 
 test("Source virtualization covers dense notes and preserves UTF-8 threshold decisions", () => {
   const threshold = 768 * 1024;
   assert.equal(shouldVirtualizeSource("a".repeat(700 * 1024), threshold), false);
   assert.equal(shouldVirtualizeSource("中".repeat(300 * 1024), threshold), true);
   assert.equal(shouldVirtualizeSource("Line\n".repeat(3999), threshold), false);
+  assert.equal(shouldVirtualizeSource("A substantial line with Unicode 中文😀.\n".repeat(2000), threshold), true);
   assert.equal(shouldVirtualizeSource("Line\n".repeat(4000), threshold), true);
   assert.equal(shouldVirtualizeSource("a".repeat(threshold), threshold), true);
 });
@@ -183,6 +185,21 @@ test("source cursors retain block ends while heading markers jump to the next bl
   assert.equal(sourceOffset(map, 7), 9);
 });
 
+test("cursor line counting preserves UTF-16 columns and partial mixed line endings", () => {
+  const source = "中😀\r\nNext\rLast\n";
+  assert.deepEqual(
+    [3, 4, 5, 9, 10, 14, 15].map((position) => lineColumn(source, position)),
+    [
+      { line: 1, column: 4 },
+      { line: 2, column: 1 },
+      { line: 2, column: 1 },
+      { line: 2, column: 5 },
+      { line: 3, column: 1 },
+      { line: 3, column: 5 },
+      { line: 4, column: 1 },
+    ],
+  );
+});
 test("cursor offset lookup preserves first-match boundaries across gaps and repeated offsets", () => {
   const linearSource = (map: SourcePosition[], position: number) => {
     const index = map.findIndex((entry) => entry.position >= position);

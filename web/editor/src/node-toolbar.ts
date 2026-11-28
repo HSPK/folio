@@ -1,4 +1,3 @@
-import { createIcon } from "./icons.ts";
 import { normalizeSerializedBody } from "./roundtrip.ts";
 import { createNodeInspector } from "./node-inspector.ts";
 import type { Node as ProseNode } from "@milkdown/prose/model";
@@ -15,27 +14,8 @@ export function nodeMarkdown({
   serialize_fn: (document: ProseNode) => string;
 }) {
   const content = node.isInline ? document.type.schema.nodes.paragraph.create(null, node) : node;
-  return normalizeSerializedBody(serialize_fn(document.type.create(null, content)));
-}
-export function toolButton({
-  label,
-  icon,
-  text,
-  onClick,
-}: {
-  label: string;
-  icon?: string;
-  text?: string;
-  onClick: (event: MouseEvent) => void;
-}) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.title = label;
-  button.setAttribute("aria-label", label);
-  if (icon) button.append(createIcon(icon));
-  if (text) button.append(document.createTextNode(text));
-  button.addEventListener("click", onClick);
-  return button;
+  const fragment = document.type.create(null, content);
+  return normalizeSerializedBody(serialize_fn(fragment), fragment);
 }
 export function setToolVisibility(element: HTMLElement, visible: boolean) {
   element.dataset.open = String(visible);

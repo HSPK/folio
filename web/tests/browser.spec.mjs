@@ -1,4 +1,5 @@
 import "./browser/document-cases.mjs";
+import "./browser/panel-cases.mjs";
 import "./browser/ui-cases.mjs";
 import "./browser/canvas-cases.mjs";
 import "./browser/focus-cases.mjs";

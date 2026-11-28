@@ -128,8 +128,17 @@ pub(super) async fn get(
     Query(query): Query<QueryId>,
 ) -> Result<Json<Resolved>, ApiError> {
     blocking(state, work, move |state, _| {
-        let resource = state.root.resource_store()?.resource(&query.id, false)?;
+        let store = state.root.resource_store()?;
+        let id = if super::state_store::page_codes::valid(&query.id) {
+            store.store.note_for_code(&query.id)?
+        } else {
+            query.id
+        };
+        let mut resource = store.resource(&id, false)?;
         state.resource_access(&resource, None)?;
+        if resource.kind == ResourceKind::Document {
+            resource.code = Some(store.store.page_code("n", &id)?);
+        }
         Ok(Resolved { resource })
     })
     .await
@@ -153,6 +162,7 @@ pub(super) async fn resolve(
             files::validate_document_path(&body.path)?;
         }
         let resource = Resource {
+            code: None,
             id: String::new(),
             project: state.root.resource_store()?.project.clone(),
             path: body.path,

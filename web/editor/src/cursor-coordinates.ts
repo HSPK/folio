@@ -109,18 +109,18 @@ export function textareaCursorRect(textarea: HTMLTextAreaElement, position: numb
   }
 }
 export function lineColumn(source: string, position: number) {
-  const lines = source.slice(0, position).split(/\r\n|\r|\n/);
-  return { line: lines.length, column: lines[lines.length - 1].length + 1 };
-}
-
-export function rawOffset(raw: string, normalizedOffset: number) {
-  let position = 0;
-  let normalized = 0;
-  while (position < raw.length && normalized < normalizedOffset) {
-    position += raw[position] === "\r" && raw[position + 1] === "\n" ? 2 : 1;
-    normalized++;
+  const before = source.slice(0, position);
+  let line = 1,
+    last = -1;
+  for (let at = before.indexOf("\n"); at !== -1; at = before.indexOf("\n", at + 1)) {
+    line++;
+    last = at;
   }
-  return position;
+  for (let at = before.indexOf("\r"); at !== -1; at = before.indexOf("\r", at + 1)) {
+    if (before[at + 1] !== "\n") line++;
+    last = Math.max(last, at);
+  }
+  return { line, column: before.length - last };
 }
 
 export function jumpToHeading(view: EditorView, headingId: string, block: ScrollLogicalPosition = "nearest") {

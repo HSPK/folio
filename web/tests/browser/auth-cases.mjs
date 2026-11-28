@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { test, expect, fs, path, buildRoot, executable, delay, primaryModifier, openSettingsDialog } from "./fixture.mjs";
+import { browserPageUrl, test, expect, fs, path, buildRoot, executable, delay, primaryModifier, openSettingsDialog } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
 async function reauthenticateAlice(page) {
@@ -189,7 +189,7 @@ test("renewing a collaborative login resumes solo saving after the last peer and
     await bob.close();
     await expect(alice.locator(".collaboration-avatar")).toHaveCount(1);
     const left = await alice.request.post(new URL("/api/collaboration/presence", alice.url()).href, {
-      data: { document: new URL(alice.url()).searchParams.get("document"), participant, leave: true },
+      data: { document: (await browserPageUrl(alice)).searchParams.get("document"), participant, leave: true },
     });
     expect(left.ok()).toBe(true);
     await alice.context().clearCookies();
@@ -223,7 +223,7 @@ test("switching accounts after expiry never exposes the previous account's local
     await expect(page.locator("#logout")).toHaveText("Log out bob");
     await expect(page.locator("#editor")).not.toHaveValue(local);
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe(initial);
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await page.locator("#logout").click();
     await expect(page.locator("#auth-screen")).toBeVisible();
     await reauthenticateAlice(page);
@@ -234,7 +234,7 @@ test("switching accounts after expiry never exposes the previous account's local
 
 test("Folio branding appears in the workspace, login screen and shared icon", async ({ page }) => {
   await expect(page.locator("#app-name")).toHaveText("Folio");
-  await expect(page).toHaveTitle("README.md — Folio");
+  await expect(page).toHaveTitle("README — Folio");
   const icon = await page.request.get(new URL("/icon.svg", page.url()).href);
   expect(icon.ok()).toBe(true);
   expect(await icon.text()).toContain("<title>Folio - Folded F</title>");
@@ -306,7 +306,7 @@ test("login survives refresh and service restart, while logout requires login ag
     await expect(page.locator("#auth-screen")).toBeHidden();
     await expect(page.locator('#file-list [data-path="Shared.md"]')).toBeVisible();
 
-    await openSettingsDialog(page);
+    await openSettingsDialog(page, { section: "library" });
     await expect(page.locator("#settings-projects-open")).toBeVisible();
     await expect(page.locator("#hidden-patterns-hint")).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath("library-settings.png"), fullPage: true });
@@ -341,7 +341,7 @@ test("login survives refresh and service restart, while logout requires login ag
     await expect(page.locator("#auth-screen")).toBeHidden();
     await expect(page.locator('#file-list [data-path="Shared.md"]')).toBeVisible();
 
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     const loggedOut = page.waitForEvent("domcontentloaded");
     await page.locator("#logout").click();
     await loggedOut;

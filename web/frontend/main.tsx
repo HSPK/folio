@@ -11,7 +11,6 @@ import "./styles/solid.css";
 const root = document.getElementById("folio-root");
 if (!root) throw new Error("Folio's application root is missing.");
 root.replaceChildren();
-
 render(
   () => (
     <ErrorBoundary

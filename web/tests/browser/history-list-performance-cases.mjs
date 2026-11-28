@@ -15,7 +15,7 @@ test("large history list benchmark measures snapshot capture and usable dialog l
     await expect(page.locator("#document-title")).toHaveText("Large history");
     await expect(page.locator(".virtual-source-editor .cm-content")).toBeVisible();
     for (let run = 0; run < 20; run += 1) {
-      await page.locator("#more-menu > summary").click();
+      await page.locator("#more-menu > button").click();
       await page.locator("#more-recovery > summary").click();
       const result = await measureClickFrame(page, "#history-open", "#history-copy:not(:disabled)");
       record("historyDialogReadyMs", result.feedbackMs);

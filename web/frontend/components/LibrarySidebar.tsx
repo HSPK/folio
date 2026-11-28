@@ -4,15 +4,13 @@ export function LibrarySidebar() {
   return (
     <aside id="sidebar" class="sidebar" aria-label="Library" inert={!shell.sidebarOpen}>
       <header class="library-heading" data-directory-path="">
-        <button
+        <IconButton
           id="sidebar-hide"
-          class="icon-button"
-          type="button"
           title="Close sidebar (Ctrl+Shift+L)"
-          aria-label="Close library sidebar"
-        >
-          <svg data-icon="sidebar" aria-hidden="true"></svg>
-        </button>
+          label="Close library sidebar"
+          icon="sidebar"
+          onClick={() => setSidebar(false, true)}
+        />
       </header>
       <div class="sidebar-tools">
         <div class="search-field sidebar-search">
@@ -28,28 +26,46 @@ export function LibrarySidebar() {
             autocomplete="off"
             spellcheck="false"
             aria-controls="file-list"
+            onInput={scheduleFileFilterRender}
           />
           <button id="sidebar-search-open" type="button" title="Search notes" aria-label="Search notes" hidden>
             <kbd>⌘/Ctrl P</kbd>
           </button>
         </div>
         <AppMenu id="new-menu" class="popup new-menu">
-          <AppMenuTrigger
+          <button
+            type="button"
+            popovertarget="new-menu-panel"
             class="icon-button"
             title="New"
             aria-label="New note or folder"
             aria-controls="new-menu-panel"
           >
             <svg data-icon="plus" aria-hidden="true"></svg>
-          </AppMenuTrigger>
-          <AppMenuContent id="new-menu-panel" class="popup-panel" role="group" aria-label="New">
-            <button id="new-note" type="button" data-menu-icon="file-plus" disabled>
+          </button>
+          <div id="new-menu-panel" class="popup-panel" popover="auto" role="group" aria-label="New" inert>
+            <button
+              id="new-note"
+              type="button"
+              data-menu-icon="file-plus"
+              onClick={() => createTreeEntry("file")}
+              disabled
+            >
               New note
             </button>
-            <button id="new-folder" type="button" data-menu-icon="folder-plus" disabled>
+            <button
+              id="new-folder"
+              type="button"
+              data-menu-icon="folder-plus"
+              onClick={() => createTreeEntry("directory")}
+              disabled
+            >
               New folder
             </button>
-          </AppMenuContent>
+            <button id="new-from-template" type="button" data-menu-icon="file" onClick={() => openNewNote()} disabled>
+              Templates…
+            </button>
+          </div>
         </AppMenu>
       </div>
       <Show when={libraryView.outsideFilter}>
@@ -94,15 +110,13 @@ export function LibrarySidebar() {
             Projects
           </button>
         </div>
-        <button
+        <IconButton
           id="sidebar-settings-open"
-          class="icon-button"
-          type="button"
           title="Settings"
-          aria-label="Open sidebar settings"
-        >
-          <svg data-icon="settings" aria-hidden="true"></svg>
-        </button>
+          label="Open sidebar settings"
+          icon="settings"
+          onClick={() => openSettings()}
+        />
       </footer>
     </aside>
   );
@@ -111,4 +125,9 @@ import { Show } from "solid-js";
 import { shell } from "../state/shell";
 import { libraryModel, libraryView } from "../state/library";
 import { FileTree } from "./FileTree";
-import { AppMenu, AppMenuContent, AppMenuTrigger } from "./primitives";
+import { AppMenu, IconButton } from "./primitives";
+import { setSidebar } from "../runtime/accounts/authentication";
+import { createTreeEntry } from "../runtime/navigation/creation";
+import { openNewNote } from "../runtime/navigation/files";
+import { scheduleFileFilterRender } from "../runtime/navigation/library";
+import { openSettings } from "../runtime/preferences/settings";

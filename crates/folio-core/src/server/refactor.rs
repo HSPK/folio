@@ -73,7 +73,7 @@ pub(super) fn move_entry(
             });
         }
     }
-    if kind == "file" {
+    if kind == "file" && files::is_markdown(path) {
         affected.insert(path.into());
     }
     let mut leases = Vec::new();

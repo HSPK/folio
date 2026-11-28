@@ -1,9 +1,4 @@
-import {
-  accountIdentity,
-  type AccountScope,
-  type AuthenticationMode,
-  type UserIdentity,
-} from "../models/authentication";
+import { accountIdentity, type AccountScope, type AuthenticationMode, type UserIdentity } from "@folio/model";
 
 export function createAuthenticationSession() {
   let mode: AuthenticationMode = null;

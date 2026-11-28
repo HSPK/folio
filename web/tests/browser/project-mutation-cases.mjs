@@ -1,4 +1,4 @@
-import { test, expect, openSettingsDialog } from "./fixture.mjs";
+import { browserPageUrl, test, expect, fs, path, chooseView, openSettingsDialog } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
 async function projects(page, url, body) {
@@ -6,6 +6,31 @@ async function projects(page, url, body) {
   expect(response.ok(), await response.text()).toBe(true);
   return response.json();
 }
+
+test("project switch after Live falls back to Source preserves the note", async ({ browser }) => {
+  // Milkdown drops the fence metadata, so round-trip validation rejects an already-created view.
+  const content = '```js title="example.js"\nconst answer = 42;\n```\n';
+  const library = await collaborativeLibrary(browser, { content, participants: 1, source: true, sharing: "private" });
+  try {
+    const [page] = library.pages;
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    const project = await projects(page, library.url, { action: "create", name: "Destination", kind: "new" });
+    await chooseView(page, "rich");
+    await expect(page.locator("#rich-warning")).toHaveText("Unsupported Markdown, use Source mode");
+    await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "editor");
+    await expect(page.locator("#editor")).toHaveValue(content);
+
+    await page.locator("#projects-open").click();
+    await page.locator(`.project-open[data-project="${project.id}"]`).click();
+    await expect(page.locator("#document-message")).not.toContainText("Switch failed:");
+    await expect(page.locator("#projects-open")).toHaveText("Destination");
+    await expect(page.locator("#projects-dialog")).toBeHidden();
+    await expect(page.locator("#tree-message")).toHaveText("No notes yet");
+    expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe(content);
+    expect(errors).toEqual([]);
+  } finally { await library.close(); }
+});
 
 test("partial settings saves preserve project patches and retry preferences without rewriting sharing", async ({ browser }) => {
   const library = await collaborativeLibrary(browser, { participants: 1, source: true, sharing: "private" });
@@ -94,7 +119,7 @@ test("late settings patches update their original project without replacing a su
     await page.locator("#settings-save").click();
     await requested;
     await page.evaluate(id => {
-      const url = new URL(location.href);
+      const url = new URL("/", location.href);
       url.searchParams.set("project", id);
       url.searchParams.delete("document");
       history.pushState(null, "", url);
@@ -104,7 +129,7 @@ test("late settings patches update their original project without replacing a su
     release();
     await expect(page.locator("#settings-error")).toContainText("original project");
     await expect(page.locator("#projects-open")).toHaveText("Selected later");
-    expect(new URL(page.url()).searchParams.get("project")).toBe(next.id);
+    expect((await browserPageUrl(page)).searchParams.get("project")).toBe(next.id);
     const catalog = await (await page.request.get(new URL("/api/projects", library.url).href)).json();
     expect(catalog.find(project => project.id === "default").imageDirectory).toBe("media/original-project");
     expect(catalog.find(project => project.id === next.id).imageDirectory).toBe(next.imageDirectory);

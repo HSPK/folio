@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::server::state_store::resources::{Resource, ResourceKind};
 use serde::Serialize;
 
 use super::{
@@ -15,6 +16,11 @@ use super::{
 pub(super) struct CachedTitle {
     pub(super) fingerprint: platform::EntryFingerprint,
     pub(super) title: Option<Arc<str>>,
+}
+
+pub(super) struct CachedIdentities {
+    revision: u64,
+    entries: Arc<[Resource]>,
 }
 
 impl Root {
@@ -49,21 +55,50 @@ impl Root {
 
     pub(super) fn tree_with_limits(&self, limits: TreeLimits) -> Result<Tree, ApiError> {
         let mut tree = scan(self, limits)?;
-        if let Some(store) = self.resources.get() {
-            use crate::server::state_store::resources::ResourceKind;
-            let entries = tree
-                .files
-                .iter()
-                .map(|file| (file.path.clone(), ResourceKind::Document))
-                .chain(
-                    tree.directories
-                        .iter()
-                        .map(|folder| (folder.path.clone(), ResourceKind::Directory)),
-                )
-                .collect::<Vec<_>>();
-            let resources = store.identify_many(&entries)?;
-            for (file, resource) in tree.files.iter_mut().zip(&resources) {
+        if let Some(store) = self
+            .resources
+            .get()
+            .filter(|_| !tree.files.is_empty() || !tree.directories.is_empty())
+        {
+            let paths = || {
+                tree.files
+                    .iter()
+                    .map(|file| (file.path.as_str(), ResourceKind::Document))
+                    .chain(
+                        tree.directories
+                            .iter()
+                            .map(|folder| (folder.path.as_str(), ResourceKind::Directory)),
+                    )
+            };
+            // The scan and access filter stay live. Only reuse stable ids for the exact paths
+            // and DB epoch; delete/recreate at the same path must not resurrect the old id.
+            let revision = store.identity_revision()?;
+            let cached = self.tree_identities.read().ok().and_then(|cache| {
+                let c = cache.as_ref()?;
+                (c.revision == revision
+                    && c.entries.len() == tree.files.len() + tree.directories.len()
+                    && paths()
+                        .zip(c.entries.iter())
+                        .all(|((p, k), r)| p == r.path && k == r.kind))
+                .then(|| c.entries.clone())
+            });
+            let resources = match cached {
+                Some(entries) => entries,
+                None => {
+                    let entries = paths().map(|(p, k)| (p.to_owned(), k)).collect::<Vec<_>>();
+                    let entries: Arc<[Resource]> = store.identify_many(&entries)?.into();
+                    if let Ok(mut cache) = self.tree_identities.write() {
+                        *cache = Some(CachedIdentities {
+                            revision,
+                            entries: entries.clone(),
+                        });
+                    }
+                    entries
+                }
+            };
+            for (file, resource) in tree.files.iter_mut().zip(resources.iter()) {
                 file.id = Some(resource.id.clone());
+                file.code = resource.code.clone();
             }
             for (folder, resource) in tree
                 .directories
@@ -87,12 +122,16 @@ struct TitleUpdate {
 pub(in crate::server) struct Tree {
     pub(in crate::server) root: String,
     pub(in crate::server) files: Vec<TreeFile>,
+    #[serde(rename = "panelFiles", skip_serializing_if = "Vec::is_empty")]
+    pub(in crate::server) panel_files: Vec<String>,
     pub(in crate::server) directories: Vec<TreeDirectory>,
     pub(in crate::server) truncated: bool,
 }
 
 #[derive(Debug, Serialize)]
 pub(in crate::server) struct TreeFile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::server) code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::server) id: Option<String>,
     pub(in crate::server) path: String,
@@ -131,12 +170,13 @@ impl Default for TreeLimits {
 }
 
 pub(super) fn scan(root: &Root, limits: TreeLimits) -> Result<Tree, ApiError> {
-    let (mut files, mut directories, truncated, title_updates) = {
+    let (mut files, mut directories, mut panel_files, truncated, title_updates) = {
         let title_cache = root.title_cache.read().ok();
         let mut walk = TreeWalk {
             title_cache: title_cache.as_deref(),
             title_updates: Vec::new(),
             files: Vec::new(),
+            panel_files: Vec::new(),
             directories: Vec::new(),
             scanned: 0,
             truncated: false,
@@ -148,6 +188,7 @@ pub(super) fn scan(root: &Root, limits: TreeLimits) -> Result<Tree, ApiError> {
         (
             walk.files,
             walk.directories,
+            walk.panel_files,
             walk.truncated,
             walk.title_updates,
         )
@@ -163,10 +204,12 @@ pub(super) fn scan(root: &Root, limits: TreeLimits) -> Result<Tree, ApiError> {
         }
     }
     files.sort_by(|left, right| left.path.cmp(&right.path));
+    panel_files.sort();
     directories.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(Tree {
         root: root.path.to_string_lossy().into_owned(),
         files,
+        panel_files,
         directories,
         truncated,
     })
@@ -176,6 +219,7 @@ struct TreeWalk<'a> {
     title_cache: Option<&'a HashMap<String, CachedTitle>>,
     title_updates: Vec<TitleUpdate>,
     files: Vec<TreeFile>,
+    panel_files: Vec<String>,
     directories: Vec<TreeDirectory>,
     scanned: usize,
     truncated: bool,
@@ -269,11 +313,21 @@ impl TreeWalk<'_> {
                     directory_title.clone_from(&title);
                 }
                 self.files.push(TreeFile {
+                    code: None,
                     id: None,
                     path,
                     name,
                     title,
                 });
+            } else if metadata.is_file()
+                && super::panels::kind(&path).is_some()
+                && validate_relative(&path).is_ok()
+            {
+                if self.panel_files.len() < self.limits.files {
+                    self.panel_files.push(path);
+                } else {
+                    self.truncated = true;
+                }
             }
         }
         Ok(directory_title)

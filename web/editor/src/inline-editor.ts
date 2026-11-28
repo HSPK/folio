@@ -1,9 +1,11 @@
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx, serializerCtx, parserCtx } from "@milkdown/core";
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx, serializerCtx } from "@milkdown/core";
 import { commonmark, syncHeadingIdPlugin, remarkPreserveEmptyLinePlugin } from "@milkdown/preset-commonmark";
 import { gfm } from "@milkdown/preset-gfm";
 import { history } from "@milkdown/plugin-history";
+import { isHistoryTransaction, redoDepth, undoDepth } from "@milkdown/prose/history";
+import type { HistoryCommand } from "./markdown-history.ts";
 import { $prose, $remark } from "@milkdown/utils";
-import { Plugin, NodeSelection, TextSelection } from "@milkdown/prose/state";
+import { Plugin, PluginKey, NodeSelection, Selection, TextSelection } from "@milkdown/prose/state";
 import { splitFrontMatter } from "./editor-helpers.ts";
 import type { Node as ProseNode } from "@milkdown/prose/model";
 import type { EditorSession, InlineEditorOptions, MarkdownUrl, ProseNodeJSON } from "./types/editor.ts";
@@ -17,9 +19,9 @@ import { createEditorAnalysis } from "./editor-analysis.ts";
 import { closestElement } from "./dom.ts";
 import { errorMessage } from "./errors.ts";
 import { Lifetime } from "../../shared/lifetime.ts";
-import { createOutlineExtractor, parseBody, unsupportedBody, bodyFingerprint, documentOffset } from "./markdown.ts";
-import { normalizeSerializedBody } from "./roundtrip.ts";
-import { createBodyCache, createBodySerializer, reuseParsedBody, serializedBodyTree } from "./body-serialization.ts";
+import { createOutlineExtractor, parseBody, unsupportedBody, documentOffset } from "./markdown.ts";
+import { literalBlock, proveLiveBody } from "./literal-block.ts";
+import { createBodyCache, createBodySerializer, reuseParsedBody } from "./body-serialization.ts";
 import "./editor.css";
 import { deferScrollbars } from "./scrollbars.ts";
 import { createSlashMenu } from "./slash-menu.ts";
@@ -36,10 +38,11 @@ import { createBlockTools } from "./block-tools.ts";
 import { nodeMarkdown } from "./node-toolbar.ts";
 import { handleListKeyDown } from "./list-commands.ts";
 import { continueWritingFromBlankSpace, handleCodeExitKeyDown } from "./writing-continuity.ts";
-import { handleDeferredKey, handlePlainKeyPress } from "./deferred-input.ts";
+import { flushDeferredInput, handleDeferredKey, handlePlainKeyPress } from "./deferred-input.ts";
 import { lineKeymap } from "./line-keymap.ts";
 import { createImageFlowPlugins, imageSelectionAtPoint } from "./image-flow.ts";
-import { createImageInsertion, imageBoundarySelection, isImageNode } from "./image-model.ts";
+import { imageBoundarySelection, isImageNode } from "./image-model.ts";
+import { captureImagePreview, imagePreviewPlugin } from "./image-preview.ts";
 import { autoLinks } from "./auto-links.ts";
 import { createLinkTools } from "./links.ts";
 import { createEditorViews } from "./editor-views.ts";
@@ -80,6 +83,7 @@ function createOwnedEditor(
     onTag,
     onNotice: notify,
     onImageUpload,
+    tableLayoutScope,
     canCreateLink,
     onCreateLink,
     styleNonce,
@@ -115,6 +119,7 @@ function createOwnedEditor(
   const tableTools = createTableTools({
     lifetime,
     root,
+    tableLayoutScope,
     onNotice: (message, kind) => onNotice?.(message, kind, "table"),
   });
   const blockTools = createBlockTools({ lifetime, root, tableTools, onNotice });
@@ -229,6 +234,16 @@ function createOwnedEditor(
     page.append(mount);
     root.setAttribute("aria-busy", "true");
     let instance: Editor | undefined;
+    async function fallback(message: string) {
+      // Host permission updates can run during teardown, including after a failed onReady.
+      state.ready = false;
+      state.view = null;
+      state.editor = null;
+      if (instance) await instance.destroy().catch(console.error);
+      if (!active(state)) return;
+      root.setAttribute("aria-busy", "false");
+      onFallback(message);
+    }
     const slash = slashMenu.props(state);
     const nodeActive_fn = () => active(state) && state.ready;
     const editable_fn = () => nodeActive_fn() && !readOnly;
@@ -254,9 +269,12 @@ function createOwnedEditor(
         tree: state.bodyAst,
       }),
     );
+    const replay = new PluginKey<boolean>("folioHistoryReplay");
     const behavior = $prose(
       (ctx) =>
         new Plugin({
+          key: replay,
+          state: { init: () => false, apply: (tr, last) => (tr.docChanged ? isHistoryTransaction(tr) : last) },
           props: {
             editable: editable_fn,
             attributes: {
@@ -275,6 +293,7 @@ function createOwnedEditor(
               handleCodeExitKeyDown(view, event),
             ...createEditorViews({
               ctx,
+              viewport: scroll,
               path,
               transformUrl,
               active_fn: nodeActive_fn,
@@ -322,7 +341,17 @@ function createOwnedEditor(
                   state.bodySource = view.state.doc.eq(state.initialDoc)
                     ? state.originalBody
                     : state.bodySerializer.serialize(view.state.doc);
-                  onChange(fullSource(state));
+                  const depth = undoDepth(view.state);
+                  onChange(
+                    fullSource(state),
+                    replay.getState(view.state)
+                      ? depth < undoDepth(previous)
+                        ? "undo"
+                        : "redo"
+                      : depth !== undoDepth(previous)
+                        ? "group"
+                        : "continue",
+                  );
                   scheduleOutline(state);
                 }
                 if (!view.state.doc.eq(previous.doc) || !view.state.selection.eq(previous.selection))
@@ -347,6 +376,7 @@ function createOwnedEditor(
         .use(blockTools.plugin({ active_fn: nodeActive_fn, editable_fn }))
         .use(lineKeymap({ active_fn: nodeActive_fn, editable_fn, onNotice }))
         .use(notesCommonmark)
+        .use(literalBlock)
         .use(gfm)
         .use(math)
         .use(wiki)
@@ -355,6 +385,7 @@ function createOwnedEditor(
         .use(history)
         .use(cachedBodyParser)
         .use(imageFlow)
+        .use($prose(imagePreviewPlugin))
         .use(slashMenu.plugin(state))
         .use(behavior);
       await instance.create();
@@ -362,10 +393,27 @@ function createOwnedEditor(
         await instance.destroy();
         return;
       }
-      state.editor = instance;
       const view = instance.action((ctx) => ctx.get(editorViewCtx));
-      state.view = view;
-      const initialDoc = view.state.doc;
+      let initialDoc = view.state.doc;
+      const serialize_fn = instance.action((ctx) => ctx.get(serializerCtx));
+      let documentJSON: ProseNodeJSON | null = parsedBodies.accepts(state.originalBody) ? initialDoc.toJSON() : null;
+      let model = documentJSON ? JSON.stringify(documentJSON) : null;
+      const verified = cachedBody && cachedBody.model === model;
+      const proof = verified ? cachedBody : proveLiveBody(initialDoc, state.originalBody, state.bodyAst, serialize_fn);
+      if (!proof) return fallback("Unsupported Markdown, use Source mode");
+      if ("document" in proof && proof.document !== initialDoc) {
+        const tr = view.state.tr.replaceWith(0, initialDoc.content.size, proof.document.content);
+        view.dispatch(
+          tr.setSelection(Selection.atStart(tr.doc)).setMeta("addToHistory", false).setMeta("folio-link-edit", true),
+        );
+        initialDoc = view.state.doc;
+        if (!initialDoc.eq(proof.document)) return fallback("Unsupported Markdown, use Source mode");
+        if (documentJSON) {
+          documentJSON = initialDoc.toJSON();
+          model = JSON.stringify(documentJSON);
+        }
+      }
+      const { serialized, serializedTree } = proof;
       state.initialDoc = initialDoc;
       const openingSelection = view.state.selection;
       if (openingSelection instanceof NodeSelection && isImageNode(openingSelection.node)) {
@@ -374,25 +422,6 @@ function createOwnedEditor(
             .setSelection(imageBoundarySelection(initialDoc, openingSelection.from, -1))
             .setMeta("addToHistory", false),
         );
-      }
-      const serialize_fn = instance.action((ctx) => ctx.get(serializerCtx));
-      const documentJSON: ProseNodeJSON | null = parsedBodies.accepts(state.originalBody) ? initialDoc.toJSON() : null;
-      const model = documentJSON ? JSON.stringify(documentJSON) : null;
-      const verified = cachedBody && cachedBody.model === model;
-      const serialized = verified ? cachedBody.serialized : normalizeSerializedBody(serialize_fn(initialDoc));
-      const serializedTree = verified
-        ? cachedBody.serializedTree
-        : serializedBodyTree({ source: state.originalBody, tree: state.bodyAst, serialized });
-      if (
-        !verified &&
-        serializedTree !== state.bodyAst &&
-        bodyFingerprint(state.bodyAst) !== bodyFingerprint(serializedTree)
-      ) {
-        await instance.destroy();
-        state.editor = null;
-        onFallback("Unsupported Markdown, use Source mode");
-        root.setAttribute("aria-busy", "false");
-        return;
       }
       if (!verified && model !== null && documentJSON !== null)
         parsedBodies.set(state.originalBody, {
@@ -404,20 +433,19 @@ function createOwnedEditor(
         });
       state.bodySerializer = createBodySerializer({
         document: initialDoc,
-        source: serialized,
-        tree: serializedTree,
+        source: state.originalBody,
+        tree: state.bodyAst,
         serialize_fn,
       });
+      state.editor = instance;
+      state.view = view;
       state.ready = true;
       view.setProps({ editable: () => state.ready && active(state) && !readOnly });
       root.setAttribute("aria-busy", "false");
       publishSelection(state);
       onReady?.();
     } catch (error) {
-      if (instance) await instance.destroy().catch(console.error);
-      if (!active(state)) return;
-      root.setAttribute("aria-busy", "false");
-      onFallback(`Live editor failed: ${errorMessage(error)}`);
+      return fallback(`Live editor failed: ${errorMessage(error)}`);
     }
   }
 
@@ -471,15 +499,10 @@ function createOwnedEditor(
       const parts = splitFrontMatter(source);
       return parts.prefix.length >= threshold || !parsedBodies.get(parts.body);
     },
-    captureImageInsertion({ block = false } = {}) {
+    captureImageInsertion(files: File[], block = false) {
       const state = session;
       if (!isReadySession(state) || readOnly) return null;
-      return createImageInsertion({
-        view: state.view,
-        block,
-        parse_fn: (markdown) => state.editor.action((ctx) => ctx.get(parserCtx)(markdown)),
-        active_fn: () => active(state) && state.ready && !readOnly,
-      });
+      return captureImagePreview(state, files, block, () => active(state) && state.ready && !readOnly);
     },
     refreshSelection() {
       if (session?.ready) publishSelection(session);
@@ -494,8 +517,9 @@ function createOwnedEditor(
         const noteUrl = node.dataset.noteUrl;
         if (noteUrl === undefined) continue;
         const url = transformUrl(noteUrl, session.path);
-        if (url) node.setAttribute(attribute, url);
-        else node.removeAttribute(attribute);
+        if (url) {
+          if (node.getAttribute(attribute) !== url) node.setAttribute(attribute, url);
+        } else if (node.hasAttribute(attribute)) node.removeAttribute(attribute);
         if (node.tagName === "A")
           node.title = url
             ? "Ctrl/Cmd+click to open; use Link actions to edit"
@@ -534,12 +558,16 @@ function createOwnedEditor(
     viewportRect() {
       return (root.querySelector("[data-editor-scroller]") ?? root).getBoundingClientRect();
     },
-    async replaceSource(source: string) {
+    flushInput: flushDeferredInput,
+    hasHistory(kind: HistoryCommand) {
+      return session?.view && (kind === "undo" ? undoDepth : redoDepth)(session.view.state) > 0;
+    },
+    replaceSource(source: string, resetHistory = false) {
       if (!isReadySession(session)) return false;
       const scroll = root.querySelector<HTMLElement>("[data-editor-scroller]");
       if (!scroll) throw new Error("The formatted editor has no scroll container.");
       const top = scroll.scrollTop;
-      if (!replaceRemoteSource(session, source)) return false;
+      if (!replaceRemoteSource(session, source, resetHistory)) return false;
       publishOutline(session);
       scroll.scrollTop = top;
       return true;

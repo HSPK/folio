@@ -8,7 +8,7 @@ test("settings dropdowns share the More menu surface and keep native selection",
   test.skip(!await page.evaluate(() => CSS.supports("appearance", "base-select") && CSS.supports("selector(::picker(select))")));
   for (const theme of ["light", "dark"]) {
     await page.emulateMedia({ colorScheme: theme });
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     const surface = await page.locator("#more-actions-panel").evaluate(node => {
       const style = getComputedStyle(node);
       return [style.backgroundColor, style.borderRadius, style.boxShadow];
@@ -116,7 +116,7 @@ test("More keeps Settings visible while recovery scrolls and exposes licenses th
   try {
     const [page] = library.pages;
     await page.setViewportSize({ width: 780, height: 420 });
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await expect(page.locator("#more-document-actions")).toBeVisible();
     await expect(page.locator("#more-workspace-actions")).toBeVisible();
     await expect(page.locator("#history-open")).toBeHidden();
@@ -134,7 +134,7 @@ test("More keeps Settings visible while recovery scrolls and exposes licenses th
     await expect(page.locator("#about-dialog").getByRole("link", { name: "Third-party licenses" }))
       .toHaveAttribute("href", "/THIRD-PARTY-LICENSES.txt");
     await page.locator("#about-close").click();
-    await expect(page.locator("#more-menu > summary")).toBeFocused();
+    await expect(page.locator("#more-menu > button")).toBeFocused();
   } finally { await library.close(); }
 });
 
@@ -145,7 +145,7 @@ test("the floating menu keeps collaboration presence distinct from public sharin
     const join = page.locator("#collaboration-join");
     await expect(join).toHaveAttribute("aria-pressed", "true");
     await expect(join).toHaveText("Collaborating");
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await expect(page.locator('#document-view-options [aria-pressed="true"] svg')).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(join).toHaveText(/\d+ online/);

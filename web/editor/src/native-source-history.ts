@@ -1,9 +1,9 @@
-import { EditorSelection, EditorState } from "@codemirror/state";
-import type { Transaction } from "@codemirror/state";
+import { EditorSelection, EditorState, Transaction, type ChangeDesc } from "@codemirror/state";
 import { history, isolateHistory, redo, undo } from "@codemirror/commands";
 import { lineShortcut, textLineEdit } from "./line-keymap.ts";
 import { textareaCursorRect } from "./cursor-coordinates.ts";
 import { errorMessage } from "./errors.ts";
+import { liveTransaction, textChange, type LiveEdit } from "./markdown-history.ts";
 import type { ChangedRange, NoticeKind, SourceChanges } from "./types/editor.ts";
 
 interface PendingInput {
@@ -18,6 +18,7 @@ interface NativeHistoryOptions {
   active_fn: () => boolean;
   editable_fn: () => boolean;
   emit_fn: (changes: SourceChanges) => void;
+  mapImages: (changes: ChangeDesc) => void;
   onNotice: (message: string, kind?: NoticeKind) => void;
 }
 
@@ -45,16 +46,7 @@ function inputChange(previous: string, next: string, pending: PendingInput | nul
       return { from, to, insert: next.slice(from, from + length) };
     }
   }
-  let from = 0;
-  const shared = Math.min(previous.length, next.length);
-  while (from < shared && previous.charCodeAt(from) === next.charCodeAt(from)) from++;
-  let to = previous.length;
-  let end = next.length;
-  while (to > from && end > from && previous.charCodeAt(to - 1) === next.charCodeAt(end - 1)) {
-    to--;
-    end--;
-  }
-  return { from, to, insert: next.slice(from, end) };
+  return textChange(previous, next);
 }
 
 export function createNativeSourceHistory({
@@ -62,6 +54,7 @@ export function createNativeSourceHistory({
   active_fn,
   editable_fn,
   emit_fn,
+  mapImages,
   onNotice,
 }: NativeHistoryOptions) {
   // Share the virtual editor's history engine without replacing native text rendering.
@@ -71,6 +64,11 @@ export function createNativeSourceHistory({
   let emitting = false;
   let compositionOpen = false;
   let frame = 0;
+  let liveGroup: { before: string; edit: LiveEdit } | null = null;
+  const flushLive = () => {
+    if (liveGroup && state) state = liveTransaction(state, liveGroup.before, text, liveGroup.edit).state;
+    liveGroup = null;
+  };
   const selection = () => {
     const backwards = textarea.selectionDirection === "backward";
     return EditorSelection.range(
@@ -79,6 +77,7 @@ export function createNativeSourceHistory({
     );
   };
   const prepare = () => {
+    flushLive();
     state ??= EditorState.create({ doc: text, extensions: [history()] });
     state = state.update({ selection: selection() }).state;
     return state;
@@ -110,6 +109,7 @@ export function createNativeSourceHistory({
         }
       });
     if (!transaction.docChanged) return;
+    mapImages(transaction.changes);
     const ranges: ChangedRange[] = [];
     transaction.changes.iterChangedRanges((fromA, toA, fromB, toB) => ranges.push({ fromA, toA, fromB, toB }));
     emitting = true;
@@ -141,6 +141,7 @@ export function createNativeSourceHistory({
     const next = textarea.value;
     if (!editable_fn()) {
       state = null;
+      liveGroup = null;
       text = next;
       pending = null;
       return;
@@ -149,6 +150,7 @@ export function createNativeSourceHistory({
     const composing = Boolean(native?.isComposing) || /Composition/.test(native?.inputType ?? "");
     state ??= EditorState.create({ doc: text, extensions: [history()] });
     if (next !== text) {
+      flushLive();
       const change = inputChange(text, next, pending);
       const userEvent = composing
         ? compositionOpen
@@ -159,12 +161,14 @@ export function createNativeSourceHistory({
           : native?.inputType === "insertFromPaste"
             ? "input.paste"
             : "input.type";
-      state = state.update({
+      const transaction = state.update({
         changes: change,
         selection: selection(),
         userEvent,
         annotations: composing && !compositionOpen ? isolateHistory.of("before") : [],
-      }).state;
+      });
+      state = transaction.state;
+      mapImages(transaction.changes);
       text = next;
     }
     compositionOpen = composing;
@@ -216,6 +220,43 @@ export function createNativeSourceHistory({
   textarea.addEventListener("keydown", keydown);
   textarea.addEventListener("compositionstart", compositionStart);
   return {
+    get state() {
+      flushLive();
+      return state;
+    },
+    live(next: string, edit: LiveEdit) {
+      // A hidden textarea needn't diff a megabyte of Markdown per Live keystroke.
+      // Materialize one inverse per ProseMirror history group, on demand.
+      if (!liveGroup || edit !== "continue") {
+        flushLive();
+        state ??= EditorState.create({ doc: text, extensions: [history()] });
+        if (edit === "group" || edit === "continue") liveGroup = { before: text, edit };
+        else state = liveTransaction(state, text, next, edit).state;
+      }
+      text = next;
+      pending = null;
+    },
+    runHistory: historyCommand,
+    applyRemote(change: { from: number; to: number; insert: string }, next: string) {
+      flushLive();
+      if (state) state = state.update({ changes: change, annotations: Transaction.addToHistory.of(false) }).state;
+      pending = null;
+      compositionOpen = false;
+      text = next;
+      textarea.value = next;
+    },
+    insertImage(from: number, to: number, insert: string) {
+      const current = prepare();
+      const changes = current.changes({ from, to, insert });
+      dispatch(
+        current.update({
+          changes,
+          selection: current.selection.map(changes, 1),
+          annotations: isolateHistory.of("full"),
+          userEvent: "input.paste",
+        }),
+      );
+    },
     replace(next: string) {
       const current = prepare();
       dispatch(
@@ -231,6 +272,7 @@ export function createNativeSourceHistory({
       cancelAnimationFrame(frame);
       frame = 0;
       state = null;
+      liveGroup = null;
       text = value;
       pending = null;
       compositionOpen = false;

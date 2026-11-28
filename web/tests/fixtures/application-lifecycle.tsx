@@ -4,6 +4,9 @@ import { createInlineEditor } from "@folio/editor-runtime";
 import { createIndexedDbDraftStore } from "../../frontend/storage/draft-indexeddb";
 import { deriveDraftKeys, draftNonce, encryptDraft } from "../../frontend/storage/draft-crypto";
 import { createDraftRepository } from "../../frontend/services/draft-repository";
+import { element } from "../../frontend/types/elements";
+import "../../frontend/styles/app.css";
+import "../../frontend/styles/solid.css";
 
 let dispose: (() => void) | undefined;
 let host: HTMLDivElement | undefined;
@@ -23,6 +26,7 @@ function disconnected(owner: object) {
 }
 const NativeResizeObserver = window.ResizeObserver;
 const NativeMutationObserver = window.MutationObserver;
+const NativeIntersectionObserver = window.IntersectionObserver;
 
 function trackObservers() {
   window.ResizeObserver = class extends NativeResizeObserver {
@@ -53,6 +57,24 @@ function trackObservers() {
       disconnected(this);
     }
   };
+  window.IntersectionObserver = class extends NativeIntersectionObserver {
+    readonly #targets = new Set<Element>();
+    override observe(target: Element) {
+      super.observe(target);
+      this.#targets.add(target);
+      observe(this, target);
+    }
+    override unobserve(target: Element) {
+      super.unobserve(target);
+      this.#targets.delete(target);
+      if (!this.#targets.size) disconnected(this);
+    }
+    override disconnect() {
+      super.disconnect();
+      this.#targets.clear();
+      disconnected(this);
+    }
+  };
 }
 
 function counts() {
@@ -62,6 +84,27 @@ function counts() {
     menus: document.querySelectorAll(".folio-slash-menu").length,
     notices: document.querySelectorAll("#status-notices").length,
   };
+}
+
+function elementContract() {
+  const original = element("search-query");
+  const reused = element("search-query") === original;
+  const replacement = document.createElement("input");
+  replacement.id = original.id;
+  original.replaceWith(replacement);
+  const replaced = element("search-query") === replacement;
+  const invalid = document.createElement("textarea");
+  invalid.id = original.id;
+  replacement.replaceWith(invalid);
+  let rejected = false;
+  try {
+    element("search-query");
+  } catch {
+    rejected = true;
+  } finally {
+    invalid.replaceWith(original);
+  }
+  return { reused, replaced, rejected, restored: element("search-query") === original };
 }
 
 function unmount() {
@@ -227,6 +270,7 @@ const fixture = {
   mount,
   unmount,
   counts,
+  elementContract,
   editors,
   trackObservers,
   draftStorage,

@@ -1,6 +1,6 @@
 import { isReservedFileName, markdownByteLength, validateNewNotePath } from "@folio/model";
 
-export function calendarDate(date = new Date()) {
+function calendarDate(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 

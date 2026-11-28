@@ -41,7 +41,7 @@ export function createLiveCaret({
   let destroyed = false;
 
   function hide() {
-    caret.hidden = true;
+    if (!caret.hidden) caret.hidden = true;
     view.dom.classList.remove("folio-font-caret");
   }
 
@@ -63,13 +63,17 @@ export function createLiveCaret({
   function visible(element: Element, x: number, top: number, bottom: number) {
     for (let parent: Element | null = element; parent; parent = parent.parentElement) {
       const style = window.getComputedStyle(parent);
+      const clipsX = /(auto|scroll|hidden|clip)/.test(style.overflowX);
+      const clipsY = /(auto|scroll|hidden|clip)/.test(style.overflowY);
+      if (!clipsX && !clipsY) {
+        if (parent === root) break;
+        continue;
+      }
       const bounds = parent.getBoundingClientRect();
       const left = bounds.left + parent.clientLeft;
       const y = bounds.top + parent.clientTop;
-      if (/(auto|scroll|hidden|clip)/.test(style.overflowX) && (x < left || x > left + parent.clientWidth))
-        return false;
-      if (/(auto|scroll|hidden|clip)/.test(style.overflowY) && (bottom <= y || top >= y + parent.clientHeight))
-        return false;
+      if (clipsX && (x < left || x > left + parent.clientWidth)) return false;
+      if (clipsY && (bottom <= y || top >= y + parent.clientHeight)) return false;
       if (parent === root) break;
     }
     return true;
@@ -102,18 +106,25 @@ export function createLiveCaret({
       hide();
       return;
     }
-    const position = view.posAtDOM(selection.focusNode, selection.focusOffset);
-    if (position < 0 || position > view.state.doc.content.size) {
-      hide();
-      return;
-    }
     const native = selection.getRangeAt(0).getBoundingClientRect();
-    const coordinates =
-      native.height > 0 && selection.focusNode.nodeType === Node.TEXT_NODE ? native : view.coordsAtPos(position);
-    const text =
-      selection.focusNode.nodeType === Node.TEXT_NODE
-        ? selection.focusNode.nodeValue?.slice(Math.max(0, selection.focusOffset - 2), selection.focusOffset)
-        : view.state.doc.resolve(position).nodeBefore?.text;
+    const bounds = root.getBoundingClientRect();
+    let coordinates = { top: native.top, bottom: native.bottom, left: native.left };
+    let text: string | undefined;
+    if (native.height > 0 && selection.focusNode.nodeType === Node.TEXT_NODE) {
+      if (native.bottom <= bounds.top || native.top >= bounds.bottom) {
+        hide();
+        return;
+      }
+      text = selection.focusNode.nodeValue?.slice(Math.max(0, selection.focusOffset - 2), selection.focusOffset);
+    } else {
+      const position = view.posAtDOM(selection.focusNode, selection.focusOffset);
+      if (position < 0 || position > view.state.doc.content.size) {
+        hide();
+        return;
+      }
+      coordinates = view.coordsAtPos(position);
+      text = view.state.doc.resolve(position).nodeBefore?.text;
+    }
     const height = fontHeight(element, text?.slice(-2));
     if (!height || coordinates.bottom <= coordinates.top) {
       hide();
@@ -124,7 +135,6 @@ export function createLiveCaret({
       hide();
       return;
     }
-    const bounds = root.getBoundingClientRect();
     caret.style.transform = `translate(${coordinates.left - bounds.left}px, ${top - bounds.top}px)`;
     caret.style.height = `${height}px`;
     caret.hidden = false;
@@ -148,7 +158,14 @@ export function createLiveCaret({
   }
   const events: [EventTarget | null, string, EventListener, boolean?][] = [
     [owner, "selectionchange", wake],
-    [owner, "scroll", schedule, true],
+    [
+      owner,
+      "scroll",
+      () => {
+        if (view.hasFocus()) schedule();
+      },
+      true,
+    ],
     [window, "resize", schedule],
     [view.dom, "focus", wake],
     [view.dom, "blur", hide],

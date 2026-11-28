@@ -1,25 +1,16 @@
-#[path = "files/assets.rs"]
 mod assets;
-#[path = "files/attachments.rs"]
 mod attachments;
 pub(super) use attachments::{Attachment, media_file};
-#[path = "files/cache.rs"]
 mod cache;
-#[path = "files/documents.rs"]
 mod documents;
-#[path = "files/format.rs"]
 mod format;
-#[path = "files/identities.rs"]
 mod identities;
-#[path = "files/identity_store.rs"]
 mod identity_store;
-#[path = "files/paths.rs"]
+pub(in crate::server) mod panels;
 mod paths;
-#[path = "files/platform.rs"]
 mod platform;
-#[path = "files/recycle.rs"]
 mod recycle;
-#[path = "files/tree.rs"]
+pub(super) use recycle::{Inventory, RecycleMove};
 mod tree;
 
 pub(super) use documents::document_from_bytes;
@@ -53,6 +44,7 @@ pub(super) struct Root {
     asset_cache: Mutex<assets::AssetCache>,
     document_cache: Mutex<documents::DocumentCache>,
     title_cache: RwLock<HashMap<String, tree::CachedTitle>>,
+    tree_identities: RwLock<Option<tree::CachedIdentities>>,
     resources: OnceLock<super::state_store::ProjectStore>,
     resource_epoch: AtomicU64,
     // On Windows, denying delete sharing on every ancestor prevents junction swaps.
@@ -61,6 +53,8 @@ pub(super) struct Root {
 
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct Document {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -132,6 +126,7 @@ impl Root {
             asset_cache: Mutex::new(assets::AssetCache::default()),
             document_cache: Mutex::new(documents::DocumentCache::default()),
             title_cache: RwLock::new(HashMap::new()),
+            tree_identities: RwLock::new(None),
             resources: OnceLock::new(),
             resource_epoch: AtomicU64::new(u64::MAX),
             _ancestors: ancestors,
@@ -188,8 +183,23 @@ impl Root {
         check_active: impl Fn() -> Result<(), ApiError>,
         preserve: bool,
     ) -> Result<Document, ApiError> {
-        check_active()?;
         validate_document_path(path)?;
+        let bytes = self.replace_text(path, content, expected_version, check_active, preserve)?;
+        if let Ok(mut cache) = self.document_cache.lock() {
+            cache.remove_tree(path);
+        }
+        self.rendered_document(path, &bytes)
+    }
+
+    fn replace_text(
+        &self,
+        path: &str,
+        content: &str,
+        expected_version: &str,
+        check_active: impl Fn() -> Result<(), ApiError>,
+        preserve: bool,
+    ) -> Result<Vec<u8>, ApiError> {
+        check_active()?;
         validate_content(content.as_bytes())?;
         if expected_version.len() != 64
             || !expected_version
@@ -239,10 +249,7 @@ impl Root {
         staged.commit(&resolved.name, true)?;
         drop(staged);
         resolved.parent.sync()?;
-        if let Ok(mut cache) = self.document_cache.lock() {
-            cache.remove_tree(path);
-        }
-        self.rendered_document(path, &bytes)
+        Ok(bytes)
     }
 
     pub(super) fn create(
@@ -305,7 +312,7 @@ impl Root {
     }
 
     pub(super) fn details(&self, path: &str) -> Result<EntryDetails, ApiError> {
-        validate_document_path(path)?;
+        validate_relative(path)?;
         let resolved = self.resolve(path)?;
         let entry_metadata = resolved
             .parent
@@ -323,12 +330,16 @@ impl Root {
         Ok(EntryDetails {
             path: path.to_owned(),
             name: path.rsplit('/').next().unwrap_or(path).to_owned(),
-            title: self.title_for(
-                path,
-                &resolved.parent,
-                &resolved.name,
-                entry_metadata.fingerprint(),
-            ),
+            title: is_markdown(path)
+                .then(|| {
+                    self.title_for(
+                        path,
+                        &resolved.parent,
+                        &resolved.name,
+                        entry_metadata.fingerprint(),
+                    )
+                })
+                .flatten(),
             size: metadata.len(),
             modified_unix_ms,
         })
@@ -357,8 +368,14 @@ impl Root {
             ));
         }
         let kind = if metadata.is_file() {
-            validate_document_path(path)?;
-            validate_document_path(destination)?;
+            if is_markdown(path) {
+                validate_document_path(destination)?;
+            } else if panels::kind(path).is_none()
+                || panels::kind(path) != panels::kind(destination)
+                || Path::new(path).extension() != Path::new(destination).extension()
+            {
+                return Err(ApiError::bad_request("Keep the file's original extension."));
+            }
             "file"
         } else if metadata.is_dir() {
             validate_directory_path(path)?;
@@ -420,7 +437,7 @@ impl Root {
             cache.remove_tree(path);
             cache.remove_tree(destination);
         }
-        let document = if kind == "file" {
+        let document = if kind == "file" && is_markdown(destination) {
             Some(self.document(destination)?)
         } else {
             None
@@ -430,8 +447,10 @@ impl Root {
                 store
                     .identify(
                         destination,
-                        if kind == "file" {
+                        if kind == "file" && is_markdown(destination) {
                             super::state_store::resources::ResourceKind::Document
+                        } else if kind == "file" {
+                            super::state_store::resources::ResourceKind::Asset
                         } else {
                             super::state_store::resources::ResourceKind::Directory
                         },
@@ -596,5 +615,4 @@ impl Drop for StagedFile {
 }
 
 #[cfg(test)]
-#[path = "files/tests.rs"]
 mod tests;

@@ -202,10 +202,26 @@ fn public_links_are_document_scoped_revocable_and_readonly_until_explicitly_enab
             .contains(token)
     );
     let session = public(&client, token, "POST", "/api/public/session", None);
+    let code = project["publicLinks"]["shared.md"]["code"]
+        .as_str()
+        .unwrap();
+    assert_eq!(code.len(), 8);
     assert_eq!(
         session.json(),
-        json!({"id":document,"project":"default","path":"shared.md","writable":false})
+        json!({"id":document,"project":"default","path":"shared.md","writable":false,"recoveryKey":token,"code":code})
     );
+    assert_eq!(
+        public(&client, code, "POST", "/api/public/session", None).json(),
+        session.json()
+    );
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let short = URL_SAFE_NO_PAD.encode(uuid::Uuid::parse_str(&token[..32]).unwrap().as_bytes());
+    assert_eq!(
+        public(&client, &short, "POST", "/api/public/session", None).json(),
+        session.json()
+    );
+    let note_id = URL_SAFE_NO_PAD.encode(uuid::Uuid::parse_str(&document).unwrap().as_bytes());
+    public(&client, &note_id, "POST", "/api/public/session", None).error(403);
     let doc = public(
         &client,
         token,
@@ -327,6 +343,8 @@ fn public_links_are_document_scoped_revocable_and_readonly_until_explicitly_enab
         .unwrap();
     assert_ne!(replacement, token);
     public(&client, token, "POST", "/api/public/session", None).error(403);
+    public(&client, &short, "POST", "/api/public/session", None).error(403);
+    public(&client, code, "POST", "/api/public/session", None).error(403);
     server.stop().unwrap();
     let restarted = start_with_users(&workspace.root, 0, store).unwrap();
     let client = Client::new(&restarted);

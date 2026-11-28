@@ -1,8 +1,13 @@
 import { isRecord } from "../types/guards";
 import { ApiError } from "./error";
-import { isResourceId } from "@folio/model";
+import {
+  isResourceId,
+  rememberPageCode,
+  normalizeNotePath,
+  type WorkspaceSnapshot,
+  type ProjectSharing,
+} from "@folio/model";
 import { isDocumentPayload, isFileEntry, isWorkspaceNote } from "../types/guards";
-import { normalizeNotePath } from "@folio/model";
 import type {
   Project,
   UserIdentity,
@@ -12,8 +17,6 @@ import type {
   ResourceEntry,
 } from "../types/domain";
 import { prepareSearchResults } from "../models/search";
-import type { WorkspaceSnapshot } from "../models/workspace-lists";
-import type { ProjectSharing } from "../models/projects";
 
 export function decodedObject(value: unknown, label: string) {
   if (!isRecord(value)) throw new ApiError(`The service returned invalid ${label}.`);
@@ -89,7 +92,7 @@ function sharingRecord(value: unknown) {
   return Object.fromEntries(entries);
 }
 
-export function decodedUser(value: unknown): UserIdentity {
+function decodedUser(value: unknown): UserIdentity {
   const user = decodedObject(value, "account identity");
   return {
     username: decodedString(user.username, "username"),
@@ -179,6 +182,8 @@ export function decodedAccountAction(value: unknown) {
 
 export function decodedProject(value: unknown): Project {
   const project = decodedObject(value, "project");
+  const id = decodedString(project.id, "project ID");
+  rememberPageCode("p", id, project.code);
   let publicLinks: Project["publicLinks"];
   if (project.publicLinks !== undefined) {
     const entries: [string, NonNullable<Project["publicLinks"]>[string]][] = Object.entries(
@@ -188,7 +193,7 @@ export function decodedProject(value: unknown): Project {
       return [
         path,
         {
-          token: decodedString(link.token, "public link token"),
+          token: decodedString(link.code ?? link.token, "public link code"),
           access: sharing(link.access),
           expiresAt: nullableNumber(link.expiresAt, "public link expiration"),
           passwordRequired: decodedBoolean(link.passwordRequired, "public link password status"),
@@ -198,7 +203,7 @@ export function decodedProject(value: unknown): Project {
     publicLinks = Object.fromEntries(entries);
   }
   return {
-    id: decodedString(project.id, "project ID"),
+    id,
     name: decodedString(project.name, "project name"),
     owned: decodedBoolean(project.owned, "project ownership"),
     root: optionalString(project.root, "project root"),
@@ -235,8 +240,11 @@ export function decodedPublicSession(value: unknown) {
   if (session.passwordRequired === true) return { passwordRequired: true as const };
   return {
     passwordRequired: false as const,
+    file: session.file === undefined ? false : decodedBoolean(session.file, "public file status"),
     id: resourceId(session.id),
     path: decodedString(session.path, "public document path"),
+    recoveryKey: optionalString(session.recoveryKey, "public draft key"),
+    code: optionalString(session.code, "public link code"),
     writable: decodedBoolean(session.writable, "public write permission"),
     project: optionalString(session.project, "public project ID"),
   };
@@ -298,6 +306,14 @@ export function decodedTree(value: unknown) {
   return {
     root: decodedString(tree.root, "library root"),
     files: entries(tree.files),
+    panelFiles: decodedArray(
+      tree.panelFiles ?? [],
+      (p) => {
+        const path = decodedString(p, "workspace file path");
+        return { path, name: path.slice(path.lastIndexOf("/") + 1), panel: true };
+      },
+      "workspace files",
+    ),
     directories: entries(tree.directories),
     truncated: decodedBoolean(tree.truncated, "library scan limit"),
   };
@@ -477,7 +493,7 @@ export function decodedShares(value: unknown) {
         projectName: decodedString(link.projectName, "shared project name"),
         path: decodedString(link.path, "shared document path"),
         document: resourceId(link.document),
-        token: decodedString(link.token, "shared link token"),
+        token: decodedString(link.code ?? link.token, "shared link code"),
         access: sharing(link.access),
         passwordRequired: decodedBoolean(link.passwordRequired, "shared password status"),
         expiresAt: nullableNumber(link.expiresAt, "shared link expiration"),

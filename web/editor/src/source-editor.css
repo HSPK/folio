@@ -1,4 +1,4 @@
-.virtual-source-editor {
+.folio-source-surface {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -8,31 +8,33 @@
 .virtual-source-editor[hidden] { display: none; }
 .editor-pane.is-virtual-source > textarea.editor,
 .editor-pane.is-virtual-source > .os-scrollbar { display: none; }
-.virtual-source-editor .cm-editor {
+.folio-source-surface .cm-editor {
   height: 100%;
   color: var(--text);
   background: var(--editor-surface, var(--surface));
   font-family: var(--code-font);
   font-size: var(--source-size, 15px);
 }
-.virtual-source-editor .cm-editor.cm-focused,
-.virtual-source-editor .cm-content:focus-visible { outline: none; box-shadow: none; }
-.virtual-source-editor .cm-scroller {
+.folio-source-surface .cm-editor.cm-focused,
+.folio-source-surface .cm-content:focus-visible { outline: none; box-shadow: none; }
+.folio-source-surface .cm-scroller {
   overflow: auto;
   font-family: inherit;
   line-height: var(--document-line-height, 1.8);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent;
 }
-.virtual-source-editor .cm-content {
+.folio-source-surface .cm-content {
   min-height: 100%;
   padding: var(--document-top) max(var(--document-gutter), calc((100% - var(--document-width)) / 2)) var(--document-end, 140px);
   caret-color: var(--text);
 }
-.virtual-source-editor .cm-line { padding: 0; }
-.virtual-source-editor .cm-cursor { border-left-color: var(--text); }
-.virtual-source-editor .cm-selectionBackground,
-.virtual-source-editor .cm-content ::selection {
+.folio-source-surface .cm-line { padding: 0; }
+.folio-code-source { height: 100%; }
+.folio-code-source .cm-content { padding: var(--document-top, 16px) var(--document-gutter, 24px) 24px; }
+.folio-source-surface .cm-cursor { border-left-color: var(--text); }
+.folio-source-surface .cm-selectionBackground,
+.folio-source-surface .cm-content ::selection {
   background: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 .document-panes[data-view="split"] .virtual-source-editor .cm-content {

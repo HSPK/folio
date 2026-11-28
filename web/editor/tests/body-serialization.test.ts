@@ -9,6 +9,7 @@ import {
   serializedBodyTree,
 } from "../src/body-serialization.ts";
 import { parseBody } from "../src/markdown.ts";
+import { proveLiveBody } from "../src/literal-block.ts";
 import type { Root } from "mdast";
 
 test("body parsing cache is bounded, recent-use ordered and explicitly clearable", () => {
@@ -91,6 +92,7 @@ const schema = new Schema({
     paragraph: { content: "text*", group: "block" },
     heading: { content: "text*", group: "block", attrs: { level: { default: 1 } } },
     blockquote: { content: "block+", group: "block" },
+    literal_block: { group: "block", attrs: { source: {} } },
     text: { group: "inline" },
   },
 });
@@ -110,6 +112,24 @@ const serialize = (doc: Node) => {
   );
   return blocks.join("\n\n") + "\n";
 };
+
+test("a lossy paragraph is replaced only when its literal source restores the whole document proof", () => {
+  const literal = "*outer _inner_ tail*";
+  const source = `Before\n\n${literal}\n`;
+  const doc = document(paragraph("Before"), paragraph("outer inner tail"));
+  const tree = parseBody(source);
+  const verbatim = (doc: Node) => doc.content.content.map((n) => n.attrs.source ?? n.textContent).join("\n\n") + "\n";
+  const proved = proveLiveBody(doc, source, tree, verbatim);
+  assert.ok(proved);
+  assert.equal(proved.serialized, source);
+  assert.equal(proved.document.firstChild, doc.firstChild);
+  assert.equal(proved.document.lastChild?.attrs.source, literal);
+  assert.equal(proveLiveBody(doc, source, tree, serialize), null);
+  assert.equal(
+    proveLiveBody(doc, source, tree, () => "Merged blocks\n"),
+    null,
+  );
+});
 
 test("body edits serialize only the changed block and keep following source offsets accurate", () => {
   const title = heading("Title");

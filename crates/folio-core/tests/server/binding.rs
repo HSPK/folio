@@ -110,30 +110,50 @@ fn configured_dns_hosts_keep_exact_host_origin_and_authentication_boundaries() {
         "FOLIO.EXAMPLE:8123",
         "other.example:8123",
     ] {
-        let origin = format!("http://{}", host.to_ascii_lowercase());
-        let headers = [("Host", host), ("Origin", origin.as_str())];
+        for scheme in ["http", "https"] {
+            let origin = format!("{scheme}://{}", host.to_ascii_lowercase());
+            let headers = [("Host", host), ("Origin", origin.as_str())];
+            assert_eq!(
+                client
+                    .request("GET", "/api/auth/status", &headers, b"")
+                    .status,
+                200
+            );
+            client.request("GET", "/api/tree", &headers, b"").error(401);
+        }
+    }
+    for (host, origin) in [
+        ("folio.example", "http://folio.example:80"),
+        ("folio.example:80", "http://folio.example"),
+        ("folio.example", "https://folio.example"),
+        ("folio.example", "https://folio.example:443"),
+        ("folio.example:443", "https://folio.example"),
+        ("folio.example:443", "https://folio.example:443"),
+    ] {
+        let headers = [("Host", host), ("Origin", origin)];
+        let script = client.request("GET", "/app.mjs", &headers, b"");
+        assert_eq!(script.status, 200, "{host} / {origin}: {}", script.text());
         assert_eq!(
-            client
-                .request("GET", "/api/auth/status", &headers, b"")
-                .status,
-            200
+            script.headers["content-type"],
+            "text/javascript; charset=utf-8"
         );
         client.request("GET", "/api/tree", &headers, b"").error(401);
     }
-    assert_eq!(
+    for (host, origin) in [
+        ("folio.example", "https://folio.example:80"),
+        ("folio.example:80", "https://folio.example"),
+        ("folio.example:443", "http://folio.example"),
+        ("folio.example", "https://other.example"),
+    ] {
         client
             .request(
                 "GET",
-                "/",
-                &[
-                    ("Host", "folio.example"),
-                    ("Origin", "http://folio.example:80")
-                ],
-                b""
+                "/app.mjs",
+                &[("Host", host), ("Origin", origin)],
+                b"",
             )
-            .status,
-        200
-    );
+            .error(403);
+    }
     for host in [
         "evil.example",
         "sub.folio.example",
@@ -156,10 +176,25 @@ fn configured_dns_hosts_keep_exact_host_origin_and_authentication_boundaries() {
             b"",
         )
         .error(403);
+    client
+        .request(
+            "GET",
+            "/app.mjs",
+            &[
+                ("Host", "folio.example"),
+                ("Origin", "https://folio.example"),
+                ("Origin", "https://folio.example"),
+            ],
+            b"",
+        )
+        .error(403);
     for origin in [
         "http://other.example:8123",
         "http://folio.example:8124",
-        "https://folio.example:8123",
+        "https://folio.example:8124",
+        "wss://folio.example:8123",
+        "https://folio.example:8123/",
+        "https://user@folio.example:8123",
         "http://folio.example:8123/",
         "http://folio.example:invalid",
         "http://folio.example:",

@@ -301,6 +301,8 @@ mod public_expiry;
 mod public_options;
 #[path = "server/public_sharing.rs"]
 mod public_sharing;
+#[path = "server/recycle.rs"]
+mod recycle;
 #[path = "server/refactor.rs"]
 mod refactor;
 #[path = "server/resource_fixture.rs"]

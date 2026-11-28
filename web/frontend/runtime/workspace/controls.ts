@@ -2,115 +2,99 @@ import { projectModel } from "../../state/projects";
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
 import type { DocumentSessionId } from "@folio/model";
-import { createIcon, hydrateIcons, readMetadataTags, updateMetadataTags } from "@folio/editor-runtime";
+import { readMetadataTags, updateMetadataTags } from "@folio/editor-runtime";
 import { shell } from "../../state/shell";
-import { requiredQuery, requireValue } from "../../types/elements";
+import { element, requiredQuery, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { closeMenus } from "../accounts/authentication";
-import { collaborationLocked, collaborationState } from "../collaboration/collaboration";
+import { collaborationLocked, collaboration } from "../collaboration/collaboration";
 import { appState, dirty } from "../core/bootstrap";
 import { documentNotice, notice } from "../core/dom";
-import { setPageWidth } from "../core/layout";
 import { showDialog } from "../dialogs/dialogs";
 import { listen } from "../lifecycle";
 
-import { projectWritable } from "../projects/permissions";
+import { projectOwns, projectWritable } from "../projects/permissions";
 import { publicState } from "../sharing/public";
 import { refreshWorkspaceFavorite } from "./workspace";
 
-class WorkspaceControlState {
-  tagsDocument!: DocumentSessionId | null;
-}
-export const workspaceControlState = new WorkspaceControlState();
+let tagsDocument: DocumentSessionId | null;
+
 export function initializeWorkspaceControls(): void {
-  setPageWidth(document.documentElement.dataset.pageWidth);
-  hydrateIcons(appState.element("compact-layout-menu"));
-  for (const button of document.querySelectorAll<HTMLButtonElement>(".workspace-heading > button")) {
-    button.classList.add("icon-button");
-    button.setAttribute(
-      "aria-label",
-      `Close ${requireValue(requiredQuery(requireValue(button.parentElement), "h2", HTMLElement).textContent).toLowerCase()}`,
-    );
-    button.title = "Close";
-    button.replaceChildren(createIcon("x"));
-  }
-  requiredQuery(appState.element("sidebar-search-open"), "kbd", HTMLElement).textContent = /Mac/.test(
-    navigator.platform,
-  )
+  requiredQuery(element("sidebar-search-open"), "kbd", HTMLElement).textContent = /Mac/.test(navigator.platform)
     ? "⌘ P"
     : "Ctrl P";
-  listen(appState.element("more-menu"), "toggle", () => {
-    if (!appState.element("more-menu").open) {
-      for (const menu of appState.element("more-menu").querySelectorAll<HTMLDetailsElement>(".menu-disclosure"))
+  listen(element("more-actions-panel"), "toggle", (event) => {
+    if (event.newState === "closed") {
+      for (const menu of element("more-actions-panel").querySelectorAll<HTMLDetailsElement>(".menu-disclosure"))
         menu.open = false;
     }
   });
-  listen(appState.element("about-open"), "click", () => {
-    requiredQuery(document, "#more-menu > summary", HTMLElement).focus({ preventScroll: true });
-    showDialog(appState.element("about-dialog"));
+  listen(element("about-open"), "click", () => {
+    requiredQuery(document, "#more-menu > button", HTMLElement).focus({ preventScroll: true });
+    showDialog(element("about-dialog"));
   });
-  listen(appState.element("about-close"), "click", () => appState.element("about-dialog").close());
-  workspaceControlState.tagsDocument = null;
-  listen(appState.element("document-tags-open"), "click", () => {
+  listen(element("about-close"), "click", () => element("about-dialog").close());
+  tagsDocument = null;
+  listen(element("document-tags-open"), "click", () => {
     closeMenus();
     if (!documentSession.current || !projectWritable()) return;
     try {
-      appState.element("tags-input").value = readMetadataTags(appState.ui.editor.value).join("\n");
-      workspaceControlState.tagsDocument = documentSession.id;
-      notice(appState.element("tags-error"), "");
-      showDialog(appState.element("tags-dialog"));
-      appState.element("tags-input").focus();
+      element("tags-input").value = readMetadataTags(appState.editor.value).join("\n");
+      tagsDocument = documentSession.id;
+      notice(element("tags-error"), "");
+      showDialog(element("tags-dialog"));
+      element("tags-input").focus();
     } catch (errorCause) {
       const error = errorContext(errorCause);
       documentNotice(error.message, "error");
     }
   });
-  listen(appState.element("tags-cancel"), "click", () => appState.element("tags-dialog").close());
-  listen(appState.element("tags-form"), "submit", async (event) => {
+  listen(element("tags-cancel"), "click", () => element("tags-dialog").close());
+  listen(element("tags-form"), "submit", async (event) => {
     event.preventDefault();
-    if (workspaceControlState.tagsDocument !== documentSession.id || !projectWritable()) {
-      notice(appState.element("tags-error"), "Document changed", "error");
+    if (tagsDocument !== documentSession.id || !projectWritable()) {
+      notice(element("tags-error"), "Document changed", "error");
       return;
     }
     try {
-      const values = appState
-        .element("tags-input")
+      const values = element("tags-input")
         .value.split(/\r?\n/)
         .map((tag) => tag.trim())
         .filter(Boolean);
-      appState.ui.editor.value = updateMetadataTags(appState.ui.editor.value, values);
-      appState.ui.editor.dispatchEvent(new Event("input"));
+      appState.editor.value = updateMetadataTags(appState.editor.value, values);
+      appState.editor.dispatchEvent(new Event("input"));
       if (shell.view === "rich") {
-        if (!(await appState.inlineEditor.replaceSource(appState.ui.editor.value)))
-          await appState.inlineEditor.load(appState.ui.editor.value, requireValue(documentSession.current).path);
+        if (!(await appState.inlineEditor.replaceSource(appState.editor.value)))
+          await appState.inlineEditor.load(appState.editor.value, requireValue(documentSession.current).path);
       }
-      appState.element("tags-dialog").close();
+      element("tags-dialog").close();
       documentNotice("");
     } catch (errorCause) {
       const error = errorContext(errorCause);
-      notice(appState.element("tags-error"), error.message, "error");
+      notice(element("tags-error"), error.message, "error");
     }
   });
 }
 export function refreshWorkspaceControls(): void {
   const users = authenticationSession.mode === "users";
-  appState.element("workspace-search-open").hidden = !users;
-  appState.element("workspace-open").hidden = !users;
-  appState.element("sidebar-search-open").hidden = !users || publicState.publicView;
-  appState.element("shares-open").hidden = !users;
-  appState.element("backlinks-open").hidden = publicState.publicView;
-  appState.element("backlinks-open").disabled = !documentSession.current;
-  appState.element("attachments-open").hidden = !users || !projectModel.active?.owned;
-  appState.element("workspace-favorite").hidden = !users || !documentSession.current;
-  appState.element("history-open").hidden = !users || !projectModel.active?.owned;
-  appState.element("history-open").disabled = !documentSession.current;
-  appState.element("trash-open").hidden = !users || !projectModel.active?.owned;
-  appState.element("document-trash").hidden = !users || !projectModel.active?.owned;
-  appState.element("document-trash").disabled =
-    !documentSession.current ||
-    dirty() ||
-    Boolean(documentSession.saving || collaborationState.collaboration?.pending.size);
-  appState.element("document-tags-open").disabled =
-    !documentSession.current || !projectWritable() || collaborationLocked();
+  element("more-recovery").hidden = publicState.publicView;
+  element("more-workspace-actions").hidden = publicState.publicView;
+  element("document-tags-open").hidden = publicState.publicView && !projectWritable();
+  element("focus-mode").hidden = publicState.publicView;
+  element("workspace-search-open").hidden = !users;
+  element("workspace-open").hidden = !users;
+  element("sidebar-search-open").hidden = !users || publicState.publicView;
+  element("shares-open").hidden = !users;
+  element("backlinks-open").hidden = publicState.publicView;
+  element("backlinks-open").disabled = !documentSession.resourceId;
+  element("attachments-open").hidden = !users || !projectModel.active?.owned;
+  element("workspace-favorite").hidden = !users || !documentSession.resourceId;
+  element("history-open").hidden = !users || !projectModel.active?.owned;
+  element("history-open").disabled = !documentSession.resourceId;
+  element("trash-open").hidden = !projectOwns();
+  element("document-trash").hidden = !projectOwns();
+  element("document-trash").disabled =
+    !documentSession.resourceId || dirty() || Boolean(documentSession.saving || collaboration?.pending.size);
+  element("document-tags-open").disabled = !documentSession.current || !projectWritable() || collaborationLocked();
   refreshWorkspaceFavorite();
 }

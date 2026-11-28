@@ -54,7 +54,9 @@ impl Root {
         if let Some(store) = self.resources.get() {
             document.project = Some(store.project.clone());
             document.path = self.canonical_document_path(&document.path)?;
-            document.id = Some(store.identify(&document.path, ResourceKind::Document)?.id);
+            let resource = store.identify(&document.path, ResourceKind::Document)?;
+            document.id = Some(resource.id);
+            document.code = resource.code;
         }
         Ok(document)
     }

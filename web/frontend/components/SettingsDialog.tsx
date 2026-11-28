@@ -1,10 +1,10 @@
-import { AppDialog } from "./primitives";
+import { IconButton } from "./primitives";
 
 /** Group writing, project, accessibility, and administrative preferences. */
 export function SettingsDialog() {
   return (
     <>
-      <AppDialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+      <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
         <form id="settings-form">
           <header class="settings-header">
             <div>
@@ -20,9 +20,7 @@ export function SettingsDialog() {
                 spellcheck="false"
               />
             </div>
-            <button id="settings-close" class="icon-button" type="button" aria-label="Close settings">
-              <svg data-icon="x" aria-hidden="true"></svg>
-            </button>
+            <IconButton id="settings-close" label="Close settings" icon="x" />
           </header>
           <div class="settings-body">
             <nav class="settings-tabs" role="tablist" aria-label="Settings" aria-orientation="vertical">
@@ -255,7 +253,7 @@ export function SettingsDialog() {
                   <div class="setting-range">
                     <input id="settings-sidebar-width" type="range" min="210" max="420" step="10" />
                     <output id="settings-sidebar-value" for="settings-sidebar-width">
-                      260 px
+                      240 px
                     </output>
                   </div>
                 </div>
@@ -338,7 +336,7 @@ export function SettingsDialog() {
             </button>
           </footer>
         </form>
-      </AppDialog>
+      </dialog>
     </>
   );
 }

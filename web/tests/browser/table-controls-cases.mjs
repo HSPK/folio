@@ -3,6 +3,85 @@ import { test, expect, fs, path, root, openFixture, chooseView, primaryModifier,
 const source = "| Name | State | Owner |\n| --- | --- | --- |\n| A | Draft | One |\n| B | Ready | Two |\n\nTail paragraph.\n";
 const tools = page => page.getByRole("menu", { name: "Table actions", exact: true });
 
+test("tables align with paragraph edges without losing row or column controls", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openFixture(page, "Table-aligned.md", source);
+  const table = page.locator(".folio-table-wrapper");
+  for (const width of [390, 650, 651, 1440]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect.poll(() => page.evaluate(() => {
+      const paragraph = document.querySelector(".ProseMirror > p").getBoundingClientRect();
+      const frame = document.querySelector(".folio-table-scroll").getBoundingClientRect();
+      return Math.max(Math.abs(frame.left - paragraph.left), Math.abs(frame.right - paragraph.right));
+    })).toBeLessThan(1);
+    await table.locator("th").first().click();
+    const row = table.getByRole("button", { name: "Row actions", exact: true });
+    await expect(row).toBeVisible();
+    const clearance = await row.evaluate(node => {
+      const handle = node.getBoundingClientRect();
+      const viewport = document.querySelector(".folio-live-scroll").getBoundingClientRect();
+      const frame = node.parentElement.querySelector(".folio-table-scroll").getBoundingClientRect();
+      return [handle.left - viewport.left, frame.left - handle.right];
+    });
+    expect(clearance.every(gap => gap >= 0)).toBe(true);
+    for (const axis of ["row", "column"]) {
+      const menu = await openTableTools(page, 0, axis);
+      await expect(menu.getByRole("menuitem", { name: axis === "row" ? "Insert above" : "Insert left", exact: true })).toBeVisible();
+      await menu.press("Escape");
+    }
+    expect(await page.locator(".folio-live-scroll").evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThan(2);
+  }
+  await expect(page.locator("#editor")).toHaveValue(source);
+});
+
+test("wide tables scroll locally and keep wrap and dragged column widths without editing Markdown", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  const words = "word ".repeat(36).trim();
+  const note = `| A | B | C | D |\n| --- | --- | --- | --- |\n| ${words} | short | ok | tail |\n\nAfter.\n`;
+  await openFixture(page, "Local-table-layout.md", note);
+  const wrap = page.getByRole("menuitemcheckbox", { name: "Wrap text" });
+  await openTableTools(page, 0, "table");
+  await expect(wrap).toHaveAttribute("aria-checked","true");
+  await wrap.click();
+  await expect(wrap).toHaveAttribute("aria-checked","false");
+  await tools(page).press("Escape");
+  await page.setViewportSize({ width: 390, height: 800 });
+  const scroll = page.locator(".folio-table-scroll");
+  const cell = scroll.locator("th").first();
+  const separator = scroll.getByRole("separator", { name: "Resize column 1", exact: true });
+  const before = await cell.boundingBox();
+  await separator.scrollIntoViewIfNeeded();
+  const edge = await separator.boundingBox();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2 - 64, edge.y + edge.height / 2, {steps: 5});
+  await page.mouse.up();
+  await expect.poll(async () => Math.abs((await cell.boundingBox()).width - before.width + 64)).toBeLessThan(3);
+  await separator.focus();
+  await separator.press("ArrowLeft");
+  const savedWidth = (await cell.boundingBox()).width;
+  expect(savedWidth).toBeLessThan(before.width - 68);
+  for (const view of ["preview", "rich"]) {
+    await chooseView(page, view);
+    const scroller = page.locator(view === "rich" ? ".folio-table-scroll" : ".folio-reading-table");
+    await expect(scroller.locator("table")).toHaveAttribute("data-wrap", "false");
+    expect(Math.abs((await scroller.locator("th").first().boundingBox()).width - savedWidth)).toBeLessThan(2);
+    const amount = await scroller.evaluate(node => { node.scrollLeft = 90; return node.scrollLeft; });
+    expect(amount).toBeGreaterThan(0);
+    expect(await page.locator(view === "rich" ? ".folio-live-scroll" : "#preview").evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThan(2);
+  }
+  await page.reload();
+  await expect(scroll.locator("table")).toHaveAttribute("data-wrap", "false");
+  expect(Math.abs((await cell.boundingBox()).width - savedWidth)).toBeLessThan(2);
+  await page.setViewportSize({ width: 900, height: 800 });
+  await openTableTools(page, 0, "table");
+  await wrap.click();
+  await tools(page).getByRole("menuitem", {name:"Reset widths"}).click();
+  await expect(scroll.locator("td p").first()).toHaveCSS("white-space", "pre-wrap");
+  await expect(page.locator("#editor")).toHaveValue(note);
+  expect(await fs.readFile(path.join(root,"Local-table-layout.md"),"utf8")).toBe(note);
+});
+
 async function capture(page, name, browserName) {
   if (browserName !== "webkit") await page.screenshot({ path: test.info().outputPath(`${name}.png`), caret: "initial" });
 }
@@ -20,7 +99,8 @@ for (const width of [1440, 390]) {
     expect(header).not.toBe("rgba(0, 0, 0, 0)");
     expect(header).not.toBe(await table.locator("td").first().evaluate(node => getComputedStyle(node).backgroundColor));
     await table.locator("td").first().hover();
-    await expect(whole).toBeVisible();
+    if (width > 650) await expect(whole).toBeVisible();
+    else await expect(whole).toBeHidden();
     await expect(whole).toHaveAttribute("aria-label", "Table actions");
     await expect(row).toHaveCSS("opacity", "0");
     await expect(column).toHaveCSS("opacity", "0");
@@ -54,8 +134,8 @@ test("whole-table handle applies settings, deletes, duplicates and exports witho
   const menu = tools(page);
   await page.locator(".ProseMirror > p").last().click();
   await openTableTools(page, 0, "table");
-  await expect(menu.locator(".folio-table-menu-heading")).toHaveText("Table settings");
-  await expect(menu.getByRole("menuitem", { name: "Delete table", exact: true })).toBeVisible();
+  await expect(menu.locator(".folio-table-menu-heading")).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: "Delete", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitemradio")).toHaveCount(3);
   await expect(menu.getByRole("combobox")).toHaveCount(0);
   await capture(page, "whole-table-settings-menu", browserName);
@@ -67,10 +147,10 @@ test("whole-table handle applies settings, deletes, duplicates and exports witho
   await page.keyboard.press(`${primaryModifier}+z`);
   await expect(tables.locator("td")).toHaveText(["A", "Draft", "One", "B", "Ready", "Two"]);
   await openTableTools(page, 0, "table");
-  await menu.getByRole("menuitem", { name: "Duplicate table", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
   await expect(tables).toHaveCount(2);
   await openTableTools(page, 1, "table");
-  await menu.getByRole("menuitem", { name: "Delete table", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Delete", exact: true }).click();
   await expect(tables).toHaveCount(1);
   await page.keyboard.press(`${primaryModifier}+z`);
   await expect(tables).toHaveCount(2);
@@ -87,7 +167,7 @@ test("whole-table handle applies settings, deletes, duplicates and exports witho
   await page.reload();
   await expect(tables.locator("td")).toHaveText(["A", "Draft", "One", "B", "Ready", "Two"]);
   expect(await tables.locator("th, td").evaluateAll(nodes => nodes.every(node => getComputedStyle(node).textAlign === "center"))).toBe(true);
-  await page.setViewportSize({ width: 390, height: 450 });
+  await page.setViewportSize({ width: 651, height: 450 });
   await openTableTools(page, 0, "table");
   await menu.locator(".folio-table-export > summary").click();
   await expect.poll(async () => {
@@ -99,7 +179,7 @@ test("whole-table handle applies settings, deletes, duplicates and exports witho
   const viewport = await page.locator(".folio-live-scroll").boundingBox();
   expect(popup.y).toBeGreaterThanOrEqual(viewport.y);
   expect(popup.y + popup.height).toBeLessThanOrEqual(viewport.y + viewport.height);
-  expect(popup.x + popup.width).toBeLessThanOrEqual(382);
+  expect(popup.x + popup.width).toBeLessThanOrEqual(643);
   await capture(page, "whole-table-settings-short-viewport", browserName);
 });
 
@@ -169,7 +249,7 @@ test("the whole-table menu preserves an existing column selection rather than ex
   const grip = page.locator(".folio-block-grip");
   await grip.click();
   const menu = tools(page);
-  await expect(menu.locator(".folio-table-menu-heading")).toBeVisible();
+  await expect(menu.getByRole("menuitemcheckbox", { name: "Wrap text" })).toBeVisible();
   await expect(table.locator(".selectedCell")).toHaveCount(3);
   expect(await table.locator(".folio-table-selection").boundingBox()).toEqual(before);
   await grip.click();

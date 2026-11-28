@@ -1,8 +1,8 @@
 import { projectViewState as projectState } from "./view-state";
 import { projectModel } from "../../state/projects";
-import { createIcon } from "@folio/editor-runtime";
+import { createButton, createIcon } from "@folio/editor-runtime";
 import type { Project } from "../../types/domain";
-import { requireValue } from "../../types/elements";
+import { element, requireValue } from "../../types/elements";
 import { appState } from "../core/bootstrap";
 import { notice, setText } from "../core/dom";
 import { confirmAction, hasDialogConfirmation, settleDialogConfirmation, showDialog } from "../dialogs/dialogs";
@@ -30,7 +30,7 @@ export function initializeProjectsDialog(ports: ProjectDialogActions): void {
   onApplicationDispose(() => {
     if (actions === ports) actions = null;
   });
-  projectDialogState.projectDialog = appState.element("projects-dialog");
+  projectDialogState.projectDialog = element("projects-dialog");
   projectDialogState.projectViews = [
     ...projectDialogState.projectDialog.querySelectorAll<HTMLElement>("[data-project-view]"),
   ];
@@ -40,35 +40,35 @@ export function initializeProjectsDialog(ports: ProjectDialogActions): void {
   projectDialogState.projectFormSnapshot = null;
   projectDialogState.sharingSaving = false;
   projectDialogState.projectAnchor = null;
-  listen(appState.element("projects-filter"), "input", renderProjects);
-  listen(appState.element("projects-filter"), "keydown", (event) => {
+  listen(element("projects-filter"), "input", renderProjects);
+  listen(element("projects-filter"), "keydown", (event) => {
     if (!(event.target instanceof Element)) return;
 
-    if (event.key === "Escape" && appState.element("projects-filter").value) {
+    if (event.key === "Escape" && element("projects-filter").value) {
       event.preventDefault();
       event.stopPropagation();
-      appState.element("projects-filter").value = "";
+      element("projects-filter").value = "";
       renderProjects();
     } else if (event.key === "ArrowDown" || event.key === "Enter") {
-      const first = appState.element("projects-list").querySelector<HTMLButtonElement>(".project-open");
+      const first = element("projects-list").querySelector<HTMLButtonElement>(".project-open");
       if (!first) return;
       event.preventDefault();
       if (event.key === "Enter") first.click();
       else first.focus();
     }
   });
-  listen(appState.element("project-new"), "click", () => void openProjectCreation());
-  listen(appState.element("project-back"), "click", () => void backProjectView());
-  listen(appState.element("project-create-cancel"), "click", () => void backProjectView({ discard: true }));
-  listen(appState.element("project-confirm-cancel"), "click", () =>
+  listen(element("project-new"), "click", () => void openProjectCreation());
+  listen(element("project-back"), "click", () => void backProjectView());
+  listen(element("project-create-cancel"), "click", () => void backProjectView({ discard: true }));
+  listen(element("project-confirm-cancel"), "click", () =>
     settleDialogConfirmation(projectDialogState.projectDialog, false),
   );
-  listen(appState.element("project-confirm-proceed"), "click", () =>
+  listen(element("project-confirm-proceed"), "click", () =>
     settleDialogConfirmation(projectDialogState.projectDialog, true),
   );
   listen(projectDialogState.projectDialog, "confirmationchange", refreshProjectBusy);
-  listen(appState.element("project-kind"), "change", syncProjectSource);
-  listen(appState.element("projects-close"), "click", () => {
+  listen(element("project-kind"), "change", syncProjectSource);
+  listen(element("projects-close"), "click", () => {
     if (!projectState.projectCreating && !projectDialogState.sharingSaving) closeProjectManager();
   });
   listen(projectDialogState.projectDialog, "cancel", (event) => {
@@ -107,7 +107,7 @@ export function initializeProjectsDialog(ports: ProjectDialogActions): void {
   projectDialogState.positionObserver.observe(projectDialogState.projectDialog);
   listen(window, "resize", positionProjectDialog);
 }
-export function positionProjectDialog(): void {
+function positionProjectDialog(): void {
   if (!projectManagerOpen() || !projectDialogState.projectAnchor) return;
   // Browsing, creating and configuring share one compact surface beside the trigger.
   const bounds = projectDialogState.projectDialog.getBoundingClientRect();
@@ -132,8 +132,10 @@ export function openProjectManager(): void {
   if (projectManagerOpen()) return;
   const alignRight = projectDialogState.projectView === "sharing" && Boolean(projectState.sharingTarget?.path);
   const trigger = alignRight
-    ? document.querySelector<HTMLElement>("#more-menu > summary")
-    : appState.element("projects-open");
+    ? document.querySelector<HTMLElement>(
+        ".document-area[data-file-open] #panel-more, .document-area:not([data-file-open]) #more-menu > button",
+      )
+    : element("projects-open");
   const bounds = requireValue(trigger).getBoundingClientRect();
   projectDialogState.projectAnchor = bounds.width
     ? {
@@ -156,9 +158,9 @@ export function closeProjectManager(): void {
 export function projectFormState() {
   const form =
     projectDialogState.projectView === "create"
-      ? appState.element("project-create-form")
+      ? element("project-create-form")
       : projectDialogState.projectView === "sharing"
-        ? appState.element("sharing-form")
+        ? element("sharing-form")
         : null;
   return form
     ? JSON.stringify(
@@ -169,17 +171,17 @@ export function projectFormState() {
     : null;
 }
 
-export function clearSharingCredentials(): void {
-  appState.element("sharing-password").value = "";
+function clearSharingCredentials(): void {
+  element("sharing-password").value = "";
 }
 
 export function refreshProjectBusy(): void {
   const busy = projectState.projectCreating || projectDialogState.sharingSaving;
   projectDialogState.projectDialog.setAttribute("aria-busy", String(busy));
   const blocked = busy || hasDialogConfirmation(projectDialogState.projectDialog);
-  appState.element("projects-close").disabled = busy;
-  appState.element("project-back").disabled = blocked;
-  appState.element("project-new").disabled = blocked;
+  element("projects-close").disabled = busy;
+  element("project-back").disabled = blocked;
+  element("project-new").disabled = blocked;
   for (const view of projectDialogState.projectViews) view.inert = blocked;
 }
 
@@ -188,13 +190,14 @@ export function setProjectView(view: string): void {
   projectDialogState.projectView = view;
   projectDialogState.projectDialog.dataset.view = view;
   for (const node of projectDialogState.projectViews) node.hidden = node.dataset.projectView !== view;
-  appState.element("project-back").hidden = view === "browse";
-  appState
-    .element("project-back")
-    .setAttribute("aria-label", projectDialogState.projectParent ? "Back to project settings" : "Back to projects");
-  appState.element("project-new").hidden = view !== "browse";
+  element("project-back").hidden = view === "browse";
+  element("project-back").setAttribute(
+    "aria-label",
+    projectDialogState.projectParent ? "Back to project settings" : "Back to projects",
+  );
+  element("project-new").hidden = view !== "browse";
   setText(
-    appState.element("projects-title"),
+    element("projects-title"),
     view === "browse"
       ? "Projects"
       : view === "create"
@@ -203,7 +206,7 @@ export function setProjectView(view: string): void {
           ? "Document permissions"
           : "Project settings",
   );
-  notice(appState.element("project-error"), "");
+  notice(element("project-error"), "");
   refreshProjectBusy();
   positionProjectDialog();
 }
@@ -220,11 +223,11 @@ export function showProjectBrowse(): void {
 
 /** Opening the switcher lands on the project in use, never in the search field. */
 export function focusProjectList(): void {
-  const list = appState.element("projects-list");
+  const list = element("projects-list");
   (
     list.querySelector<HTMLElement>('.project-open[aria-current="true"]') ??
     list.querySelector<HTMLElement>(".project-open") ??
-    appState.element("projects-close")
+    element("projects-close")
   ).focus({ preventScroll: true });
 }
 
@@ -268,22 +271,22 @@ export async function backProjectView({ discard = false }: { discard?: boolean }
 }
 
 export function syncProjectSource(): void {
-  const kind = appState.element("project-kind").value;
-  appState.element("project-source-field").hidden = kind === "new";
-  appState.element("project-source").required = kind !== "new";
+  const kind = element("project-kind").value;
+  element("project-source-field").hidden = kind === "new";
+  element("project-source").required = kind !== "new";
 }
 
-export async function openProjectCreation(): Promise<void> {
+async function openProjectCreation(): Promise<void> {
   if (!(await allowProjectNavigation())) return;
-  appState.element("project-create-form").reset();
+  element("project-create-form").reset();
   syncProjectSource();
   setProjectView("create");
   projectDialogState.projectFormSnapshot = projectFormState();
-  appState.element("project-name").focus();
+  element("project-name").focus();
 }
 
 export function renderProjects(): void {
-  const query = appState.element("projects-filter").value.trim().toLowerCase();
+  const query = element("projects-filter").value.trim().toLowerCase();
   const visible = projectModel.items.filter((project) =>
     `${project.name} ${project.owner ?? ""}`.toLowerCase().includes(query),
   );
@@ -324,32 +327,27 @@ export function renderProjects(): void {
       : `${accessLabel} · ${project.owner ? `by ${project.owner}` : "shared with you"}`;
     text.append(name, detail);
     open.append(symbol, text);
-    if (project.id === projectModel.active?.id) {
-      const current = createIcon("check");
-      current.classList.add("project-current");
-      open.append(current);
-    }
+    open.title = `${project.name} · ${detail.textContent}`;
     open.addEventListener(
       "click",
       () => void requireValue(actions, "Project dialog actions").switchProject(project.id),
     );
     row.append(open);
     if (project.owned) {
-      const manage = document.createElement("button");
-      manage.type = "button";
+      const manage = createButton({
+        label: `Manage ${project.name}`,
+        icon: "settings",
+        onClick: () => void requireValue(actions, "Project dialog actions").openSharing(project),
+      });
       manage.className = "project-manage";
-      manage.setAttribute("aria-label", `Manage ${project.name}`);
-      manage.title = `Manage ${project.name}`;
-      manage.append(createIcon("settings"));
-      manage.addEventListener("click", () => void requireValue(actions, "Project dialog actions").openSharing(project));
       row.append(manage);
     }
     return row;
   });
-  const list = appState.element("projects-list");
+  const list = element("projects-list");
   // A background catalog refresh with the same rows must not detach the focused project.
   if (list.children.length !== rows.length || rows.some((row, i) => !row.isEqualNode(list.children[i])))
     list.replaceChildren(...rows);
-  appState.element("projects-empty").hidden = visible.length > 0;
-  setText(appState.element("projects-empty"), query ? "No matching projects" : "No projects");
+  element("projects-empty").hidden = visible.length > 0;
+  setText(element("projects-empty"), query ? "No matching projects" : "No projects");
 }

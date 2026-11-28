@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+fn duplicate_requires_source_read_and_creates_a_new_identity_without_overwriting() {
+    use super::projects::{login, request, resource_id, users};
+    let workspace = Workspace::new();
+    let original = "\u{feff}# Note\r\n\r\nLine\n";
+    workspace.write("note.md", original);
+    let server = start_with_users(&workspace.root, 0, users(&workspace)).unwrap();
+    let client = Client::new(&server);
+    let alice = login(&client, "alice");
+    let bob = login(&client, "bob");
+    let id = resource_id(&client, &alice, "default", "note.md", "document");
+    let post = |cookie: &str, endpoint: &str, body: Value| {
+        request(&client, cookie, "default", "POST", endpoint, Some(body))
+    };
+    let duplicate = || {
+        post(
+            &bob,
+            "/api/document",
+            json!({"path":"copy.md","duplicateOf":id}),
+        )
+    };
+    let share = |body| assert_eq!(post(&alice, "/api/projects", body).status, 200);
+    share(json!({"action":"share","id":"default","shared":"edit"}));
+    share(json!({"action":"document","id":"default","document":id,"permission":"private"}));
+    duplicate().error(403);
+    assert!(!workspace.root.join("copy.md").exists());
+    share(json!({"action":"share","id":"default","document":id,"shared":"read"}));
+    let copy = duplicate();
+    assert_eq!(copy.status, 201, "{}", copy.text());
+    assert_ne!(copy.json()["id"], id);
+    workspace.write("note.md", "Changed externally");
+    duplicate().error(409);
+    assert_eq!(
+        fs::read_to_string(workspace.root.join("copy.md")).unwrap(),
+        original
+    );
+    post(
+        &bob,
+        "/api/document",
+        json!({"path":"ambiguous.md","duplicateOf":id,"content":"override"}),
+    )
+    .error(400);
+}
+
+#[test]
 fn source_reads_defer_html_preserve_format_and_recheck_changed_files() {
     let workspace = Workspace::new();
     let content = "\u{feff}---\r\ntitle: Source title\r\n---\r\n# Original\r\n";
@@ -334,7 +378,7 @@ fn app_icons_are_embedded_with_crisp_native_sizes() {
     let page = client.request("GET", "/", &[], b"");
     assert!(page.text().contains("<title>Folio</title>"));
     assert!(page.text().contains("id=\"folio-root\""));
-    assert!(page.text().contains("src=\"/app.mjs\""));
+    assert!(page.text().contains("src=\"/app.mjs?v="));
     assert!(page.text().contains("href=\"/favicon.ico\""));
     assert!(page.text().contains("href=\"/icon.svg\""));
     let png = include_bytes!("../../../../Shared/Resources/FolioIcon.png");

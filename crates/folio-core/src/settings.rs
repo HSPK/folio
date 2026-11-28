@@ -1,4 +1,3 @@
-#[path = "settings/store.rs"]
 mod store;
 
 pub use store::SettingsStore;

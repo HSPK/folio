@@ -106,24 +106,30 @@ try {
     const firstFile = document.querySelector("button[data-path]");
     const started = performance.now();
     let sawBusy = false;
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver(async () => {
       const busy = navigation.getAttribute("aria-busy") === "true";
       sawBusy ||= busy;
       if (!sawBusy || busy) return;
       observer.disconnect();
-      const entry = performance.getEntriesByType("resource")
+      const finished = performance.now();
+      const latest = () => performance.getEntriesByType("resource")
         .filter((item) => item.name.includes("/api/tree"))
         .at(-1);
-      const finished = performance.now();
+      // A bodyless 304 can update the UI before Resource Timing publishes its entry.
+      let entry = latest();
+      while (!entry && performance.now() - finished < 1000) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+        entry = latest();
+      }
       resolve({
         request: entry?.duration,
-        render: entry ? finished - entry.responseEnd : undefined,
+        render: entry ? Math.max(0, finished - entry.responseEnd) : undefined,
         total: finished - started,
         retained: firstFile === document.querySelector("button[data-path]"),
       });
     });
     observer.observe(navigation, { attributes: true, attributeFilter: ["aria-busy"] });
-    document.querySelector("#refresh-files").click();
+    window.dispatchEvent(new Event("focus"));
     sawBusy = navigation.getAttribute("aria-busy") === "true";
   }));
   const unchanged = measurements();

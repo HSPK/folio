@@ -1,13 +1,13 @@
 import { EditorState, NodeSelection } from "@milkdown/prose/state";
 import { imageAttributes } from "./image-syntax.ts";
-import { createNodeToolbar, toolButton } from "./node-toolbar.ts";
+import { createNodeToolbar } from "./node-toolbar.ts";
 import { createNodeInspector } from "./node-inspector.ts";
 import { isImageNode, type ImageNodeAttrs } from "./image-model.ts";
 import { EditorView } from "@milkdown/prose/view";
 import { createImageNodeView, type ImageToolHandle, type ImageViewOptions } from "./image-node-view.ts";
 import type { ImageLayout } from "./types/markdown.ts";
 import type { InlineEditorOptions } from "./types/editor.ts";
-import { closestElement } from "./dom.ts";
+import { closestElement, createButton } from "./dom.ts";
 import { errorMessage } from "./errors.ts";
 import type { Lifetime } from "../../shared/lifetime.ts";
 export { imagePlugins } from "./image-model.ts";
@@ -16,7 +16,7 @@ function createImagePreview(lifetime: Lifetime) {
   dialog.className = "folio-image-preview";
   dialog.setAttribute("aria-label", "Image preview");
   const image = document.createElement("img");
-  const close = toolButton({ label: "Close image preview", icon: "x", onClick: () => dialog.close() });
+  const close = createButton({ label: "Close image preview", icon: "x", onClick: () => dialog.close() });
   let target: ImageToolHandle | null = null;
   dialog.append(close, image);
   lifetime.listen(dialog, "click", (event) => {
@@ -82,7 +82,7 @@ export function createImageTools({
   title.textContent = "Image";
   heading.append(
     title,
-    toolButton({
+    createButton({
       label: "Close image options",
       icon: "x",
       onClick: () => {
@@ -97,7 +97,7 @@ export function createImageTools({
   layouts.setAttribute("aria-label", "Image layout shortcuts");
   const layoutButtons = new Map<ImageLayout, HTMLButtonElement>();
   for (const value of ["inline", "left", "center", "right"] as const) {
-    const button = toolButton({
+    const button = createButton({
       label: `Image layout ${value}`,
       text: value[0].toUpperCase() + value.slice(1),
       onClick: () => void run(() => requireTarget().update_fn({ layout: value })),
@@ -139,7 +139,7 @@ export function createImageTools({
   presets.className = "folio-image-presets";
   for (const value of ["25%", "50%", "75%", "100%"]) {
     presets.append(
-      toolButton({
+      createButton({
         label: `Image width ${value}`,
         text: value,
         onClick: () =>
@@ -151,7 +151,7 @@ export function createImageTools({
       }),
     );
   }
-  const sideBySide = toolButton({
+  const sideBySide = createButton({
     label: "Arrange images side by side",
     text: "Side by side",
     onClick: () => void run(() => requireTarget().row_fn()),
@@ -161,7 +161,7 @@ export function createImageTools({
   const apply = document.createElement("button");
   apply.type = "submit";
   apply.textContent = "Apply";
-  const reset = toolButton({
+  const reset = createButton({
     label: "Reset image size and layout",
     text: "Reset",
     onClick: () => {
@@ -273,7 +273,7 @@ export function createImageTools({
       onNotice?.(`Image update failed: ${errorMessage(error)}`, "error");
     }
   }
-  const save = toolButton({
+  const save = createButton({
     label: "Save image as",
     icon: "download",
     onClick: () =>
@@ -293,7 +293,7 @@ export function createImageTools({
   file.type = "file";
   file.accept = "image/png,image/jpeg,image/gif,image/webp";
   file.hidden = true;
-  const replace = toolButton({
+  const replace = createButton({
     label: "Replace image",
     icon: "refresh",
     text: "Replace image",
@@ -336,7 +336,7 @@ export function createImageTools({
   lifetime.listen(file, "cancel", () => {
     replacement = null;
   });
-  const layoutButton = toolButton({
+  const layoutButton = createButton({
     label: "Image size and layout",
     icon: "expand-width",
     onClick: () => {
@@ -351,13 +351,13 @@ export function createImageTools({
   layoutButton.setAttribute("aria-controls", form.id);
   layoutButton.setAttribute("aria-expanded", "false");
   mutating.push(layoutButton);
-  const copy = toolButton({
+  const copy = createButton({
     label: "Copy image Markdown",
     icon: "copy",
     text: "Copy reference",
     onClick: () => run(() => copyPlainText(requireTarget().markdown_fn())),
   });
-  const remove = toolButton({
+  const remove = createButton({
     label: "Remove image",
     icon: "x",
     text: "Remove image",
@@ -369,7 +369,7 @@ export function createImageTools({
   });
   remove.dataset.imageDestructive = "";
   mutating.push(remove);
-  const menuButton = toolButton({
+  const menuButton = createButton({
     label: "Image actions",
     icon: "more-horizontal",
     onClick: () =>
@@ -389,7 +389,7 @@ export function createImageTools({
   menuButton.setAttribute("aria-expanded", "false");
   for (const button of [replace, copy, remove]) button.setAttribute("role", "menuitem");
   actions.append(replace, copy, remove, file);
-  const zoom = toolButton({
+  const zoom = createButton({
     label: "Preview image",
     icon: "zoom-in",
     onClick: () => run(() => preview.open(requireTarget())),

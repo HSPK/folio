@@ -60,6 +60,18 @@ const images = (doc: Node) => {
 };
 const selectedState = (doc: Node, position = 0) =>
   EditorState.create({ doc, selection: NodeSelection.create(doc, position), plugins: [history()] });
+test("a completed paste at the edge of a newer backward text selection preserves that selection", () => {
+  const doc = document(paragraph("left:RIGHT"));
+  const state = EditorState.create({ doc, selection: TextSelection.create(doc, 6, 1) });
+  const placed = imageInsertionTransaction(state, {
+    images: [image("ready")],
+    selection: TextSelection.create(doc, 6),
+    background: true,
+  });
+  assert.equal(placed.doc.textBetween(placed.selection.from, placed.selection.to, null, "\ufffc"), "left:");
+  assert.equal(placed.selection.head, 1);
+  assert.equal(placed.scrolledIntoView, false);
+});
 test("block image arrows use native gaps at document edges and text selections beside paragraphs without editing", () => {
   const only = document(image("First"));
   const state = selectedState(only);

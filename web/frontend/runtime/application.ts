@@ -1,13 +1,15 @@
+import { element } from "../types/elements";
 import { projectModel } from "../state/projects";
 import { authenticationSession } from "../state/authentication";
 import { errorContext } from "../types/errors";
 import { initializeAccountsAccounts } from "./accounts/accounts";
 import { handleAuthenticationFailure, initializeAccountsAuthentication } from "./accounts/authentication";
-import { collaborationState, initializeCollaborationCollaboration } from "./collaboration/collaboration";
+import { collaboration, initializeCollaborationCollaboration } from "./collaboration/collaboration";
 import { initializeCollaborationParticipation } from "./collaboration/participation";
 import { initializeCollaborationPresence } from "./collaboration/presence";
 import { appState, initializeCoreBootstrap } from "./core/bootstrap";
 import { configureApiClient } from "./core/api";
+import { startupFetch } from "./core/startup";
 import { initializeCoreCommands } from "./core/commands";
 import { initializeCoreEvents } from "./core/events";
 import { initializeCoreLayout } from "./core/layout";
@@ -46,7 +48,7 @@ export function startApplication() {
     if (lifetime.signal.aborted) return;
     if (ready) {
       ready = false;
-      if (!collaborationState.collaboration) {
+      if (!collaboration) {
         void persistCurrentDraft().catch((error) =>
           console.warn("Local recovery could not finish during disposal.", error),
         );
@@ -62,6 +64,7 @@ export function startApplication() {
     onApplicationDispose(
       configureApiClient({
         signal: lifetime.signal,
+        fetch_fn: startupFetch(lifetime.signal),
         context(path, headers) {
           if (appState.token) headers.Authorization = `Bearer ${appState.token}`;
           return {
@@ -87,7 +90,7 @@ export function startApplication() {
     initializeDocumentsResources();
     initializeProjectsDialog({ openSharing, switchProject });
     initializeProjectGateway(() => {
-      renderProjects();
+      if (element("projects-dialog").open) renderProjects();
       updateProjectControls();
     });
     initializeProjectsProjects();

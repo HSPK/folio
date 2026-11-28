@@ -12,14 +12,10 @@ use crate::{
     storage::{PublishMode, load_json, save_json},
 };
 
-#[path = "auth/accounts.rs"]
 mod accounts;
-#[path = "auth/identity.rs"]
 mod identity;
-#[path = "auth/password.rs"]
 mod password;
 pub(crate) use password::{hash_password, verify_password};
-#[path = "auth/sessions.rs"]
 mod sessions;
 pub(crate) use accounts::{AccountAction, AccountOverview, AccountResult};
 use sessions::SessionStore;

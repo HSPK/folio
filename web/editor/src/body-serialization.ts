@@ -4,7 +4,7 @@ import type { Node as ProseNode } from "@milkdown/prose/model";
 import type { Root } from "mdast";
 import type { Processor } from "unified";
 import type { CachedBody, ProseNodeJSON, TextSelectionRange } from "./types/editor.ts";
-import type { MarkdownNode } from "./types/markdown.ts";
+import { markdownChildren, type MarkdownNode } from "./types/markdown.ts";
 import { childFragment } from "./prose-content.ts";
 
 // Other block types can depend on document-level serialization context.
@@ -99,13 +99,24 @@ export function serializedBodyTree({ source, tree, serialized }: { source: strin
   return parseBody(serialized);
 }
 
-function blockRanges(document: ProseNode, tree: Root) {
+const containsDefinition = (node: MarkdownNode): boolean =>
+  node.type === "definition" || markdownChildren(node).some(containsDefinition);
+
+function blockRanges(document: ProseNode, tree: Root, source: string) {
   if (tree.children.length !== document.childCount) return null;
+  if (source.includes("]:") && containsDefinition(tree)) return null;
   const ranges: TextSelectionRange[] = [];
   for (let index = 0; index < document.childCount; index += 1) {
     const block = tree.children[index];
-    const type = document.child(index).type.name;
-    if (independentBlock(document.child(index)) && block.type !== (type === "image_block" ? "imageBlock" : type))
+    const node = document.child(index);
+    const type = node.type.name;
+    const wrappedHtml =
+      block.type === "html" &&
+      type === "paragraph" &&
+      node.childCount === 1 &&
+      node.firstChild?.type.name === "html" &&
+      node.firstChild.attrs.value === block.value;
+    if (independentBlock(node) && block.type !== (type === "image_block" ? "imageBlock" : type) && !wrappedHtml)
       return null;
     const from = block.position?.start.offset;
     const to = block.position?.end.offset;
@@ -133,7 +144,7 @@ export function createBodySerializer({
   const reset = (document: ProseNode, source: string, tree = parseBody(source)) => {
     previous = document;
     current = source;
-    ranges = blockRanges(document, tree);
+    ranges = blockRanges(document, tree, source);
   };
   reset(document, source, tree);
   return {
@@ -164,10 +175,19 @@ export function createBodySerializer({
                 (independentBlock(previous.child(index)) && independentBlock(next.child(index))) ||
                 editedInPlace(previous, next, index),
             )));
-      if (isolated && ranges) {
+      // Original (not just canonical) Markdown may rely on lazy continuations,
+      // indentation, or a single newline at a block boundary. Don't splice there.
+      if (
+        isolated &&
+        ranges &&
+        (ranges[from].from === 0 || current.endsWith("\n\n", ranges[from].from)) &&
+        (ranges[endA - 1].to === current.length ||
+          current.startsWith("\n\n", ranges[endA - 1].to) ||
+          (endA === previous.childCount && /^\r?\n?$/.test(current.slice(ranges[endA - 1].to))))
+      ) {
         const fragment = next.copy(childFragment(next, from, endB));
-        const replacement = normalizeSerializedBody(serialize_fn(fragment)).replace(/\n+$/, "");
-        const local = blockRanges(fragment, parseBody(replacement));
+        const replacement = normalizeSerializedBody(serialize_fn(fragment), fragment).replace(/\n+$/, "");
+        const local = blockRanges(fragment, parseBody(replacement), replacement);
         if (local) {
           const start = ranges[from].from;
           const end = ranges[endA - 1].to;
@@ -189,7 +209,7 @@ export function createBodySerializer({
           return current;
         }
       }
-      const serialized = normalizeSerializedBody(serialize_fn(next));
+      const serialized = normalizeSerializedBody(serialize_fn(next), next);
       reset(next, serialized);
       return current;
     },

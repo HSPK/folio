@@ -6,12 +6,14 @@ use axum::{
         DefaultBodyLimit, Extension, Query, State,
         rejection::{JsonRejection, QueryRejection},
     },
-    http::{HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::appearance::Appearance;
 
@@ -24,6 +26,18 @@ pub(super) fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/share", get(index))
+        .route("/s/{id}", get(index))
+        .route("/n/{id}", get(index))
+        .route("/p/{id}", get(index))
+        .route(
+            "/mermaid-renderer.html",
+            get(|| async {
+                embedded(
+                    "text/html; charset=utf-8",
+                    include_bytes!("../../../../web/public/mermaid-renderer.html"),
+                )
+            }),
+        )
         .route("/favicon.ico", get(app_icon))
         .route("/icon.svg", get(vector_icon))
         .route("/app.mjs", get(app_script))
@@ -33,6 +47,9 @@ pub(super) fn router(state: Arc<AppState>) -> Router {
         .route("/styles.css", get(styles))
         .route("/workspace.css", get(workspace_styles))
         .route("/editor.bundle.mjs", get(editor_script))
+        .route("/formula.mjs", get(formula_script))
+        .route("/code-syntax.mjs", get(code_syntax))
+        .route("/math-fonts/{name}", get(math_font))
         .route("/editor.bundle.css", get(editor_styles))
         .route("/editor-helpers.mjs", get(editor_helpers))
         .route("/THIRD-PARTY-LICENSES.txt", get(editor_licenses))
@@ -67,6 +84,7 @@ pub(super) fn router(state: Arc<AppState>) -> Router {
             get(super::permissions::document).put(save_document),
         )
         .route("/api/public/preview", post(preview))
+        .route("/api/public/panel-file", get(files::panels::open))
         .route("/api/public/resource", get(super::resources::get))
         .route(
             "/api/public/resources/resolve",
@@ -89,6 +107,16 @@ pub(super) fn router(state: Arc<AppState>) -> Router {
             get(preferences::get).put(preferences::put),
         )
         .route("/api/tree", get(tree))
+        .route(
+            "/api/panel-file",
+            get(files::panels::open)
+                .put(files::panels::save)
+                .post(files::panels::actions::duplicate),
+        )
+        .route(
+            "/api/file-properties",
+            get(files::panels::actions::properties).put(files::panels::actions::save_properties),
+        )
         .route("/api/search", post(super::search::search))
         .route(
             "/api/workspace",
@@ -113,10 +141,16 @@ pub(super) fn router(state: Arc<AppState>) -> Router {
                 .delete(super::history::trash_document),
         )
         .route("/api/directory", post(create_directory))
-        .route("/api/entry", get(entry_details).patch(move_entry))
+        .route(
+            "/api/entry",
+            get(entry_details)
+                .patch(move_entry)
+                .delete(super::recycle::delete),
+        )
         .route("/api/preview", post(preview))
         .route("/api/images", post(super::images::upload))
         .route("/assets", get(super::resources::asset))
+        .route("/assets/pdf", get(files::panels::native_pdf))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
         .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
@@ -127,73 +161,181 @@ pub(super) fn router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-async fn index(State(state): State<Arc<AppState>>) -> Response {
-    let page = include_str!("../../../../web/public/index.html")
-        .replace("__STYLE_NONCE__", &state.style_nonce);
-    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], page).into_response()
-}
+#[derive(Clone)]
+pub(super) struct StartPagePolicy(pub HeaderValue);
 
-async fn workspace_styles() -> Response {
-    embedded(
-        "text/css; charset=utf-8",
-        include_bytes!("../../../../web/public/workspace.css"),
+fn startup_element(
+    src: &'static str,
+    slot: &'static std::sync::OnceLock<(String, String)>,
+    attr: &str,
+    policy: &HeaderValue,
+) -> (String, Option<StartPagePolicy>) {
+    let (script, hash) = slot.get_or_init(|| {
+        let script = src.replace("\r\n", "\n");
+        let hash = STANDARD.encode(Sha256::digest(script.as_bytes()));
+        (script, hash)
+    });
+    let csp = format!(
+        "{}; script-src-elem 'self' 'sha256-{hash}'",
+        policy.to_str().unwrap().trim_end_matches(';')
+    );
+    (
+        format!("<script{attr}>{script}</script>"),
+        Some(StartPagePolicy(HeaderValue::from_str(&csp).unwrap())),
     )
 }
 
-async fn workspace_model() -> Response {
-    embedded(
-        "text/javascript; charset=utf-8",
-        include_bytes!("../../../../web/public/workspace-model.mjs"),
-    )
+async fn index(
+    State(state): State<Arc<AppState>>,
+    user: Option<Extension<crate::auth::AuthenticatedUser>>,
+    uri: axum::http::Uri,
+) -> Response {
+    let public = uri.path() == "/share" || uri.path().starts_with("/s/");
+    let (start, policy) = if public {
+        static SHARE: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+        startup_element(
+            include_str!("../../../../web/public/start-share.js"),
+            &SHARE,
+            "",
+            &state.shared.content_policy,
+        )
+    } else if state.shared.user_auth.is_some() {
+        // Account names are normalized ASCII. No cookie or document data is embedded.
+        let reader = user
+            .map(|Extension(user)| format!(" data-reader=\"{}\"", user.username))
+            .unwrap_or_default();
+        static START: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+        startup_element(
+            include_str!("../../../../web/public/start-session.js"),
+            &START,
+            &reader,
+            &state.shared.content_policy,
+        )
+    } else {
+        (String::new(), None)
+    };
+    let page = include_str!(concat!(env!("OUT_DIR"), "/index.html"))
+        .replace(
+            "__FOLIO_LAYOUT__",
+            if public {
+                "data-sidebar=\"closed\" data-share-page"
+            } else {
+                "data-sidebar=\"open\""
+            },
+        )
+        .replace("__STYLE_NONCE__", &state.shared.style_nonce)
+        .replace("<!--FOLIO_START_SESSION-->", &start);
+    let mut response = ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], page).into_response();
+    if let Some(policy) = policy {
+        response.extensions_mut().insert(policy);
+    }
+    response
 }
 
-async fn app_script() -> Response {
-    embedded(
-        "text/javascript; charset=utf-8",
-        include_bytes!("../../../../web/public/app.mjs"),
-    )
+fn not_modified(headers: &HeaderMap, tag: &str) -> bool {
+    headers
+        .get_all(header::IF_NONE_MATCH)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(','))
+        .map(str::trim)
+        .any(|v| v == "*" || v.trim_start_matches("W/") == tag.trim_start_matches("W/"))
 }
 
-async fn input_latency_script() -> Response {
-    embedded(
-        "text/javascript; charset=utf-8",
-        include_bytes!("../../../../web/public/input-latency.mjs"),
-    )
+fn accepts_gzip(headers: &HeaderMap) -> bool {
+    let mut wildcard = false;
+    for entry in headers
+        .get_all(header::ACCEPT_ENCODING)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(','))
+    {
+        let (coding, quality) = entry.split_once(';').unwrap_or((entry, "q=1"));
+        let allowed = quality.trim().split_once('=').is_some_and(|(name, q)| {
+            name.trim().eq_ignore_ascii_case("q")
+                && q.trim().parse::<f32>().is_ok_and(|q| q > 0.0 && q <= 1.0)
+        });
+        if coding.trim().eq_ignore_ascii_case("gzip") {
+            return allowed;
+        }
+        if coding.trim() == "*" {
+            wildcard = allowed;
+        }
+    }
+    wildcard
 }
 
-async fn model_script() -> Response {
-    embedded(
-        "text/javascript; charset=utf-8",
-        include_bytes!("../../../../web/public/model.mjs"),
-    )
+fn bundle(
+    headers: HeaderMap,
+    query: Option<&str>,
+    mime: &'static str,
+    plain: &'static [u8],
+    gzip: &'static [u8],
+    tag: &'static str,
+) -> Response {
+    let mut response = if not_modified(&headers, tag) {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else if accepts_gzip(&headers) {
+        let mut response = embedded(mime, gzip);
+        response
+            .headers_mut()
+            .insert(header::CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+        response
+    } else {
+        embedded(mime, plain)
+    };
+    let headers = response.headers_mut();
+    let version = tag
+        .strip_prefix("W/\"")
+        .and_then(|tag| tag.strip_suffix('"'));
+    let versioned = version.is_some() && query.and_then(|q| q.strip_prefix("v=")) == version;
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(if versioned {
+            "private, max-age=31536000, immutable"
+        } else {
+            "private, no-cache"
+        }),
+    );
+    headers.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+    headers.insert(header::ETAG, HeaderValue::from_static(tag));
+    response
 }
 
-async fn styles() -> Response {
-    embedded(
-        "text/css; charset=utf-8",
-        include_bytes!("../../../../web/public/styles.css"),
-    )
+macro_rules! web_bundle {
+    ($handler:ident, $name:literal, $mime:literal) => {
+        async fn $handler(headers: HeaderMap, uri: axum::http::Uri) -> Response {
+            bundle(
+                headers,
+                uri.query(),
+                concat!($mime, "; charset=utf-8"),
+                include_bytes!(concat!("../../../../web/public/", $name)),
+                include_bytes!(concat!(env!("OUT_DIR"), "/", $name, ".gz")),
+                include_str!(concat!(env!("OUT_DIR"), "/", $name, ".etag")),
+            )
+        }
+    };
 }
+web_bundle!(workspace_styles, "workspace.css", "text/css");
+web_bundle!(workspace_model, "workspace-model.mjs", "text/javascript");
+web_bundle!(app_script, "app.mjs", "text/javascript");
+web_bundle!(input_latency_script, "input-latency.mjs", "text/javascript");
+web_bundle!(model_script, "model.mjs", "text/javascript");
+web_bundle!(styles, "styles.css", "text/css");
+web_bundle!(editor_script, "editor.bundle.mjs", "text/javascript");
+web_bundle!(formula_script, "formula.mjs", "text/javascript");
+web_bundle!(code_syntax, "code-syntax.mjs", "text/javascript");
+web_bundle!(editor_styles, "editor.bundle.css", "text/css");
+web_bundle!(editor_helpers, "editor-helpers.mjs", "text/javascript");
 
-async fn editor_script() -> Response {
-    embedded(
-        "text/javascript; charset=utf-8",
-        include_bytes!("../../../../web/public/editor.bundle.mjs"),
-    )
-}
-
-async fn editor_styles() -> Response {
-    embedded(
-        "text/css; charset=utf-8",
-        include_bytes!("../../../../web/public/editor.bundle.css"),
-    )
-}
-
-async fn editor_helpers() -> Response {
-    embedded(
-        "text/javascript; charset=utf-8",
-        include_bytes!("../../../../web/public/editor-helpers.mjs"),
-    )
+async fn math_font(axum::extract::Path(name): axum::extract::Path<String>) -> Response {
+    let bytes = include!(concat!(env!("OUT_DIR"), "/math_fonts.rs"));
+    let mut response = embedded("font/woff2", bytes);
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
+    response
 }
 
 async fn editor_licenses() -> Response {
@@ -235,7 +377,7 @@ async fn session(Extension(state): Extension<Arc<AppState>>) -> Result<Response,
             .as_ref()
             .map(|a| a.id.clone())
             .unwrap_or_else(|| state.root.path().to_string_lossy().into_owned()),
-        port: state.port,
+        port: state.shared.port,
         project: state
             .access
             .as_ref()
@@ -243,12 +385,12 @@ async fn session(Extension(state): Extension<Arc<AppState>>) -> Result<Response,
             .transpose()?,
     })
     .into_response();
-    if state.user_auth.is_some() {
+    if state.shared.user_auth.is_some() {
         return Ok(response);
     }
     let cookie = format!(
         "{}={}; Path=/assets; HttpOnly; SameSite=Strict",
-        state.cookie_name, state.token
+        state.shared.cookie_name, state.shared.token
     );
     match HeaderValue::from_str(&cookie) {
         Ok(cookie) => {
@@ -264,17 +406,33 @@ async fn session(Extension(state): Extension<Arc<AppState>>) -> Result<Response,
 async fn tree(
     Extension(state): Extension<Arc<AppState>>,
     Extension(work): Extension<Arc<Work>>,
-) -> Result<Json<files::Tree>, ApiError> {
-    blocking(state, work, |state, _| match &state.access {
-        Some(access) => access.tree(),
-        None => state.root.tree(),
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    blocking(state, work, move |state, _| {
+        // Compare only after scanning and filtering with this request's current permissions.
+        let tree = match &state.access {
+            Some(access) => access.tree()?,
+            None => state.root.tree()?,
+        };
+        let bytes = serde_json::to_vec(&tree)
+            .map_err(|_| ApiError::internal("Could not encode the file list."))?;
+        let tag = format!("\"{:x}\"", Sha256::digest(&bytes));
+        let mut response = if not_modified(&headers, &tag) {
+            StatusCode::NOT_MODIFIED.into_response()
+        } else {
+            ([(header::CONTENT_TYPE, "application/json")], bytes).into_response()
+        };
+        response
+            .headers_mut()
+            .insert(header::ETAG, HeaderValue::from_str(&tag).unwrap());
+        Ok(response)
     })
     .await
-    .map(Json)
 }
 
 async fn appearance(State(state): State<Arc<AppState>>) -> Result<Json<Appearance>, ApiError> {
     state
+        .shared
         .appearance
         .read()
         .map(|appearance| Json(appearance.clone()))
@@ -352,10 +510,10 @@ async fn save_document(
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NewDocument {
-    path: String,
-    content: String,
+#[serde(untagged, deny_unknown_fields, rename_all_fields = "camelCase")]
+enum NewDocument {
+    Content { path: String, content: String },
+    Duplicate { path: String, duplicate_of: String },
 }
 
 async fn create_document(
@@ -365,15 +523,22 @@ async fn create_document(
 ) -> Result<(StatusCode, Json<files::Document>), ApiError> {
     let Json(body) = body.map_err(json_error)?;
     blocking(state, work, move |state, work| {
-        state.authorize(None, true)?;
-        state.authorize(Some(&body.path), true)?;
         let _save = state
             .saves
             .lock()
             .map_err(|_| ApiError::internal("The document save lock was poisoned."))?;
-        let saved = state
-            .root
-            .create(&body.path, &body.content, || work.check())?;
+        let path = match &body {
+            NewDocument::Content { path, .. } | NewDocument::Duplicate { path, .. } => path,
+        };
+        state.authorize(None, true)?;
+        state.authorize(Some(path), true)?;
+        let content = match &body {
+            NewDocument::Content { content, .. } => std::borrow::Cow::Borrowed(content.as_str()),
+            NewDocument::Duplicate { duplicate_of, .. } => {
+                state.duplicate_source(duplicate_of)?.into()
+            }
+        };
+        let saved = state.root.create(path, &content, || work.check())?;
         Ok(state.record_saved(saved, state.actor(), "create"))
     })
     .await
@@ -427,7 +592,13 @@ async fn entry_details(
 ) -> Result<Json<files::EntryDetails>, ApiError> {
     let Query(query) = query.map_err(query_error)?;
     blocking(state, work, move |state, _| {
-        let path = state.document_path(&query.id)?;
+        let resource = state.root.resource_store()?.resource(&query.id, false)?;
+        let path = resource.path;
+        if resource.kind == super::state_store::resources::ResourceKind::Asset {
+            files::panels::access(state, &path, false)?;
+        } else {
+            files::validate_document_path(&path)?;
+        }
         state.authorize(Some(&path), false)?;
         state.root.details(&path)
     })
@@ -531,12 +702,18 @@ where
     T: Send + 'static,
     F: FnOnce(&AppState, &Work) -> Result<T, ApiError> + Send + 'static,
 {
-    let permit = state.workers.clone().acquire_owned().await.map_err(|_| {
-        ApiError::new(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "The document worker is busy. Please try again.",
-        )
-    })?;
+    let permit = state
+        .shared
+        .workers
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| {
+            ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "The document worker is busy. Please try again.",
+            )
+        })?;
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
         work.check()?;

@@ -28,7 +28,7 @@ test("network HTTP binding supports login and online editing without plaintext r
     await expect(page.locator("#document-modified")).toBeHidden();
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe("# Network edit\n");
     await page.locator('[data-path="Other.md"]').click();
-    await expect(page.locator("#document-title")).toHaveText("Other.md");
+    await expect(page.locator("#document-title")).toHaveText("Other");
     await expect(page.locator("#document-message")).toBeHidden();
     expect(await page.evaluate(async () => (await indexedDB.databases()).some(db => db.name === "folio-private-drafts"))).toBe(false);
     await openMoreAction(page, "drafts-open");

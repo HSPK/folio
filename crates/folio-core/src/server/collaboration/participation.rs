@@ -31,6 +31,7 @@ mod tests {
         let hub = Hub::default();
         let room = Arc::new(Mutex::new(
             Room::new(Document {
+                code: None,
                 id: None,
                 project: None,
                 references: Vec::new(),

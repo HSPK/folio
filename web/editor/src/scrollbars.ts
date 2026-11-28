@@ -5,6 +5,7 @@ import type { DeferredScrollbars, ScrollbarHandle } from "./types/editor.ts";
 interface ScrollbarOptions {
   nonce?: string;
   horizontal?: boolean;
+  resizeDebounce?: [number, number];
 }
 
 interface DeferredEntry {
@@ -60,10 +61,11 @@ export function deferScrollbars(root: HTMLElement, options: ScrollbarOptions = {
 export function attachScrollbars(
   host: HTMLElement,
   viewport: HTMLElement,
-  { nonce, horizontal = true }: ScrollbarOptions = {},
+  { nonce, horizontal = true, resizeDebounce }: ScrollbarOptions = {},
 ): ScrollbarHandle {
   OverlayScrollbars.nonce(nonce ?? document.querySelector<HTMLMetaElement>('meta[name="folio-style-nonce"]')?.content);
   const contrast = window.matchMedia("(forced-colors: active)");
+  const timing = resizeDebounce && OverlayScrollbars.env().getDefaultOptions().update.debounce;
   const instance = OverlayScrollbars(
     {
       target: host,
@@ -71,6 +73,9 @@ export function attachScrollbars(
     },
     {
       overflow: { x: horizontal ? "scroll" : "hidden", y: "scroll" },
+      ...(timing && typeof timing === "object" && "resize" in timing && resizeDebounce
+        ? { update: { debounce: { ...timing, resize: resizeDebounce } } }
+        : {}),
       scrollbars: {
         theme: "os-theme-notes",
         visibility: "auto",
