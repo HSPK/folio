@@ -367,17 +367,21 @@ export async function openWorkbook(
         });
       });
       paging.replaceChildren();
-      for (const [label, glyph, r, c, disabled, show] of [
-        ["Previous rows", "↑", row - rows, col, row === 0, height > rows],
-        ["Next rows", "↓", row + rows, col, row + rows >= height, height > rows],
-        ["Previous columns", "←", row, col - cols, col === 0, width > cols],
-        ["Next columns", "→", row, col + cols, col + cols >= width, width > cols],
+      for (const [label, icon, r, c, disabled, show] of [
+        ["Previous rows", "arrow-up", row - rows, col, row === 0, height > rows],
+        ["Next rows", "arrow-down", row + rows, col, row + rows >= height, height > rows],
+        ["Previous columns", "arrow-left", row, col - cols, col === 0, width > cols],
+        ["Next columns", "arrow-right", row, col + cols, col + cols >= width, width > cols],
       ] as const) {
         if (!show) continue;
-        const b = button(glyph, () => {
-          view.row = r;
-          view.col = c;
-          void load();
+        const b = createButton({
+          label,
+          icon,
+          onClick: () => {
+            view.row = r;
+            view.col = c;
+            void load();
+          },
         });
         b.setAttribute("aria-label", label);
         b.title = label;

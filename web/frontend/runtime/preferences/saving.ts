@@ -21,12 +21,23 @@ interface SettingsUiPorts {
   checkpoint: (snapshot: SettingsSnapshot | null) => void;
 }
 
-let view: { id: symbol; selection: symbol; project: typeof projectModel.active } | null = null;
+let view: {
+  selection: symbol;
+  project: typeof projectModel.active;
+  signature: string;
+  submitted: string | null;
+} | null = null;
 let revision = 0;
 export const preferencesRevision = () => revision;
 export function beginSettingsView() {
-  view = { id: Symbol("settings-view"), selection: projectModel.selection, project: projectModel.active };
+  view = {
+    selection: projectModel.selection,
+    project: projectModel.active,
+    signature: formSignature(),
+    submitted: null,
+  };
 }
+export const settingsChanged = () => view !== null && formSignature() !== (view.submitted ?? view.signature);
 
 function formSignature() {
   return JSON.stringify(
@@ -81,6 +92,8 @@ export function initializeSettingsSaving(ports: SettingsUiPorts): void {
     const saving = Symbol("settings-save");
     operation = saving;
     element("settings-save").disabled = true;
+    element("settings-save").textContent = "Saving…";
+    element("settings-form").setAttribute("aria-busy", "true");
     notice(element("settings-error"), "");
     try {
       const preferences = ports.collect();
@@ -90,6 +103,7 @@ export function initializeSettingsSaving(ports: SettingsUiPorts): void {
         commandShortcut: element("settings-command-shortcut").value,
       };
       const signature = formSignature();
+      opened.submitted = signature;
       const directory = element("settings-image-directory").value.trim();
       const project =
         opened.project?.owned && directory !== opened.project.imageDirectory
@@ -99,6 +113,7 @@ export function initializeSettingsSaving(ports: SettingsUiPorts): void {
       const result = await saver.save({ preferences, project });
       if (!current()) return;
       revision++;
+      opened.signature = signature;
       const unchanged = view === opened && opened.selection === projectModel.selection && formSignature() === signature;
       ports.apply(result.preferences);
       storeLayoutPreference(appState.HIDDEN_PATTERNS_KEY, result.preferences.web.hiddenPatterns.join("\n"));
@@ -131,9 +146,14 @@ export function initializeSettingsSaving(ports: SettingsUiPorts): void {
       if (view === opened && element("settings-dialog").open) notice(element("settings-error"), message, "error");
       else documentNotice(message, "error");
     } finally {
+      opened.submitted = null;
       if (operation === saving) {
         operation = null;
-        if (!owner.aborted) element("settings-save").disabled = false;
+        if (!owner.aborted) {
+          element("settings-save").disabled = false;
+          element("settings-save").textContent = "Save";
+          element("settings-form").setAttribute("aria-busy", "false");
+        }
       }
     }
   });

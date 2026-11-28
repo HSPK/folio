@@ -14,7 +14,8 @@ pub(super) use recycle::{Inventory, RecycleMove};
 mod tree;
 
 pub(super) use documents::document_from_bytes;
-use format::preserve_format;
+pub(super) use format::validate_content;
+use format::{preserve_format, read_limited};
 pub(super) use identities::Reference;
 use paths::{ignored_directory, validate_directory_path};
 pub(super) use paths::{is_markdown, validate_document_path, validate_relative};
@@ -25,7 +26,7 @@ pub(super) use tree::{Tree, TreeFile};
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::{self, File, Metadata};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, RwLock, atomic::AtomicU64};
 use std::time::UNIX_EPOCH;
@@ -467,48 +468,6 @@ impl Root {
             document,
         })
     }
-}
-
-pub(super) fn validate_content(bytes: &[u8]) -> Result<(), ApiError> {
-    if bytes.len() > MAX_DOCUMENT_BYTES {
-        return Err(ApiError::too_large(
-            "Markdown documents cannot exceed 4 MiB.",
-        ));
-    }
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| ApiError::bad_request("The Markdown file is not valid UTF-8."))?;
-    if text
-        .chars()
-        .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
-    {
-        return Err(ApiError::bad_request(
-            "Binary files cannot be edited as Markdown.",
-        ));
-    }
-    Ok(())
-}
-
-fn read_limited(file: &mut File, limit: usize, kind: &str) -> Result<Vec<u8>, ApiError> {
-    let metadata = file
-        .metadata()
-        .map_err(|error| ApiError::io("Could not inspect the file", error))?;
-    if metadata.len() > limit as u64 {
-        return Err(ApiError::too_large(format!(
-            "{kind} cannot exceed {} MiB.",
-            limit / 1024 / 1024
-        )));
-    }
-    let mut bytes = Vec::with_capacity((metadata.len() as usize).min(limit));
-    file.take((limit + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|error| ApiError::io("Could not read the file", error))?;
-    if bytes.len() > limit {
-        return Err(ApiError::too_large(format!(
-            "{kind} cannot exceed {} MiB.",
-            limit / 1024 / 1024
-        )));
-    }
-    Ok(bytes)
 }
 
 fn version(bytes: &[u8]) -> String {

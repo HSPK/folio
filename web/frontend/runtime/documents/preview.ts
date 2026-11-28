@@ -12,7 +12,7 @@ import { api } from "../core/api";
 import { appState, currentEditorAnalysis, rootChanged } from "../core/bootstrap";
 import { ApiError, aborted, previewStatus } from "../core/dom";
 import { settingsState } from "../preferences/settings";
-import { projectUrl } from "../projects/projects";
+import { projectUrl } from "./resources";
 import { restoreViewPosition } from "./navigation";
 import { onApplicationDispose } from "../lifecycle";
 class PreviewState {

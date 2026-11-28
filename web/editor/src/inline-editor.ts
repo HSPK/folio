@@ -44,7 +44,7 @@ import { createImageFlowPlugins, imageSelectionAtPoint } from "./image-flow.ts";
 import { imageBoundarySelection, isImageNode } from "./image-model.ts";
 import { captureImagePreview, imagePreviewPlugin } from "./image-preview.ts";
 import { autoLinks } from "./auto-links.ts";
-import { createLinkTools } from "./links.ts";
+import { createLinkTools, linkTitle } from "./links.ts";
 import { createEditorViews } from "./editor-views.ts";
 import "./node-tools.css";
 import "./collaboration.css";
@@ -520,10 +520,7 @@ function createOwnedEditor(
         if (url) {
           if (node.getAttribute(attribute) !== url) node.setAttribute(attribute, url);
         } else if (node.hasAttribute(attribute)) node.removeAttribute(attribute);
-        if (node.tagName === "A")
-          node.title = url
-            ? "Ctrl/Cmd+click to open; use Link actions to edit"
-            : "Link unavailable. Check its target in Link actions.";
+        if (node.tagName === "A") node.title = linkTitle(Boolean(url));
       }
       linkTools.refresh();
     },

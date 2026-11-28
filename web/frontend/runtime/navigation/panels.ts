@@ -17,6 +17,7 @@ import { updateFileSelection } from "./library";
 import { openWorkbook } from "./workbook";
 import { fileVisited } from "../workspace/workspace";
 import { publicState } from "../sharing/public";
+import { primaryShortcut } from "../../../shared/keyboard";
 
 export function pdfFileUrl(path: string, download = false) {
   const params = new URLSearchParams({ path, ...(download ? { download: "true" } : {}) });
@@ -82,6 +83,7 @@ export async function openFilePanel(path: string, resourceId?: string, preserveS
       changed &&
       !(await confirmAction("Discard unsaved code changes?", {
         label: "Discard",
+        tone: "destructive",
         signal: navigationSignal ? AbortSignal.any([signal, navigationSignal]) : signal,
       }))
     )
@@ -200,11 +202,14 @@ export async function openFilePanel(path: string, resourceId?: string, preserveS
       const writable = decodedBoolean(file.writable, "write permission");
       let version = decodedString(file.version, "file version");
       let saved = decodedString(file.content, "code").replace(/\r\n?/g, "\n");
+      let savedTimer: number | undefined;
       const save = async () => {
         if (!current() || !writable || !changed || saving) return;
         const content = editor.getValue();
         saving = true;
         button.disabled = true;
+        button.textContent = "Saving…";
+        window.clearTimeout(savedTimer);
         status.textContent = "Saving…";
         try {
           const result = decodedObject(
@@ -216,14 +221,19 @@ export async function openFilePanel(path: string, resourceId?: string, preserveS
           saved = content;
           changed = editor.getValue() !== saved;
           status.textContent = changed ? "Unsaved changes" : "Saved";
+          savedTimer = window.setTimeout(() => {
+            if (current() && !changed && !saving) status.textContent = "";
+          }, 1600);
         } catch (cause) {
           report(cause);
         } finally {
           saving = false;
           button.disabled = !changed;
+          button.textContent = "Save";
         }
       };
       const button = textButton("Save", () => void save());
+      button.title = `Save (${primaryShortcut("S")})`;
       button.disabled = true;
       session.save = () => void save();
       let idleCheck: number | undefined;
@@ -237,6 +247,7 @@ export async function openFilePanel(path: string, resourceId?: string, preserveS
           button.disabled = saving;
           status.textContent = "Unsaved changes";
           window.clearTimeout(idleCheck);
+          window.clearTimeout(savedTimer);
           idleCheck = window.setTimeout(checkChanges, 500);
         },
       });
@@ -248,6 +259,7 @@ export async function openFilePanel(path: string, resourceId?: string, preserveS
       };
       destroySource = () => {
         window.clearTimeout(idleCheck);
+        window.clearTimeout(savedTimer);
         editor.destroy();
       };
       if (writable) tools.append(button);

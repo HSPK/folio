@@ -16,7 +16,7 @@ test("pressing the blank page after the last block continues writing at the end"
   await expect(page.locator(".ProseMirror")).toBeFocused();
   await page.keyboard.insertText(" Still here.");
   await expect(page.locator(".ProseMirror p").last()).toHaveText("Paragraph 39. Still here.");
-  await expect(page.locator("#editor")).toHaveValue(/Paragraph 39\. Still here\.\n$/);
+  await expect(page.locator("#editor")).toHaveValue(source.replace("Paragraph 39.", "Paragraph 39. Still here."));
 
   // The side margin places the caret on the line beside it instead of dropping focus.
   const line = await page.locator(".ProseMirror p").last().boundingBox();

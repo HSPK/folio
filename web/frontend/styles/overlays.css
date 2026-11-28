@@ -51,11 +51,9 @@
   position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: flex; flex-direction: column; gap: 1px;
   width: max-content; padding: var(--menu-padding); border: 1px solid var(--panel-border); border-radius: var(--menu-radius);
   background: var(--float-fill); box-shadow: var(--menu-shadow); color: var(--text);
-  animation: folio-panel-in var(--motion-panel-duration) var(--motion-easing);
 }
 .popup-panel:not(:popover-open) {
   pointer-events: none;
-  animation: folio-panel-out var(--motion-panel-duration) ease-out both;
 }
 .view-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 3px; margin: 0 3px 4px; }
 .view-options > button { display: grid; place-items: center; gap: 3px; padding: 5px 2px; font-size: 11px; }
@@ -78,12 +76,9 @@
 .menu-stat small { margin-inline-start: auto; padding-inline-start: 14px; font-size: 11px; opacity: .8; }
 .menu-group + .menu-group { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border); }
 .menu-group-label { display: block; padding: 6px 10px 4px; color: var(--muted); font-size: 11px; font-weight: 500; }
-#more-menu .popup-panel { max-height: min(680px, calc(100dvh - 76px)); overflow: hidden; transform-origin: top right; animation-name: folio-more-in; }
+#more-menu .popup-panel { max-height: min(680px, calc(100dvh - 76px)); overflow: hidden; transform-origin: top right; }
 /* Size to the actions, not to an arbitrarily long document title. */
 #more-menu #document-title { contain: inline-size; }
-#more-menu .popup-panel:not(:popover-open) { animation-name: folio-more-out; }
-@keyframes folio-more-in { from { opacity: 0; transform: translateY(-5px) scale(.96); } }
-@keyframes folio-more-out { to { opacity: 0; transform: translateY(-4px) scale(.97); } }
 #collaboration-people:not(:empty) { flex-wrap: wrap; padding: 2px 10px; }
 #collaboration-people:empty { display: none; }
 .more-menu-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
@@ -114,6 +109,7 @@
   position: fixed; inset: var(--canvas-inset); inset-inline-start: calc(var(--canvas-inset) + var(--sidebar-width) + var(--canvas-gap));
   width: auto; max-width: none; height: auto; max-height: none; margin: 0; padding: 0; overflow: hidden;
   background: var(--panel-fill); box-shadow: var(--panel-shadow);
+  container-type: inline-size;
 }
 body[data-sidebar="closed"] .settings-dialog { inset-inline-start: var(--canvas-inset); }
 .settings-dialog::backdrop { background: transparent; }
@@ -160,10 +156,12 @@ body[data-sidebar="closed"] .settings-dialog { inset-inline-start: var(--canvas-
 .setting-card textarea { width: 100%; min-height: 128px; padding: 10px 12px; resize: vertical; border: 1px solid var(--field-border); border-radius: 9px; background: var(--subtle-surface); font-family: var(--code-font); font-size: 12px; line-height: 1.65; }
 .setting-card .form-hint { margin: 0; line-height: 1.6; }
 .setting-card input[type="range"] { padding: 0; }
+.settings-panel:not(:has(#settings-image-compression option[value="jpeg"]:checked)) .setting-card:has(#settings-image-quality):not([data-search-match]) { display: none; }
 .setting-range { display: grid; grid-template-columns: minmax(0, 1fr) 52px; align-items: center; gap: 10px; }
 .setting-range output { color: var(--muted); text-align: right; font-size: 12px; }
 .settings-actions { display: flex; flex: none; justify-content: flex-end; gap: 6px; padding: 6px 14px; border-top: 1px solid var(--border); }
 #settings-error { margin: 0 16px 10px; }
+#settings-save { min-width: 76px; }
 
 dialog {
   opacity: 0; transform: translateY(8px) scale(.99);
@@ -181,6 +179,8 @@ dialog::backdrop {
 dialog[open]::backdrop { opacity: 1; }
 /* Anchored to a sidebar button: don't scale its measured bounds or keep a closing form on screen. */
 .projects-dialog, .projects-dialog::backdrop { transition: none; transform: none; }
+.settings-dialog, .settings-dialog[open] { transform: none; }
+body:has(dialog:modal) .popup-panel:not(:popover-open) { transition-duration: 0s; }
 #sidebar-scrim {
   display: block; opacity: 1;
   transition: opacity var(--motion-panel-duration) ease-out, display var(--motion-panel-duration) allow-discrete;
@@ -195,17 +195,19 @@ dialog[open]::backdrop { opacity: 1; }
 .document-panes[data-view="editor"] > .editor-pane,
 .document-panes[data-view="preview"] > .preview-pane,
 .document-panes[data-view="split"] > :is(.editor-pane, .preview-pane),
-.empty-document:not([hidden]), .context-menu:not([hidden]) {
+.empty-document:not([hidden]) {
   animation: folio-panel-in var(--motion-panel-duration) var(--motion-easing);
 }
 @keyframes folio-panel-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes folio-panel-out { from { opacity: 1; } to { opacity: 0; } }
 @starting-style {
   dialog[open] { opacity: 0; transform: translateY(8px) scale(.99); }
+  .settings-dialog[open] { transform: none; }
   dialog[open]::backdrop, #sidebar-scrim, .auth-screen, .status-card { opacity: 0; }
 }
 @media (max-width: 650px) {
   .settings-dialog, body[data-sidebar] .settings-dialog { inset-inline-start: var(--canvas-inset); }
+}
+@container (max-width: 600px) {
   .settings-header > div { grid-template-columns: auto minmax(0, 1fr); gap: 12px; }
   .settings-header { height: auto; padding-block: 6px; }
   .settings-body { display: flex; flex-direction: column; }

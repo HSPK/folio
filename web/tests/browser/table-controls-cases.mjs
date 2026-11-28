@@ -98,10 +98,14 @@ for (const width of [1440, 390]) {
     const header = await table.locator("th").first().evaluate(node => getComputedStyle(node).backgroundColor);
     expect(header).not.toBe("rgba(0, 0, 0, 0)");
     expect(header).not.toBe(await table.locator("td").first().evaluate(node => getComputedStyle(node).backgroundColor));
+    await page.mouse.click(5, 5);
     await table.locator("td").first().hover();
-    if (width > 650) await expect(whole).toBeVisible();
-    else await expect(whole).toBeHidden();
-    await expect(whole).toHaveAttribute("aria-label", "Table actions");
+    await expect(whole).toBeHidden();
+    await table.locator("td").first().click();
+    if (width > 650) {
+      await expect(whole).toBeVisible();
+      await expect(whole).toHaveAttribute("aria-label", "Table actions");
+    } else await expect(whole).toBeHidden();
     await expect(row).toHaveCSS("opacity", "0");
     await expect(column).toHaveCSS("opacity", "0");
     await capture(page, `table-hover-whole-handle-${width}`, browserName);
@@ -114,6 +118,7 @@ for (const width of [1440, 390]) {
     await expect(row).toHaveCSS("opacity", "0");
     await capture(page, `table-column-region-${width}`, browserName);
     await page.mouse.move(5, 5);
+    await page.mouse.click(5, 5);
     await expect(whole).toBeHidden();
     await expect(row).toHaveCSS("opacity", "0");
     await expect(column).toHaveCSS("opacity", "0");

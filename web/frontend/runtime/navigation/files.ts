@@ -138,6 +138,7 @@ export async function createNote(event: SubmitEvent): Promise<void> {
 }
 export function closeFileContextMenu(restore = true): void {
   element("file-context-menu").hidden = true;
+  element("file-context-menu").inert = true;
   appState.contextFile = null;
   addParent = null;
   fileMenuReturnFocus?.removeAttribute("aria-expanded");
@@ -176,8 +177,7 @@ export function openFileContextMenu(
     action.hidden =
       Boolean(add) ||
       !note ||
-      (target === "workspace-favorite" && authenticationSession.mode !== "users") ||
-      (["share-page", "history-open", "attachments-open"].includes(target ?? "") && !projectOwns()) ||
+      (target === "history-open" && !projectOwns()) ||
       (target === "document-tags-open" && !projectWritable(path));
   }
   for (const action of element("file-context-menu").querySelectorAll<HTMLButtonElement>("[data-file-action]")) {
@@ -185,10 +185,9 @@ export function openFileContextMenu(
     action.hidden =
       Boolean(add) ||
       (kind === "directory" && type !== "copy-path") ||
-      (type === "share" && note) ||
       (publicState.publicView && !["download", "copy-link", "reload"].includes(type ?? "")) ||
       (type === "share" && (!projectOwns() || authenticationSession.mode !== "users")) ||
-      (["favorite", "tags"].includes(type ?? "") && note) ||
+      (type === "tags" && note) ||
       (type === "favorite" && authenticationSession.mode !== "users") ||
       (type === "tags" && !projectWritable(path));
     if (type === "favorite")
@@ -203,6 +202,7 @@ export function openFileContextMenu(
   const x = (!add && !trigger && event.clientX) || anchor.left;
   const y = (!add && !trigger && event.clientY) || anchor.bottom;
   element("file-context-menu").hidden = false;
+  element("file-context-menu").inert = false;
   element("file-context-menu").style.left = `${x}px`;
   element("file-context-menu").style.top = `${y}px`;
   element("file-context-menu")
@@ -459,14 +459,16 @@ export async function copyText(conflict = false): Promise<void> {
       setView("editor");
       appState.editor.focus();
       appState.editor.select();
-      setText(element("copy-text"), "Press Ctrl+C");
-      setText(element("copy-status"), "Clipboard unavailable, press Ctrl+C");
-      documentNotice("Clipboard unavailable, press Ctrl+C");
+      setText(element("copy-text"), `Press ${primaryShortcut("C")}`);
+      setText(element("copy-status"), `Clipboard unavailable, press ${primaryShortcut("C")}`);
+      documentNotice(`Clipboard unavailable, press ${primaryShortcut("C")}`);
     }
   }
   appState.copyTimer = window.setTimeout(() => {
     setText(element("copy-text"), "Copy Markdown");
     setText(element("conflict-copy"), "Copy my edits");
+    setText(element("copy-status"), "");
   }, 3000);
 }
 import { copyPlainText } from "../../../shared/clipboard";
+import { primaryShortcut } from "../../../shared/keyboard";

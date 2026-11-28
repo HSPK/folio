@@ -1,6 +1,7 @@
 import { element } from "../../types/elements";
 import { createButton } from "@folio/editor-runtime";
 import { notice } from "./notice";
+import { applicationLifetime } from "../lifecycle";
 export { notice, setText } from "./notice";
 export { ApiError, isAbortError as aborted } from "../../api/error";
 
@@ -16,9 +17,27 @@ export function createListRow(title: string, detail: string, onOpen?: () => void
   return row;
 }
 
+let clearFeedback: (() => void) | undefined;
 export function documentNotice(text: string, kind: string = ""): void {
-  notice(element("document-message"), text, kind);
-  element("document-message").title = text;
+  clearFeedback?.();
+  const node = element("document-message");
+  notice(node, text, kind);
+  node.title = text;
+  if (!text || kind !== "success") return;
+  let release = () => {};
+  const reset = () => {
+    clearTimeout(timer);
+    release();
+    if (clearFeedback !== reset) return;
+    clearFeedback = undefined;
+    if (node.textContent === text && node.classList.contains("is-success")) {
+      notice(node, "");
+      node.title = "";
+    }
+  };
+  const timer = window.setTimeout(reset, 1600);
+  clearFeedback = reset;
+  release = applicationLifetime().defer(reset);
 }
 
 export function previewStatus(text: string, error = false): void {

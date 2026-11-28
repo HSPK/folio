@@ -77,7 +77,7 @@ test(
       for (let iteration = 0; iteration < 4; iteration++) {
         await page.evaluate(() => window.applicationLifecycle.mount());
         await page.waitForSelector("#search-dialog", { state: "attached" });
-        assert.deepEqual(await count(), { toolbars: 3, dialogs: 2, menus: 2, notices: 1 });
+        assert.deepEqual(await count(), { toolbars: 4, dialogs: 2, menus: 2, notices: 1 });
         assert.deepEqual(await page.evaluate(() => window.applicationLifecycle.elementContract()), {
           reused: true,
           replaced: true,
@@ -121,10 +121,10 @@ test(
       assert.equal(await page.evaluate(() => window.applicationLifecycle.observers()), 0);
       await page.evaluate(() => window.applicationLifecycle.mount());
       await page.waitForSelector("#search-dialog", { state: "attached" });
-      assert.deepEqual(await count(), { toolbars: 3, dialogs: 2, menus: 2, notices: 1 });
+      assert.deepEqual(await count(), { toolbars: 4, dialogs: 2, menus: 2, notices: 1 });
       await page.evaluate(() => window.applicationLifecycle.unmount());
       const editors = await page.evaluate(() => window.applicationLifecycle.editors());
-      assert.deepEqual(editors.afterClear, { toolbars: 3, dialogs: 2, menus: 2, notices: 0 });
+      assert.deepEqual(editors.afterClear, { toolbars: 4, dialogs: 2, menus: 2, notices: 0 });
       assert.equal(editors.freshSource, "# Fresh\n");
       assert.equal(editors.editable, "true");
       assert.equal(editors.failure, "Injected observer failure");

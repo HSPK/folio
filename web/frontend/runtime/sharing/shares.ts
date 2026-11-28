@@ -12,7 +12,8 @@ import { closeMenus } from "../accounts/authentication";
 import { api } from "../core/api";
 import { createListRow, documentNotice, notice } from "../core/dom";
 import { confirmAction, showDialog } from "../dialogs/dialogs";
-import { applicationSignal, listen, onApplicationDispose } from "../lifecycle";
+import { applicationLifetime, applicationSignal, listen, onApplicationDispose } from "../lifecycle";
+import { buttonFeedback } from "../../../shared/feedback";
 import { openSharing } from "../projects/projects";
 import { publicShareUrl } from "./public";
 let view: AbortController | null = null;
@@ -83,7 +84,7 @@ async function openShareCenter(): Promise<void> {
           if (!current()) return;
           try {
             await copyPlainText(publicShareUrl(link.token));
-            if (current()) documentNotice("");
+            if (current()) buttonFeedback(copy, "Copied", applicationLifetime());
           } catch (errorCause) {
             if (!current()) return;
             const error = errorContext(errorCause);
@@ -94,7 +95,13 @@ async function openShareCenter(): Promise<void> {
         const revoke = createButton({ label: "Revoke" });
         revoke.addEventListener("click", async () => {
           if (!current()) return;
-          if (!(await confirmAction(`Revoke the public link for ${link.path}?`, { label: "Revoke link", signal })))
+          if (
+            !(await confirmAction(`Revoke the public link for ${link.path}?`, {
+              label: "Revoke link",
+              signal,
+              tone: "destructive",
+            }))
+          )
             return;
           revoke.disabled = true;
           try {

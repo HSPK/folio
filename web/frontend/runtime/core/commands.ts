@@ -25,6 +25,7 @@ import { openWorkspace } from "../workspace/workspace";
 import { appState, dirty } from "./bootstrap";
 import { documentNotice } from "./dom";
 import { setPageWidth } from "./layout";
+import { primaryShortcut } from "../../../shared/keyboard";
 const [commandIndex, setCommandIndex] = createSignal(0);
 const [visibleCommands, setVisibleCommands] = createSignal<readonly Command[]>([], {
   equals: (previous, next) =>
@@ -36,7 +37,6 @@ export function initializeCoreCommands(): void {
   const noteVisible = () => Boolean(!activePanelPath() && documentSession.current);
   setCommandIndex(0);
   setVisibleCommands([]);
-  const primaryKey = navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl";
   commandItems = [
     {
       name: "New note",
@@ -45,7 +45,7 @@ export function initializeCoreCommands(): void {
     },
     {
       name: "Save note",
-      key: `${primaryKey}+S`,
+      key: primaryShortcut("S"),
       action: () => void saveDocument(),
       enabled: () => noteVisible() && dirty() && !documentSession.saving && !appState.creating,
     },
@@ -58,7 +58,7 @@ export function initializeCoreCommands(): void {
     { name: "Page width: Wide", action: () => setPageWidth("wide", true) },
     {
       name: "Toggle sidebar",
-      key: `${primaryKey}+Shift+L`,
+      key: primaryShortcut("Shift+L"),
       action: () => setSidebar(document.body.dataset.sidebar !== "open", true),
     },
     { name: "Distraction free", action: toggleFocusMode },
@@ -70,7 +70,7 @@ export function initializeCoreCommands(): void {
     },
     {
       name: "Search notes",
-      key: `${primaryKey}+P`,
+      key: primaryShortcut("P"),
       action: () => void openWorkspaceSearch(),
       enabled: () => authenticationSession.mode === "users" && !publicState.publicView,
     },

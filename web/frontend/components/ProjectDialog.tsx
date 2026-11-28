@@ -39,7 +39,7 @@ export function ProjectDialog() {
             No projects
           </p>
         </section>
-        <form id="project-create-form" data-project-view="create" hidden>
+        <form id="project-create-form" data-project-view="create" aria-describedby="project-error" hidden>
           <div class="project-field">
             <label for="project-name">Name</label>
             <input id="project-name" maxLength="200" required autocomplete="off" />
@@ -142,7 +142,7 @@ export function ProjectDialog() {
             </div>
           </form>
         </section>
-        <p id="project-error" class="notice is-error dialog-status" role="alert" hidden></p>
+        <p id="project-error" class="notice is-error dialog-status" role="alert" data-inline-status hidden></p>
       </dialog>
     </>
   );

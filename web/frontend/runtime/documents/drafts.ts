@@ -19,7 +19,8 @@ import { api } from "../core/api";
 import { appState, dirty, rootChanged } from "../core/bootstrap";
 import { documentNotice, notice } from "../core/dom";
 import { confirmAction, showDialog } from "../dialogs/dialogs";
-import { applicationSignal, listen, onApplicationDispose } from "../lifecycle";
+import { applicationLifetime, applicationSignal, listen, onApplicationDispose } from "../lifecycle";
+import { buttonFeedback } from "../../../shared/feedback";
 
 import { projectWritable } from "../projects/permissions";
 import { publicState } from "../sharing/public";
@@ -124,6 +125,8 @@ export function initializeDocumentsDrafts(): void {
     const record = requireValue(selected, "Recovery copy");
     try {
       await copyPlainText(record.source);
+      if (!owner.aborted && selected === record)
+        buttonFeedback(element("draft-recovery-copy"), "Copied", applicationLifetime());
     } catch (cause) {
       if (!owner.aborted && selected === record)
         notice(element("draft-recovery-error"), errorContext(cause).message, "error");
@@ -135,7 +138,13 @@ export function initializeDocumentsDrafts(): void {
     try {
       const writer = currentDraftOwner();
       const signal = AbortSignal.any([owner, scope.signal]);
-      if (!(await confirmAction("Permanently discard this local recovery copy?", { label: "Discard copy", signal })))
+      if (
+        !(await confirmAction("Permanently discard this local recovery copy?", {
+          label: "Discard copy",
+          signal,
+          tone: "destructive",
+        }))
+      )
         return;
       await writer.remove(record.key, record.generation);
       if (!owner.aborted && authenticationSession.isCurrent(scope) && selected === record) dialog.close();

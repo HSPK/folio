@@ -76,7 +76,8 @@ test("actionable modal errors remain visible when other messages are collapsed",
   const error = page.locator("#settings-error");
   await expect(error).toBeVisible();
   await expect(error).toHaveText("Preferences could not be saved.");
-  await expect(page.locator("#status-notices")).toHaveAttribute("role", "alert");
+  await expect(page.locator("#settings-form #settings-error")).toHaveAttribute("role", "alert");
+  await expect(page.locator("#status-notices")).not.toContainText("Preferences could not be saved.");
   await expect(page.locator(".status-card").filter({ has: error }).getByRole("button", { name: "Dismiss message" })).toHaveCount(0);
   await page.locator("#settings-cancel").click();
   await expect(error).toBeHidden();

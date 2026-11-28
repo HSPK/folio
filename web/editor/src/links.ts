@@ -10,6 +10,9 @@ import { isReadySession } from "./editor-session.ts";
 import { closestElement, createButton, nodeElement } from "./dom.ts";
 import { errorMessage } from "./errors.ts";
 import type { Lifetime } from "../../shared/lifetime.ts";
+import { buttonFeedback, resetButtonFeedback } from "../../shared/feedback.ts";
+import { primaryShortcut } from "../../shared/keyboard.ts";
+import { setToolVisibility } from "./node-toolbar.ts";
 interface LinkRange {
   from: number;
   to: number;
@@ -70,6 +73,11 @@ function linkRangeAt(state: EditorState, position: number): LinkRange | null {
   const to = parts[last].to;
   return { from, to, href: mark.attrs.href, label: state.doc.textBetween(from, to), wiki: false, attrs: mark.attrs };
 }
+export function linkTitle(available: boolean) {
+  return available
+    ? `${primaryShortcut("click")} to open; tap or click for link options`
+    : "Link unavailable. Check its target in Link actions.";
+}
 export function linkMarkView(mark: Mark, path: string, transformUrl: MarkdownUrl): MarkView {
   const dom = document.createElement("a");
   const target = resolveMarkdownUrl(mark.attrs.href, path);
@@ -77,9 +85,7 @@ export function linkMarkView(mark: Mark, path: string, transformUrl: MarkdownUrl
   const href = target ? transformUrl(target, path) : null;
   if (href) dom.setAttribute("href", href);
   dom.rel = "noopener noreferrer";
-  dom.title = href
-    ? "Ctrl/Cmd+click to open; use Link actions to edit"
-    : "Link unavailable. Check its target in Link actions.";
+  dom.title = linkTitle(Boolean(href));
   return {
     dom,
     contentDOM: dom,
@@ -102,8 +108,8 @@ export function createLinkTools({
   onBeforeEdit_fn,
 }: LinkToolsOptions) {
   const preview = document.createElement("div");
-  preview.className = "folio-link-actions";
-  preview.hidden = true;
+  preview.className = "folio-link-actions folio-node-toolbar";
+  setToolVisibility(preview, false);
   preview.setAttribute("role", "toolbar");
   preview.setAttribute("aria-label", "Link actions");
   const previewMessage = document.createElement("p");
@@ -115,7 +121,7 @@ export function createLinkTools({
   let pinnedError = false;
   function hideActions() {
     window.clearTimeout(previewTimer);
-    preview.hidden = true;
+    setToolVisibility(preview, false);
     previewAnchor = null;
     pinnedError = false;
   }
@@ -166,14 +172,17 @@ export function createLinkTools({
   const previewEdit = action("Edit link", "Edit", (_info, anchor) => edit(anchor));
   const previewCopy = action("Copy link", "Copy", async (info, anchor) => {
     await copyPlainText(info.url || info.link.href);
-    if (previewAnchor === anchor && !preview.hidden) previewCopy.textContent = "Copied";
+    if (previewAnchor === anchor && preview.dataset.open === "true") {
+      buttonFeedback(previewCopy, "Copied", lifetime);
+      positionActions();
+    }
   });
   preview.append(previewMessage);
   document.body.append(preview);
   lifetime.defer(() => preview.remove());
   lifetime.defer(hideActions);
   function positionActions() {
-    if (preview.hidden) return;
+    if (preview.dataset.open !== "true") return;
     if (!previewAnchor?.isConnected) {
       hideActions();
       return;
@@ -210,13 +219,14 @@ export function createLinkTools({
     if (previewAnchor !== anchor) {
       pinnedError = false;
       previewMessage.hidden = true;
+      resetButtonFeedback(previewCopy);
       previewCopy.textContent = "Copy";
     }
     previewAnchor = anchor;
     previewOpen.disabled = !info.url;
     previewEdit.textContent = editable_fn() ? "Edit" : "Details";
     previewEdit.setAttribute("aria-label", editable_fn() ? "Edit link" : "Link details");
-    preview.hidden = false;
+    setToolVisibility(preview, true);
     positionActions();
     return true;
   }
@@ -342,7 +352,7 @@ export function createLinkTools({
   const copy = button("Copy link", async () => {
     const current = requireTarget();
     await copyPlainText(current.url || current.link.href);
-    if (target === current && dialog.open) copy.textContent = "Copied";
+    if (target === current && dialog.open) buttonFeedback(copy, "Copied", lifetime);
   });
   const create = button("Create note", async () => {
     const { path } = requireTarget();
@@ -378,6 +388,7 @@ export function createLinkTools({
   };
   lifetime.listen(form, "input", () => {
     error.hidden = true;
+    resetButtonFeedback(copy);
     copy.textContent = "Copy link";
     refresh();
   });
@@ -424,6 +435,7 @@ export function createLinkTools({
     const { link } = info;
     fields.label.value = link.label;
     fields.href.value = link.href;
+    resetButtonFeedback(copy);
     copy.textContent = "Copy link";
     refresh();
     error.hidden = true;
@@ -434,7 +446,7 @@ export function createLinkTools({
   return {
     refresh() {
       refresh();
-      if (previewAnchor && !preview.hidden) showActions(previewAnchor);
+      if (previewAnchor && preview.dataset.open === "true") showActions(previewAnchor);
     },
     close() {
       hideActions();

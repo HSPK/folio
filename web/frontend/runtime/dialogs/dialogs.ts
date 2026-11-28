@@ -121,12 +121,14 @@ export function confirmAction(
     alternativeLabel = null,
     dialog = document.querySelector<HTMLDialogElement>("dialog[open]"),
     signal,
+    tone = "normal",
   }: {
     label?: string | null;
     cancelLabel?: string | null;
     alternativeLabel?: string | null;
     dialog?: HTMLDialogElement | null;
     signal?: AbortSignal;
+    tone?: "normal" | "destructive";
   } = {},
 ) {
   if (signal?.aborted) return Promise.resolve(false);
@@ -172,7 +174,9 @@ export function confirmAction(
     else container.prepend(region);
   }
   requiredQuery(region, "[data-confirmation-message]", HTMLElement).textContent = message;
-  requiredQuery(region, "[data-confirmation-proceed]", HTMLElement).textContent = label;
+  const proceed = requiredQuery(region, "[data-confirmation-proceed]", HTMLElement);
+  proceed.textContent = label;
+  proceed.className = tone === "destructive" ? "button-danger" : "button-primary";
   requiredQuery(region, "[data-confirmation-cancel]", HTMLElement).textContent = cancelLabel;
   let alternative = region.querySelector<HTMLButtonElement>("[data-confirmation-alternative]");
   if (alternativeLabel && !alternative) {
@@ -189,11 +193,14 @@ export function confirmAction(
   return new Promise<ConfirmationChoice>((resolve) => {
     const parent = region.parentElement;
     if (!parent) throw new Error("The confirmation surface is no longer attached.");
-    const inert = htmlChildren(parent)
-      .filter(
-        (node): node is HTMLElement => node instanceof HTMLElement && node !== region && node.tagName !== "HEADER",
-      )
-      .map((node): [HTMLElement, boolean] => [node, node.inert]);
+    const inert: [HTMLElement, boolean][] = [];
+    let active: Element = region;
+    for (let ancestor: HTMLElement | null = parent; ancestor; ancestor = ancestor.parentElement) {
+      for (const node of htmlChildren(ancestor))
+        if (node instanceof HTMLElement && node !== active && node.tagName !== "HEADER") inert.push([node, node.inert]);
+      if (ancestor === dialog) break;
+      active = ancestor;
+    }
     const abort = () => settleDialogConfirmation(dialog, false, { restoreFocus: false });
     const cleanup = () => signal?.removeEventListener("abort", abort);
     dialogConfirmations.set(dialog, { region, inert, resolve, cleanup, focus: document.activeElement });

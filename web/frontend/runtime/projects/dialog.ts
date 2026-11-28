@@ -68,8 +68,8 @@ export function initializeProjectsDialog(ports: ProjectDialogActions): void {
   );
   listen(projectDialogState.projectDialog, "confirmationchange", refreshProjectBusy);
   listen(element("project-kind"), "change", syncProjectSource);
-  listen(element("projects-close"), "click", () => {
-    if (!projectState.projectCreating && !projectDialogState.sharingSaving) closeProjectManager();
+  listen(element("projects-close"), "click", async () => {
+    if (await allowProjectNavigation()) closeProjectManager();
   });
   listen(projectDialogState.projectDialog, "cancel", (event) => {
     if (projectState.projectCreating || projectDialogState.sharingSaving || projectDialogState.projectView !== "browse")
@@ -231,12 +231,12 @@ export function focusProjectList(): void {
   ).focus({ preventScroll: true });
 }
 
-export function confirmProjectAction(message: string, label = "Continue", signal?: AbortSignal) {
+export function confirmProjectAction(message: string, options: Parameters<typeof confirmAction>[1] = {}) {
   if (!projectManagerOpen()) {
     showProjectBrowse();
     openProjectManager();
   }
-  return confirmAction(message, { label, dialog: projectDialogState.projectDialog, signal });
+  return confirmAction(message, { ...options, dialog: projectDialogState.projectDialog });
 }
 
 export async function allowProjectNavigation(signal?: AbortSignal) {
@@ -245,7 +245,11 @@ export async function allowProjectNavigation(signal?: AbortSignal) {
   return (
     projectDialogState.projectFormSnapshot === null ||
     projectDialogState.projectFormSnapshot === projectFormState() ||
-    (await confirmProjectAction("Discard the unsaved changes in this form?", "Discard changes", signal))
+    (await confirmProjectAction("Discard the unsaved changes in this form?", {
+      label: "Discard changes",
+      tone: "destructive",
+      signal,
+    }))
   );
 }
 

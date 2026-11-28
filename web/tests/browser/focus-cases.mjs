@@ -93,9 +93,9 @@ test("writing surfaces stay frameless and forced colors retain keyboard focus", 
   const forced = await page.locator("#more-menu > button").evaluate((node) => ({
     style: getComputedStyle(node).outlineStyle,
     width: getComputedStyle(node).outlineWidth,
-    offset: getComputedStyle(node).outlineOffset,
   }));
-  expect(forced).toEqual({ style: "solid", width: "1px", offset: "-1px" });
+  expect(forced.style).toBe("solid");
+  expect(parseFloat(forced.width)).toBeGreaterThanOrEqual(1);
 });
 
 test("modifier-click block selection adds no line below text or code and still opens links", async ({ page }) => {

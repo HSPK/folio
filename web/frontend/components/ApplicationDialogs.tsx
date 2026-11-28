@@ -87,8 +87,14 @@ export function ApplicationDialogs() {
         <form id="account-password-form">
           <h2 id="account-password-title">Reset password</h2>
           <label for="account-password">New password</label>
-          <input id="account-password" type="password" autocomplete="new-password" required />
-          <p id="account-password-error" class="notice is-error" role="alert" hidden></p>
+          <input
+            id="account-password"
+            type="password"
+            autocomplete="new-password"
+            aria-describedby="account-password-error"
+            required
+          />
+          <p id="account-password-error" class="notice is-error" role="alert" data-inline-status hidden></p>
           <div class="dialog-actions">
             <button id="account-password-cancel" type="button">
               Cancel

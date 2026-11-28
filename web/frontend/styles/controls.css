@@ -14,9 +14,9 @@
   --icon-button-size: 28px;
   --dialog-control-height: 32px;
   --menu-shadow: var(--float-shadow);
-  --motion-hover-duration: 160ms;
-  --motion-panel-duration: 180ms;
-  --motion-layout-duration: 240ms;
+  --motion-hover-duration: 120ms;
+  --motion-panel-duration: 160ms;
+  --motion-layout-duration: 200ms;
   --motion-easing: cubic-bezier(.22, 1, .36, 1);
   --table-header-background: color-mix(in srgb, var(--text) 6%, var(--surface));
 }
@@ -36,12 +36,16 @@ button, summary, a { -webkit-tap-highlight-color: transparent; }
   text-decoration: none;
   cursor: pointer;
   /* Text color switches at once so a theme change never leaves labels mid-fade over a new surface. */
-  transition: background-color var(--motion-hover-duration) ease-out, opacity var(--motion-hover-duration) ease-out;
+  transition: background-color var(--motion-hover-duration) var(--motion-easing), opacity var(--motion-hover-duration) var(--motion-easing);
 }
 input, select, textarea {
-  transition: border-color var(--motion-hover-duration) ease-out, box-shadow var(--motion-hover-duration) ease-out;
+  transition: border-color var(--motion-hover-duration) var(--motion-easing), box-shadow var(--motion-hover-duration) var(--motion-easing);
 }
 button { padding: 6px 10px; border: 0; }
+.button-danger {
+  --control-color: var(--error); --control-background: color-mix(in srgb, var(--error) 10%, transparent);
+  --control-hover-background: color-mix(in srgb, var(--error) 17%, transparent);
+}
 :is(input, textarea):hover:not(:disabled, :focus-visible) { border-color: var(--field-hover-border); }
 :is(input, select, textarea):disabled { opacity: .55; }
 select {
@@ -119,6 +123,11 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { border-color: var(--fo
   background: var(--control-hover-background);
   color: var(--control-color, inherit);
 }
+:is(button, summary, .popup-panel a):active:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 13%, transparent);
+  transition-duration: 0s;
+}
+#sidebar-scrim:is(:hover, :active) { background: transparent; }
 :is(button, .popup-panel a):is([aria-pressed="true"], [aria-selected="true"], [aria-current="page"], [aria-current="location"], [aria-current="true"]),
 .popup:has(> .popup-panel:popover-open) > button {
   background: var(--control-selected-background);

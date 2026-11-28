@@ -2,7 +2,8 @@ import { createButton } from "@folio/editor-runtime";
 import { projectModel } from "../../state/projects";
 import { documentSession } from "../../state/document";
 import { decodedAttachments, decodedBacklinks } from "../../api/contracts";
-import { formatByteCount } from "@folio/model";
+import { formatByteCount, noteDisplayTitle } from "@folio/model";
+import { libraryCatalog } from "../../state/library";
 import type { Backlink } from "../../types/domain";
 import { element, datasetValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
@@ -22,10 +23,12 @@ let attachmentEntries: {
   referenced: boolean;
 }[];
 let attachmentScanTruncated: boolean;
+let backlinksGeneration = 0;
 
 export function initializeDocumentsRelated(): void {
   attachmentEntries = [];
   attachmentScanTruncated = false;
+  backlinksGeneration = 0;
   listen(element("attachments-open"), "click", () => {
     closeMenus();
     showDialog(element("attachments-dialog"));
@@ -45,7 +48,13 @@ export function initializeDocumentsRelated(): void {
       notice(element("attachments-message"), "No attachments selected");
       return;
     }
-    if (!(await confirmAction(`Recycle ${files.length} attachments?`, { label: "Recycle files" }))) return;
+    if (
+      !(await confirmAction(`Recycle ${files.length} attachment${files.length === 1 ? "" : "s"}?`, {
+        label: files.length === 1 ? "Recycle file" : "Recycle files",
+        tone: "destructive",
+      }))
+    )
+      return;
     element("attachments-recycle").disabled = true;
     try {
       await api("/api/attachments", { method: "POST", body: { files } });
@@ -58,38 +67,51 @@ export function initializeDocumentsRelated(): void {
       element("attachments-recycle").disabled = attachmentScanTruncated;
     }
   });
-  listen(element("backlinks-open"), "click", async () => {
-    if (!documentSession.current || publicState.publicView) return;
-    closeMenus();
-    const id = documentSession.id;
-    const project = projectModel.active?.id;
-    element("backlinks-list").replaceChildren();
-    showDialog(element("backlinks-dialog"));
-    notice(element("backlinks-message"), "Finding links…");
-    try {
-      const references = await api(`/api/backlinks?document=${encodeURIComponent(documentSession.current.id)}`, {
-        decode: decodedBacklinks,
-      });
-      if (id !== documentSession.id || project !== projectModel.active?.id) return;
-      element("backlinks-list").replaceChildren(
-        ...references.map((reference: Backlink) => {
-          const button = createButton({ label: reference.title ?? reference.path });
-
-          button.title = reference.path;
-          button.addEventListener("click", () => {
-            element("backlinks-dialog").close();
-            void navigateTo(reference.id);
-          });
-          return button;
-        }),
-      );
-      notice(element("backlinks-message"), references.length ? "" : "No backlinks");
-    } catch (errorCause) {
-      const error = errorContext(errorCause);
-      notice(element("backlinks-message"), error.message, "error");
-    }
-  });
+  listen(element("backlinks-open"), "click", () => void openBacklinks());
   listen(element("backlinks-close"), "click", () => element("backlinks-dialog").close());
+  listen(element("backlinks-dialog"), "close", () => {
+    if (!element("backlinks-dialog").open) backlinksGeneration++;
+  });
+}
+export async function openBacklinks(document = documentSession.current?.id): Promise<void> {
+  if (!document || publicState.publicView) return;
+  closeMenus();
+  const generation = ++backlinksGeneration;
+  const id = documentSession.id;
+  const project = projectModel.active?.id;
+  const current = () =>
+    generation === backlinksGeneration &&
+    id === documentSession.id &&
+    project === projectModel.active?.id &&
+    element("backlinks-dialog").open;
+  const file = libraryCatalog.files.find((file) => file.id === document);
+  element("backlinks-title").textContent =
+    document === documentSession.current?.id || !file ? "Links to this note" : `Links to ${noteDisplayTitle(file)}`;
+  element("backlinks-list").replaceChildren();
+  showDialog(element("backlinks-dialog"));
+  notice(element("backlinks-message"), "Finding links…");
+  try {
+    const references = await api(`/api/backlinks?document=${encodeURIComponent(document)}`, {
+      decode: decodedBacklinks,
+    });
+    if (!current()) return;
+    element("backlinks-list").replaceChildren(
+      ...references.map((reference: Backlink) => {
+        const button = createButton({ label: reference.title ?? reference.path });
+
+        button.title = reference.path;
+        button.addEventListener("click", () => {
+          element("backlinks-dialog").close();
+          void navigateTo(reference.id);
+        });
+        return button;
+      }),
+    );
+    notice(element("backlinks-message"), references.length ? "" : "No backlinks");
+  } catch (errorCause) {
+    const error = errorContext(errorCause);
+    if (current()) notice(element("backlinks-message"), error.message, "error");
+  }
 }
 async function loadAttachments(): Promise<void> {
   notice(element("attachments-message"), "Checking references…");

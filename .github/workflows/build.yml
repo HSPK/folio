@@ -29,10 +29,15 @@ jobs:
       - name: Select Rust stable
         run: rustup toolchain install stable --profile minimal
       - run: rustup default stable
-      - name: Restore and build shared web assets
+      - name: Restore shared web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Install test browser
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Build and test shared web assets
         working-directory: web
         run: |
-          npm ci
           npm run build
           npm run check:lines
           npm test
@@ -40,10 +45,6 @@ jobs:
         run: cargo test --locked --workspace
       - name: Build headless core
         run: cargo build --locked -p folio-cli
-      - name: Install test browser
-        if: runner.os != 'Windows'
-        working-directory: web
-        run: npx playwright install --with-deps chromium
       - name: Test browser editor against core CLI
         working-directory: web
         run: npx playwright test

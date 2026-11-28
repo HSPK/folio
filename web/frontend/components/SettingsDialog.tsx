@@ -1,11 +1,12 @@
 import { IconButton } from "./primitives";
+import { primaryShortcut } from "../../shared/keyboard";
 
 /** Group writing, project, accessibility, and administrative preferences. */
 export function SettingsDialog() {
   return (
     <>
       <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
-        <form id="settings-form">
+        <form id="settings-form" aria-describedby="settings-error">
           <header class="settings-header">
             <div>
               <h2 id="settings-title">Settings</h2>
@@ -86,7 +87,7 @@ export function SettingsDialog() {
               </p>
               <section class="settings-panel" data-settings-panel="users" hidden>
                 <h3>Accounts &amp; invitations</h3>
-                <p id="accounts-error" class="notice is-error" role="alert" hidden></p>
+                <p id="accounts-error" class="notice is-error" role="alert" data-inline-status hidden></p>
                 <div class="setting-card">
                   <label for="invite-lifetime">Invitation expires in</label>
                   <select id="invite-lifetime">
@@ -235,7 +236,22 @@ export function SettingsDialog() {
                 </div>
                 <div class="setting-card">
                   <label for="settings-image-quality">JPEG quality</label>
-                  <input id="settings-image-quality" type="range" min="50" max="100" step="5" />
+                  <div class="setting-range">
+                    <input
+                      id="settings-image-quality"
+                      type="range"
+                      min="50"
+                      max="100"
+                      step="5"
+                      onInput={(event) => {
+                        const output = document.getElementById("settings-image-quality-value");
+                        if (output instanceof HTMLOutputElement) output.value = `${event.currentTarget.value}%`;
+                      }}
+                    />
+                    <output id="settings-image-quality-value" for="settings-image-quality">
+                      85%
+                    </output>
+                  </div>
                 </div>
               </section>
               <section class="settings-panel" data-settings-panel="layout" hidden>
@@ -258,16 +274,17 @@ export function SettingsDialog() {
                   </div>
                 </div>
                 <div class="setting-card">
-                  <label for="settings-default-sidebar">Default navigation</label>
+                  <label for="settings-default-sidebar">Document outline on launch</label>
                   <select id="settings-default-sidebar">
-                    <option value="files">Notes</option>
-                    <option value="outline">Document outline</option>
+                    <option value="files">Hidden</option>
+                    <option value="outline">Shown</option>
                   </select>
                 </div>
                 <label class="setting-card setting-toggle" for="settings-sidebar-open">
-                  <span>Open sidebar on launch</span>
+                  <span>Open sidebar by default</span>
                   <input id="settings-sidebar-open" type="checkbox" />
                 </label>
+                <p class="settings-note">Your last sidebar choice is remembered on this device.</p>
               </section>
               <section class="settings-panel" data-settings-panel="performance" hidden>
                 <h3>Advanced performance tuning</h3>
@@ -319,14 +336,14 @@ export function SettingsDialog() {
                 <div class="setting-card">
                   <label for="settings-command-shortcut">Command panel</label>
                   <select id="settings-command-shortcut">
-                    <option value="primary-k">Ctrl/Cmd+K</option>
-                    <option value="primary-shift-p">Ctrl/Cmd+Shift+P</option>
+                    <option value="primary-k">{primaryShortcut("K")}</option>
+                    <option value="primary-shift-p">{primaryShortcut("Shift+P")}</option>
                   </select>
                 </div>
               </section>
             </main>
           </div>
-          <p id="settings-error" class="notice is-error" role="alert" hidden></p>
+          <p id="settings-error" class="notice is-error" role="alert" data-inline-status hidden></p>
           <footer class="settings-actions">
             <button id="settings-cancel" type="button">
               Cancel

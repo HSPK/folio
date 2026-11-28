@@ -299,8 +299,9 @@ test("project manager uses one lightweight dialog without nested frames or page 
     // Closing a subview must not briefly paint the reset browse view over the document.
     await page.locator("#projects-open").click();
     await page.locator("#project-new").click();
-    expect(await page.locator("#projects-close").evaluate(button => {
+    expect(await page.locator("#projects-close").evaluate(async button => {
       button.click();
+      await new Promise(resolve => requestAnimationFrame(resolve));
       return button.closest("dialog").getClientRects().length;
     })).toBe(0);
     await page.locator("#projects-open").click();
@@ -589,39 +590,4 @@ test("clipboard images use the configured project directory in Live and Source, 
     await expect(bob.locator("#dirty-indicator")).toHaveText("Read only");
     await alice.screenshot({ path: path.join(buildRoot, "projects-image-sharing.png") });
   } finally { await library.close(); }
-});
-
-test("loading and warnings float at bottom right without shifting editor or sidebar", async ({ page, browserName }) => {
-  let release;
-  const pending = new Promise((resolve) => { release = resolve; });
-  await page.route("**/api/document?id=*", async (route) => {
-    await pending;
-    await route.continue();
-  });
-  const before = await page.locator("#document-panes").boundingBox();
-  const sidebar = await page.locator("#file-nav").boundingBox();
-  try {
-    await page.locator('[data-path="Second.md"]').click();
-    await expect(page.locator("#loading-message")).toHaveText("Opening “Second”…");
-    expect(await page.locator("#loading-message").evaluate(node => Boolean(node.closest(".status-notices")))).toBe(true);
-    expect(await page.locator("#loading-message").evaluate(node => Boolean(node.closest(".status-bar")))).toBe(false);
-    expect(await page.locator("#document-panes").boundingBox()).toEqual(before);
-    expect(await page.locator("#file-nav").boundingBox()).toEqual(sidebar);
-    await expect(page.locator(".document-alerts")).toHaveCount(0);
-    await expect(page.locator("#status-notices")).toBeVisible();
-    const bounds = await page.locator("#status-notices").boundingBox();
-    const viewport = page.viewportSize();
-    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width - 8);
-    expect(bounds.x).toBeGreaterThan(viewport.width / 2);
-    expect(viewport.height - bounds.y - bounds.height).toBeCloseTo(18, 0);
-    if (browserName !== "webkit") await page.screenshot({ path: test.info().outputPath("floating-loading.png"), caret: "initial" });
-  } finally { release(); }
-  await expect(page.locator("#document-title")).toHaveText("Second");
-  await page.route("**/api/tree", (route) => route.fulfill({
-    status: 422, contentType: "application/json", body: JSON.stringify({ error: "Invalid file list for status layout test" }),
-  }));
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(page.locator("#tree-message")).toContainText("Invalid file list for status layout test");
-  expect(await page.locator("#tree-message").evaluate(node => Boolean(node.closest(".status-notices")))).toBe(true);
-  expect(await page.locator("#tree-message").evaluate(node => Boolean(node.closest(".status-bar")))).toBe(false);
 });

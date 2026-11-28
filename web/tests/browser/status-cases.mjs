@@ -51,7 +51,7 @@ test("footer hints stay in the floating list and an empty workspace remains quie
   } finally { release(); }
 });
 
-test("a dialog error remains above the modal when a background status was already floating", async ({ page }) => {
+test("a dialog error stays with its form when a background status was already floating", async ({ page }) => {
   await page.route("**/api/tree", route => route.fulfill({ status: 422, json: { error: "Background status remains visible." } }));
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.locator("#tree-message")).toContainText("Background status");
@@ -61,11 +61,12 @@ test("a dialog error remains above the modal when a background status was alread
   await openSettingsDialog(page);
   await page.locator("#settings-save").click();
   const stack = page.locator("#status-notices");
-  await expect(stack).toContainText("Settings could not be saved");
-  await expect(stack).toHaveAttribute("role", "alert");
-  const message = stack.getByText("Settings could not be saved for this status test.", { exact: true });
+  await expect(stack).not.toContainText("Settings could not be saved");
+  const message = page.locator("#settings-form #settings-error");
+  await expect(message).toHaveAttribute("role", "alert");
+  await expect(message).toHaveText("Settings could not be saved for this status test.");
   const bounds = await message.boundingBox();
-  expect(await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest("#status-notices")), {
+  expect(await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest("#settings-form")), {
     x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2,
   })).toBe(true);
   await page.locator("#settings-cancel").click();
@@ -112,4 +113,39 @@ test("an outage shows one passive status and reconnects automatically", async ({
   await page.unroute("**/api/appearance");
   await expect(page.locator("#connection-label")).toHaveAttribute("data-state", "ready");
   await expect(page.locator("#connection-label")).toBeHidden();
+});
+
+test("loading and warnings float at bottom right without shifting editor or sidebar", async ({ page, browserName }) => {
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  await page.route("**/api/document?id=*", async (route) => {
+    await pending;
+    await route.continue();
+  });
+  const before = await page.locator("#document-panes").boundingBox();
+  const sidebar = await page.locator("#file-nav").boundingBox();
+  try {
+    await page.locator('[data-path="Second.md"]').click();
+    await expect(page.locator("#loading-message")).toHaveText("Opening “Second”…");
+    expect(await page.locator("#loading-message").evaluate(node => Boolean(node.closest(".status-notices")))).toBe(true);
+    expect(await page.locator("#loading-message").evaluate(node => Boolean(node.closest(".status-bar")))).toBe(false);
+    expect(await page.locator("#document-panes").boundingBox()).toEqual(before);
+    expect(await page.locator("#file-nav").boundingBox()).toEqual(sidebar);
+    await expect(page.locator(".document-alerts")).toHaveCount(0);
+    await expect(page.locator("#status-notices")).toBeVisible();
+    const bounds = await page.locator("#status-notices").boundingBox();
+    const viewport = page.viewportSize();
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width - 8);
+    expect(bounds.x).toBeGreaterThan(viewport.width / 2);
+    expect(viewport.height - bounds.y - bounds.height).toBeCloseTo(18, 0);
+    if (browserName !== "webkit") await page.screenshot({ path: test.info().outputPath("floating-loading.png"), caret: "initial" });
+  } finally { release(); }
+  await expect(page.locator("#document-title")).toHaveText("Second");
+  await page.route("**/api/tree", (route) => route.fulfill({
+    status: 422, contentType: "application/json", body: JSON.stringify({ error: "Invalid file list for status layout test" }),
+  }));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.locator("#tree-message")).toContainText("Invalid file list for status layout test");
+  expect(await page.locator("#tree-message").evaluate(node => Boolean(node.closest(".status-notices")))).toBe(true);
+  expect(await page.locator("#tree-message").evaluate(node => Boolean(node.closest(".status-bar")))).toBe(false);
 });

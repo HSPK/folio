@@ -1,4 +1,4 @@
-import { decodedObject, decodedString } from "../../api/contracts";
+import { decodedDocument, decodedObject, decodedString } from "../../api/contracts";
 import { authenticationSession } from "../../state/authentication";
 import { activePanelPath } from "../../state/library";
 import { projectModel } from "../../state/projects";
@@ -22,6 +22,21 @@ import { openSharing } from "../projects/projects";
 import { publicShareUrl, publicState } from "../sharing/public";
 import { changeWorkspace } from "../workspace/workspace";
 import { workspaceModel } from "../../state/workspace";
+import { openDocumentTags } from "../workspace/controls";
+import { openHistory } from "../documents/history";
+import { openBacklinks } from "../documents/related";
+
+async function noteSource(path: string) {
+  const id = currentResourceId(path);
+  return documentSession.current?.id === id
+    ? appState.editor.value
+    : (
+        await api(`/api/document?id=${encodeURIComponent(id)}&render=source`, {
+          decode: decodedDocument,
+          signal: authenticationSession.scope.signal,
+        })
+      ).content;
+}
 
 export async function duplicatePanelFile(path: string) {
   const scope = projectModel.selection;
@@ -59,9 +74,7 @@ async function downloadFile(path: string) {
   let blob: Blob;
   const scope = projectModel.selection;
   if (/\.(md|markdown)$/i.test(path)) {
-    await navigateTo(currentResourceId(path));
-    if (scope !== projectModel.selection || documentSession.current?.path !== path) return;
-    blob = new Blob([appState.editor.value], { type: "text/markdown" });
+    blob = new Blob([await noteSource(path)], { type: "text/markdown" });
   } else {
     const data = await api(`/api/panel-file?${new URLSearchParams({ path, download: "true" })}`, {
       responseType: "blob",
@@ -96,12 +109,17 @@ export function initializeFileActions() {
     closeFileContextMenu(false);
     try {
       if (button.dataset.noteAction) {
-        await navigateTo(currentResourceId(path));
-        if (scope !== projectModel.selection || documentSession.current?.path !== path || activePanelPath()) return;
-        const action = requiredQuery(document, `#${CSS.escape(button.dataset.noteAction)}`, HTMLButtonElement);
-        if (!action.hidden && !action.disabled) action.click();
-      } else if (button.dataset.fileAction === "copy-path") await copyPlainText(path);
-      else if (button.dataset.fileAction === "share") {
+        const id = currentResourceId(path);
+        if (button.dataset.noteAction === "copy-text") {
+          await copyPlainText(await noteSource(path));
+          if (scope === projectModel.selection) documentNotice("Markdown copied", "success");
+        } else if (button.dataset.noteAction === "document-tags-open") await openDocumentTags(id);
+        else if (button.dataset.noteAction === "backlinks-open") await openBacklinks(id);
+        else if (button.dataset.noteAction === "history-open") await openHistory(id);
+      } else if (button.dataset.fileAction === "copy-path") {
+        await copyPlainText(path);
+        if (scope === projectModel.selection) documentNotice("Path copied", "success");
+      } else if (button.dataset.fileAction === "share") {
         const project = projectModel.active,
           id = await entryResourceId(path);
         if (project && scope === projectModel.selection) await openSharing(project, path, id);
@@ -117,16 +135,21 @@ export function initializeFileActions() {
           url.searchParams.set(/\.(md|markdown)$/i.test(path) ? "document" : "asset", id);
           await copyPlainText(link ? publicShareUrl(link.token) : url.href);
         }
+        if (scope === projectModel.selection) documentNotice("Link copied", "success");
       } else if (button.dataset.fileAction === "favorite") {
         const project = projectModel.active,
           id = await entryResourceId(path);
-        if (project && scope === projectModel.selection)
+        if (project && scope === projectModel.selection) {
+          const value = !workspaceModel.lists.favorites.some((file) => file.project === project.id && file.id === id);
           await changeWorkspace({
             action: "favorite",
             project: project.id,
             id,
-            value: !workspaceModel.lists.favorites.some((file) => file.project === project.id && file.id === id),
+            value,
           });
+          if (scope === projectModel.selection)
+            documentNotice(value ? "Added to favorites" : "Removed from favorites", "success");
+        }
       } else if (button.dataset.fileAction === "tags") {
         appState.contextFile = entry;
         await showFileDetails();

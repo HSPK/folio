@@ -10,7 +10,7 @@ import {
   readNoteRoute,
 } from "@folio/model";
 import { updateShell } from "../../state/shell";
-import { element, clearTimer } from "../../types/elements";
+import { element, clearTimer, requiredQuery } from "../../types/elements";
 import { errorContext, type RuntimeError } from "../../types/errors";
 import { isDocumentPayload } from "../../types/guards";
 import {
@@ -149,6 +149,7 @@ export function showAuthentication(setup: boolean, message = "", registration = 
   element("auth-use-invitation").hidden = setup || authInvitation;
   element("auth-back-login").hidden = !authInvitation;
   element("auth-confirm-field").hidden = !(setup || authInvitation);
+  requiredQuery(document, "#auth-username-hint", HTMLElement).hidden = !(setup || authInvitation);
   element("auth-confirm").required = setup || authInvitation;
   element("auth-password").autocomplete = setup || authInvitation ? "new-password" : "current-password";
   element("auth-confirm").autocomplete = "new-password";

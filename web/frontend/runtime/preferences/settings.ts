@@ -4,7 +4,7 @@ import { documentSession } from "../../state/document";
 import { libraryCatalog } from "../../state/library";
 import { decodedPreferences as validatedPreferences } from "../../api/preferences";
 import { createPreferenceDefaults, createHiddenPathMatcher, parseHiddenPatterns } from "@folio/model";
-import { beginSettingsView, initializeSettingsSaving, preferencesRevision } from "./saving";
+import { beginSettingsView, initializeSettingsSaving, preferencesRevision, settingsChanged } from "./saving";
 import { applyAppearance } from "@folio/editor-runtime";
 import type { Appearance, Preferences, SettingsSnapshot, WebPreferences } from "../../types/domain";
 import { element, datasetValue, htmlChildren, requiredQuery, requireValue } from "../../types/elements";
@@ -16,12 +16,13 @@ import { appearanceNotice } from "../core/appearance";
 import { appState } from "../core/bootstrap";
 import { notice, setText } from "../core/dom";
 import { readLayoutPreference, setPageWidth, setSidebarWidth } from "../core/layout";
-import { hasDialogConfirmation, showDialog } from "../dialogs/dialogs";
+import { confirmAction, hasDialogConfirmation, showDialog } from "../dialogs/dialogs";
 import { applicationSignal, listen, onApplicationDispose } from "../lifecycle";
 import { setView } from "../navigation/files";
 import { renderFiles, scheduleTreeRefresh } from "../navigation/library";
 
 import { publicState } from "../sharing/public";
+import { primaryShortcut } from "../../../shared/keyboard";
 class SettingsState {
   sharedAppearance!: Appearance;
   webPreferences!: WebPreferences;
@@ -106,8 +107,8 @@ export function initializePreferencesSettings(): void {
     requiredQuery(document, "#more-menu > button", HTMLElement).focus({ preventScroll: true });
     openSettings();
   });
-  listen(element("settings-close"), "click", cancelSettings);
-  listen(element("settings-cancel"), "click", cancelSettings);
+  listen(element("settings-close"), "click", () => void cancelSettings());
+  listen(element("settings-cancel"), "click", () => void cancelSettings(true));
 
   listen(element("settings-dialog"), "cancel", (event) => {
     event.preventDefault();
@@ -277,7 +278,10 @@ function filterSettings(): void {
 function updateCommandShortcut(value: string): void {
   appState.commandShortcut = value === "primary-shift-p" ? value : "primary-k";
   element("command-palette-open").title =
-    `Commands (${appState.commandShortcut === "primary-shift-p" ? "Ctrl/Cmd+Shift+P" : "Ctrl/Cmd+K"})`;
+    `Commands (${primaryShortcut(appState.commandShortcut === "primary-shift-p" ? "Shift+P" : "K")})`;
+  requiredQuery(element("command-palette-open"), "kbd", HTMLElement).textContent = primaryShortcut(
+    appState.commandShortcut === "primary-shift-p" ? "Shift+P" : "K",
+  );
 }
 
 function applySharedPreferences(value: Preferences, initial = false): void {
@@ -347,6 +351,8 @@ function populateSettings(): void {
   element("settings-image-compression").value = settingsState.webPreferences.imageCompression;
   element("settings-image-max-edge").value = String(settingsState.webPreferences.imageMaxEdge);
   element("settings-image-quality").value = String(settingsState.webPreferences.imageQuality);
+  requiredQuery(document, "#settings-image-quality-value", HTMLOutputElement).value =
+    `${settingsState.webPreferences.imageQuality}%`;
   element("settings-image-directory").value =
     projectModel.active?.imageDirectory ?? settingsState.webPreferences.imageDirectory;
   element("settings-image-directory").disabled = authenticationSession.mode === "users" && !projectModel.active?.owned;
@@ -443,7 +449,18 @@ export function openSettings(): void {
   // Opening settings is not a search: focus the dialog itself and leave the field for those who want it.
   element("settings-dialog").focus({ preventScroll: true });
 }
-export function cancelSettings(): void {
+export async function cancelSettings(discard = false): Promise<boolean> {
+  if (
+    !discard &&
+    settingsChanged() &&
+    !(await confirmAction("Discard your unsaved settings?", {
+      label: "Discard changes",
+      tone: "destructive",
+      dialog: element("settings-dialog"),
+      signal: authenticationSession.scope.signal,
+    }))
+  )
+    return false;
   if (settingsState.settingsSnapshot) {
     applySharedPreferences(settingsState.settingsSnapshot.preferences);
     setPageWidth(settingsState.settingsSnapshot.pageWidth);
@@ -452,6 +469,7 @@ export function cancelSettings(): void {
   }
   settingsState.settingsSnapshot = null;
   if (element("settings-dialog").open) element("settings-dialog").close();
+  return true;
 }
 
 function previewAppearanceSettings(): void {

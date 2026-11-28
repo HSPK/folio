@@ -1,4 +1,5 @@
 import { projectViewState as projectState } from "../projects/view-state";
+import { resetButtonFeedback } from "../../../shared/feedback";
 import { projectModel } from "../../state/projects";
 import { libraryModel } from "../../state/library";
 import { authenticationSession } from "../../state/authentication";
@@ -63,7 +64,13 @@ export function initializeSharingPublic(): void {
   listen(element("sharing-form"), "change", refreshSharingCopy);
   listen(element("sharing-level"), "change", renderPublicShareFields);
   listen(element("sharing-reset-link"), "click", async () => {
-    if (!(await confirmProjectAction("Reset this public link? Existing links stop working", "Reset link"))) return;
+    if (
+      !(await confirmProjectAction("Reset this public link? Existing links stop working", {
+        label: "Reset link",
+        tone: "destructive",
+      }))
+    )
+      return;
     await saveSharing(true);
   });
   listen(element("sharing-clear-password"), "change", () => {
@@ -202,6 +209,7 @@ export function renderPublicShareFields(): void {
 }
 export function refreshSharingCopy(): void {
   const copy = element("sharing-copy-link");
+  resetButtonFeedback(copy);
   const publicSelected = Boolean(projectState.sharingTarget?.path && element("sharing-level").value === "publicRead");
   const path = projectState.sharingTarget?.path;
   const link = path ? projectState.sharingTarget?.project.publicLinks?.[path] : undefined;

@@ -1,5 +1,5 @@
 import { createButton } from "@folio/editor-runtime";
-import { element } from "../../types/elements";
+import { element, requiredQuery } from "../../types/elements";
 import { authenticationSession } from "../../state/authentication";
 import { decodedAccountAction, decodedAccounts } from "../../api/contracts";
 import type { AccountsListing, Action } from "../../types/domain";
@@ -8,7 +8,8 @@ import { api } from "../core/api";
 import { ApiError, notice, setText } from "../core/dom";
 import { confirmAction, showDialog } from "../dialogs/dialogs";
 import { confirmDiscard } from "../documents/navigation";
-import { listen } from "../lifecycle";
+import { applicationLifetime, listen } from "../lifecycle";
+import { buttonFeedback, resetButtonFeedback } from "../../../shared/feedback";
 import { showAuthentication } from "./authentication";
 let accountBusy: boolean;
 let passwordTarget: string | null;
@@ -25,7 +26,7 @@ export function initializeAccountsAccounts(): void {
   listen(element("invite-copy"), "click", async () => {
     try {
       await copyPlainText(element("invite-code").value);
-      setText(element("invite-copy"), "Copied");
+      buttonFeedback(element("invite-copy"), "Copied", applicationLifetime());
     } catch {
       element("invite-code").focus();
       element("invite-code").select();
@@ -33,6 +34,7 @@ export function initializeAccountsAccounts(): void {
     }
   });
   listen(element("settings-dialog"), "close", () => {
+    resetButtonFeedback(element("invite-copy"));
     element("invite-code").value = "";
     element("invite-created").hidden = true;
   });
@@ -43,7 +45,7 @@ export function initializeAccountsAccounts(): void {
   });
   listen(element("account-password-form"), "submit", async (event) => {
     event.preventDefault();
-    if (!passwordTarget) return;
+    if (!passwordTarget || accountBusy) return;
     const saved = await accountAction({
       action: "password",
       username: passwordTarget,
@@ -86,9 +88,12 @@ function renderAccounts(value: AccountsListing): void {
     role.value = user.role;
     role.addEventListener("change", async () => {
       if (
-        !(await confirmAction(`Change ${user.username} to ${role.value}? Their sessions will end`, {
-          label: "Change role",
-        }))
+        !(await confirmAction(
+          `Change ${user.username} to ${role.selectedOptions[0].textContent}? Their sessions will end`,
+          {
+            label: "Change role",
+          },
+        ))
       ) {
         role.value = user.role;
         return;
@@ -107,7 +112,12 @@ function renderAccounts(value: AccountsListing): void {
         element("account-password").focus();
       }),
       accountButton("Delete", async () => {
-        if (await confirmAction(`Delete account ${user.username}? Note files are kept`, { label: "Delete account" })) {
+        if (
+          await confirmAction(`Delete account ${user.username}? Note files are kept`, {
+            label: "Delete account",
+            tone: "destructive",
+          })
+        ) {
           void accountAction({ action: "delete", username: user.username });
         }
       }),
@@ -137,6 +147,11 @@ function renderAccounts(value: AccountsListing): void {
   if (!value.invitations.length) element("invitations-list").textContent = "No invitations";
 }
 function accountControls(): void {
+  element("account-password").disabled = accountBusy;
+  element("account-password-form").setAttribute("aria-busy", String(accountBusy));
+  requiredQuery(element("account-password-form"), 'button[type="submit"]', HTMLButtonElement).textContent = accountBusy
+    ? "Resetting…"
+    : "Reset password";
   element("invite-create").disabled = accountBusy;
   for (const control of document.querySelectorAll<HTMLButtonElement>(
     "#accounts-list button, #accounts-list select, #invitations-list button, #account-password-form button",

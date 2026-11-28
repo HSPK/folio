@@ -180,6 +180,7 @@
 .folio-link-actions { position: fixed; z-index: 85; display: flex; flex-wrap: wrap; gap: 2px; max-width: min(360px, calc(100vw - 16px)); padding: 4px; border: 1px solid var(--panel-border, var(--border)); border-radius: var(--menu-radius, 10px); background: var(--float-fill, var(--surface)); color: var(--text); box-shadow: var(--menu-shadow, 0 6px 24px #00000014); font: 13px/1.45 var(--document-font, sans-serif); }
 .folio-link-actions[hidden] { display: none; }
 .folio-link-actions button { padding: 4px 8px; font: inherit; }
+.folio-link-actions button:last-of-type { min-width: 64px; }
 .folio-link-actions p { flex-basis: 100%; margin: 4px 6px; color: var(--error); }
 @media (max-width: 650px) {
   .folio-block-controls { display: none; }

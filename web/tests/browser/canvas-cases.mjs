@@ -141,7 +141,7 @@ test("canvas panels fade on both entry and exit without delaying sidebar state o
   const menuExit = await menuPanel.evaluate(node => {
     node.hidePopover();
     getComputedStyle(node).opacity;
-    return { inert: node.inert, fades: node.getAnimations().some(animation => animation.animationName === "folio-more-out") };
+    return { inert: node.inert, fades: node.getAnimations().some(animation => animation.transitionProperty === "opacity") };
   });
   expect(menuExit).toEqual({ inert: true, fades: true });
   await expect(menuPanel).toBeHidden();

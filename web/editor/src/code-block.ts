@@ -128,6 +128,24 @@ export function codeBlockNodeView(scrollbars: DeferredScrollbars, observe: Obser
     scrollHost.className = "folio-code-scroll";
     scrollHost.setAttribute("data-overlayscrollbars-initialize", "");
     pre.append(contentDOM);
+    pre.addEventListener("mousedown", (event) => {
+      const position = getPos();
+      if (
+        event.button !== 0 ||
+        event.defaultPrevented ||
+        event.shiftKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        !view.editable ||
+        node.content.size ||
+        position === undefined
+      )
+        return;
+      event.preventDefault();
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, position + 1)));
+      view.focus();
+    });
     scrollHost.append(pre);
     dom.append(language, gutter, scrollHost);
     const scrollbar = scrollbars.attach({ host: scrollHost, viewport: pre });

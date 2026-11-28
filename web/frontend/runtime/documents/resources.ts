@@ -2,7 +2,7 @@ import { projectModel } from "../../state/projects";
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
 import { decodedResource } from "../../api/contracts";
-import { isResourceId, normalizeNotePath, rememberPageCode } from "@folio/model";
+import { isResourceId, normalizeNotePath, rememberPageCode, compactPageUrl, expandedPageUrl } from "@folio/model";
 import { notePathFromTitle } from "@folio/workspace-model";
 import { shell } from "../../state/shell";
 import type { DocumentPermissions, ResourceEntry, ResourceKind } from "../../types/domain";
@@ -14,7 +14,7 @@ import { ApiError, documentNotice } from "../core/dom";
 import { openNewNote, refreshNewNoteHint } from "../navigation/files";
 
 import { projectCanCreate } from "../projects/permissions";
-import { publicState } from "../sharing/public";
+import { publicShareUrl, publicState } from "../sharing/public";
 import { refreshPreviewLinks } from "./preview";
 import { validatedDocumentPermissions } from "../../api/contracts";
 export { validatedDocumentPermissions } from "../../api/contracts";
@@ -243,4 +243,52 @@ export async function entryResourceId(path: string, kind: "file" | "directory" =
   });
   rememberResource(resource);
   return resource.id;
+}
+
+export function projectUrl(
+  value: string | null | undefined,
+  documentPath: string | undefined = documentSession.current?.path,
+) {
+  if (!value || !value.startsWith("/")) return value ?? null;
+  const url = expandedPageUrl(new URL(value, window.location.href));
+  const project = documentSession.current?.project ?? projectModel.active?.id ?? "local";
+  const asset = url.pathname === "/assets" && isResourceId(url.searchParams.get("id"));
+  const document = url.pathname === "/" && isResourceId(url.searchParams.get("document"));
+  if (!asset && !document) {
+    const path = decodeURIComponent(url.pathname.slice(1));
+    const resource = resourceState.resourceLocations.get(resourceState.resourceLocation(project, path));
+    if (!resource) {
+      requestResourceLink(path, /\.(md|markdown)$/i.test(path) ? "document" : "asset");
+      return null;
+    }
+    url.search = "";
+    if (resource.kind === "document") {
+      url.pathname = "/";
+      url.searchParams.set("document", resource.id);
+    } else if (resource.kind === "asset") {
+      url.pathname = "/assets";
+      url.searchParams.set("id", resource.id);
+    } else return null;
+  }
+  const context =
+    resourceState.resourceLocations.get(resourceState.resourceLocation(project, documentPath ?? ""))?.id ??
+    documentSession.resourceId;
+  if (publicState.publicView) {
+    if (url.pathname === "/assets") {
+      url.pathname = "/api/public/assets";
+      url.searchParams.set("share", requireValue(publicState.publicToken, "Public link identity"));
+      if (context) url.searchParams.set("document", context);
+    } else if (url.pathname === "/") {
+      if (url.searchParams.get("document") !== documentSession.current?.id) return null;
+      const shared = new URL(publicShareUrl(publicState.publicToken));
+      return shared.pathname + url.hash;
+    }
+    return url.pathname + url.search + url.hash;
+  }
+  if (projectModel.active && (url.pathname === "/assets" || url.pathname === "/")) {
+    url.searchParams.set("project", project);
+  }
+  if (url.pathname === "/assets" && context) url.searchParams.set("document", context);
+  const target = url.pathname === "/" ? compactPageUrl(url) : url;
+  return target.pathname + target.search + target.hash;
 }

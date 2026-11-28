@@ -1,4 +1,4 @@
-import { createButton } from "@folio/editor-runtime";
+import { createButton, createIcon } from "@folio/editor-runtime";
 import { decodedArray, decodedNumber, decodedObject, decodedString } from "../../api/contracts";
 import { errorContext } from "../../types/errors";
 
@@ -30,7 +30,12 @@ export function openColumnMenu(
     if (owner.signal.aborted) return;
     owner.abort();
     cancelAnimationFrame(frame);
-    menu.remove();
+    menu.inert = true;
+    menu.setAttribute("aria-hidden", "true");
+    if (menu.matches(":popover-open")) menu.hidePopover();
+    const animations = menu.getAnimations();
+    if (signal.aborted || !animations.length) menu.remove();
+    else void Promise.allSettled(animations.map((animation) => animation.finished)).then(() => menu.remove());
     anchor.setAttribute("aria-expanded", "false");
   };
   signal.addEventListener("abort", close, { once: true, signal: owner.signal });
@@ -54,24 +59,19 @@ export function openColumnMenu(
   heading.append(title, dismiss);
   const sorting = document.createElement("div");
   sorting.className = "sheet-sort";
-  for (const [label, value, glyph] of [
-    ["Ascending", "asc", "↑"],
-    ["Descending", "desc", "↓"],
-    ["Unsorted", "none", "↕"],
+  for (const [label, value, icon] of [
+    ["Ascending", "asc", "arrow-up"],
+    ["Descending", "desc", "arrow-down"],
+    ["Unsorted", "none", "minus"],
   ] as const) {
-    const button = createButton({ label: label });
+    const button = createButton({ label, icon });
     button.addEventListener("click", () => {
       close();
       anchor.focus({ preventScroll: true });
       sort(value);
     });
-    const icon = document.createElement("span"),
-      mark = document.createElement("span");
-    icon.textContent = glyph;
-    mark.textContent = value === direction ? "✓" : "";
-    icon.setAttribute("aria-hidden", "true");
-    mark.setAttribute("aria-hidden", "true");
-    button.prepend(icon);
+    const mark = createIcon("check");
+    mark.classList.add("sheet-sort-mark");
     button.append(mark);
     button.setAttribute("aria-pressed", String(value === direction));
     sorting.append(button);
