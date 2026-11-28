@@ -202,6 +202,21 @@ test("link selection stays native and editing requires an explicit action", asyn
               else break;
             }
             state.causalRules = await control.evaluate(indices => indices.map(index => window.nativeCssRules[index].rule), disabled);
+            if (disabled.length === 1) {
+              const index = disabled[0];
+              const properties = await control.evaluate(index => {
+                window.nativeCssRules.forEach(rule => { rule.style.cssText = rule.text; });
+                return [...window.nativeCssRules[index].style];
+              }, index);
+              state.propertyTrials = [];
+              for (const property of properties) {
+                await control.evaluate(({ index, property }) => {
+                  window.nativeCssRules.forEach(rule => { rule.style.cssText = rule.text; });
+                  window.nativeCssRules[index].style.removeProperty(property);
+                }, { index, property });
+                state.propertyTrials.push({ property, text: await select() });
+              }
+            }
           }
           break;
         }
