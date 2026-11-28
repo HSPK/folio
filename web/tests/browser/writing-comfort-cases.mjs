@@ -85,20 +85,19 @@ test("link selection stays native and editing requires an explicit action", asyn
         body: document.body.outerHTML.slice(0, document.body.outerHTML.indexOf(">") + 1),
         userSelect: getComputedStyle(document.body).userSelect,
       }));
-      const cdp = await page.context().newCDPSession(page);
-      await cdp.send("Emulation.setScriptExecutionDisabled", { value: true });
-      const pointer = (type, x, buttons) => cdp.send("Input.dispatchMouseEvent", {
-        type, x, y: box.y + box.height / 2, buttons,
-        button: type === "mouseMoved" && !buttons ? "none" : "left",
-        clickCount: type === "mouseMoved" ? 0 : 1,
-      });
-      await pointer("mouseMoved", box.x + 12, 0);
-      await pointer("mousePressed", box.x + 12, 1);
-      for (let step = 1; step <= 12; step++) await pointer("mouseMoved", box.x + 12 + (box.width - 27) * step / 12, 1);
-      state.withoutScripts = await page.evaluate(() => document.getSelection().toString());
-      await pointer("mouseReleased", box.x + box.width - 15, 0);
-      await cdp.send("Emulation.setScriptExecutionDisabled", { value: false });
-      await cdp.detach();
+      for (const screenshot of [false, true]) {
+        await page.reload();
+        await expect(page.locator(".ProseMirror[contenteditable=true]")).toBeVisible();
+        await link.click();
+        await expect(page.getByRole("toolbar", { name: "Link actions" })).toBeVisible();
+        if (screenshot) await capture(page, "native-screenshot-control", browserName);
+        const bounds = await link.boundingBox();
+        await page.mouse.move(bounds.x + 12, bounds.y + bounds.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(bounds.x + bounds.width - 15, bounds.y + bounds.height / 2, { steps: 12 });
+        state[screenshot ? "afterScreenshot" : "withoutScreenshot"] = await page.evaluate(() => document.getSelection().toString());
+        await page.mouse.up();
+      }
       const control = await page.context().newPage();
       await control.setContent(`<style>p{width:max-content;font:17px sans-serif}</style>
         <p contenteditable="true"><a id="link" href="https://example.com/guide" draggable="false">https://example.com/guide</a></p>
