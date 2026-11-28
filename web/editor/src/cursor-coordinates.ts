@@ -45,6 +45,16 @@ export function syncViewSelection(view: EditorView) {
   }
 }
 
+export function syncNavigationKeyUp(view: EditorView, event: KeyboardEvent) {
+  if (event.isComposing || view.composing || !/^(Arrow(Left|Right|Up|Down)|Home|End|PageUp|PageDown)$/.test(event.key))
+    return false;
+  // Publish native navigation before delayed focus repair; leave structural selections intact.
+  queueMicrotask(() => {
+    if (!view.isDestroyed && view.hasFocus() && view.state.selection instanceof TextSelection) syncViewSelection(view);
+  });
+  return false;
+}
+
 export function focusEditorView(view: EditorView, selection: Selection | null = null) {
   const positions = new Map<Element, { top: number; left: number }>();
   const capture = (node: Node) => {

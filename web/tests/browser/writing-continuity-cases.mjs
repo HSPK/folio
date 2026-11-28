@@ -23,6 +23,46 @@ test("typing and Enter follow a native caret before selectionchange reaches the 
   }
 });
 
+test("native navigation immediately after focusing cannot be undone by delayed focus repair", async ({ page }) => {
+  await openFixture(page, "Focus-caret.md", "# Code\n\n```js\nconst a = 1;\nconst b = 2;\n```\n");
+  await page.evaluate(() => {
+    window.focusCallbacks = [];
+    window.nativeFocusTimeout = window.setTimeout;
+    window.setTimeout = (callback, delay, ...args) => {
+      if (delay === 20 && typeof callback === "function") {
+        window.focusCallbacks.push(() => callback(...args));
+        return 0;
+      }
+      return window.nativeFocusTimeout(callback, delay, ...args);
+    };
+    window.holdFocusSelection = event => event.stopImmediatePropagation();
+    document.addEventListener("selectionchange", window.holdFocusSelection, true);
+  });
+  try {
+    const position = await page.locator(".ProseMirror code").evaluate(node => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const first = range.getClientRects()[0];
+      return { x: Math.round(first.left + 3), y: Math.round(first.top + first.height / 2) };
+    });
+    await page.mouse.click(position.x, position.y);
+    await page.keyboard.press(documentEndShortcut);
+    expect(await page.evaluate(() => window.focusCallbacks.length)).toBeGreaterThan(0);
+    await page.evaluate(() => {
+      window.setTimeout = window.nativeFocusTimeout;
+      for (const callback of window.focusCallbacks) callback();
+      document.removeEventListener("selectionchange", window.holdFocusSelection, true);
+    });
+    await page.keyboard.insertText("!");
+    await expect(page.locator(".ProseMirror code")).toHaveJSProperty("textContent", "const a = 1;\nconst b = 2;!");
+  } finally {
+    await page.evaluate(() => {
+      window.setTimeout = window.nativeFocusTimeout;
+      document.removeEventListener("selectionchange", window.holdFocusSelection, true);
+    });
+  }
+});
+
 async function pressBelowDocument(page) {
   const scroller = page.locator(".folio-live-scroll");
   await page.locator(".ProseMirror > :last-child").scrollIntoViewIfNeeded();
