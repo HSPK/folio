@@ -88,7 +88,8 @@ test("link selection stays native and editing requires an explicit action", asyn
       const cdp = await page.context().newCDPSession(page);
       await cdp.send("Emulation.setScriptExecutionDisabled", { value: true });
       const pointer = (type, x, buttons) => cdp.send("Input.dispatchMouseEvent", {
-        type, x, y: box.y + box.height / 2, buttons, button: type === "mouseMoved" ? "none" : "left",
+        type, x, y: box.y + box.height / 2, buttons,
+        button: type === "mouseMoved" && !buttons ? "none" : "left",
         clickCount: type === "mouseMoved" ? 0 : 1,
       });
       await pointer("mouseMoved", box.x + 12, 0);

@@ -47,6 +47,8 @@ jobs:
         run: cargo build --locked -p folio-cli
       - name: Test native link selection
         working-directory: web
+        env:
+          DEBUG: pw:protocol
         run: npx playwright test --grep "link selection stays native" --output test-results-native
       - name: Test browser editor against core CLI
         working-directory: web
