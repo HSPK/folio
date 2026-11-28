@@ -306,7 +306,7 @@ function updateStatusMessages(): void {
     }
     const error = node.classList.contains("is-error");
     const origin = statusOrigins.get(node);
-    if (modal && !error && !node.classList.contains("is-warning") && origin !== modal) {
+    if (modal && !error && origin !== modal) {
       setStatusHidden(card, true);
       continue;
     }

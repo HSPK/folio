@@ -1,3 +1,4 @@
+import { primaryShortcut } from "../../shared/keyboard";
 /** Render the library navigation and project controls. */
 export function LibrarySidebar() {
   let filter!: HTMLInputElement;
@@ -6,7 +7,7 @@ export function LibrarySidebar() {
       <header class="library-heading" data-directory-path="">
         <IconButton
           id="sidebar-hide"
-          title="Close sidebar (Ctrl+Shift+L)"
+          title={`Close sidebar (${primaryShortcut("Shift+L")})`}
           label="Close library sidebar"
           icon="sidebar"
           onClick={() => setSidebar(false, true)}
@@ -29,7 +30,7 @@ export function LibrarySidebar() {
             onInput={scheduleFileFilterRender}
           />
           <button id="sidebar-search-open" type="button" title="Search notes" aria-label="Search notes" hidden>
-            <kbd>⌘/Ctrl P</kbd>
+            <kbd>{primaryShortcut("P")}</kbd>
           </button>
         </div>
         <AppMenu id="new-menu" class="popup new-menu">

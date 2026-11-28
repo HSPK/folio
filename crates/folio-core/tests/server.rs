@@ -289,6 +289,8 @@ mod collaboration;
 mod documents;
 #[path = "server/history.rs"]
 mod history;
+#[path = "server/http_cache.rs"]
+mod http_cache;
 #[path = "server/identities.rs"]
 mod identities;
 #[path = "server/project_directories.rs"]

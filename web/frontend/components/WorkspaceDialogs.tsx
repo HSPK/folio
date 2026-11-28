@@ -31,8 +31,14 @@ export function WorkspaceDialogs() {
         <form id="public-password-form">
           <h2 id="public-password-title">Protected document</h2>
           <label for="public-password">Share password</label>
-          <input id="public-password" type="password" autocomplete="off" required />
-          <p id="public-password-error" class="notice is-error" role="alert" hidden></p>
+          <input
+            id="public-password"
+            type="password"
+            autocomplete="off"
+            aria-describedby="public-password-error"
+            required
+          />
+          <p id="public-password-error" class="notice is-error" role="alert" data-inline-status hidden></p>
           <div class="dialog-actions">
             <button id="public-password-cancel" type="button">
               Cancel
@@ -75,7 +81,7 @@ export function WorkspaceDialogs() {
           readOnly
           aria-label="Recovered draft preview"
         ></textarea>
-        <p id="draft-recovery-error" class="notice" role="alert" hidden></p>
+        <p id="draft-recovery-error" class="notice" role="alert" data-inline-status hidden></p>
         <div class="dialog-actions">
           <button id="draft-recovery-close" type="button">
             Keep stored
@@ -143,9 +149,10 @@ export function WorkspaceDialogs() {
             id="tags-input"
             rows="6"
             autocomplete="off"
+            aria-describedby="tags-error"
             placeholder="notes&#10;research"
           ></textarea>
-          <p id="tags-error" class="notice is-error" role="alert" hidden></p>
+          <p id="tags-error" class="notice is-error" role="alert" data-inline-status hidden></p>
           <div class="dialog-actions">
             <button id="tags-cancel" type="button">
               Cancel

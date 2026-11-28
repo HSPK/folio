@@ -4,6 +4,7 @@ import { summarizeTimings } from "./performance-helpers.mjs";
 for (const width of [1440, 390]) {
   test(`sidebar refresh preserves the chosen open or closed state over shared defaults at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
+    await expect(page.locator("body")).toHaveAttribute("data-sidebar", width === 390 ? "closed" : "open");
     let defaultOpen = true;
     await page.route("**/api/preferences", async route => {
       if (route.request().method() !== "GET") return route.continue();
@@ -244,21 +245,35 @@ test("sidebar drag order moves into folders, beside nested files and back to roo
   const box = `${folder}/Box`;
   const name = "Dragged note.md";
   await fs.mkdir(path.join(root, box), { recursive: true });
-  await Promise.all([`${folder}/${name}`, `${box}/Z.md`, `${box}/Existing.md`, `${folder}/Existing.md`]
+  await Promise.all([`${folder}/${name}`, `${box}/Z.md`, `${box}/Existing.md`, `${folder}/Existing.md`,
+    ...Array.from({ length: 40 }, (_, index) => `${folder}/A drag filler ${index}.md`)]
     .map(filename => fs.writeFile(path.join(root, filename), "kept")));
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   const row = path => page.locator(`[data-entry-path="${path}"]`);
+  const drag = async (source, target, position) => {
+    await source.hover();
+    await page.mouse.down();
+    try {
+      // Start the native drag before scrolling can replace the row under the down point.
+      await source.hover({ position: { x: 12, y: 12 } });
+      await expect(source).toHaveAttribute("data-dragging", "true");
+      await target.hover({ position });
+      await target.hover({ position });
+    } finally {
+      await page.mouse.up();
+    }
+  };
   await row(folder).click();
   await row(box).click();
   const writes = [];
   page.on("request", req => { if (req.method() === "PATCH") writes.push(req.postDataJSON().destination); });
-  await row(folder).dragTo(row(box));
-  await row(`${folder}/Existing.md`).dragTo(row(box));
-  await row(`${folder}/${name}`).dragTo(row(box));
+  await drag(row(folder), row(box));
+  await drag(row(`${folder}/Existing.md`), row(box));
+  await drag(row(`${folder}/${name}`), row(box));
   await expect(row(`${box}/${name}`)).toBeVisible();
-  await row(`${box}/${name}`).dragTo(page.locator(".library-heading"));
+  await drag(row(`${box}/${name}`), page.locator(".library-heading"));
   await expect(row(name)).toBeVisible();
-  await row(name).dragTo(row(`${box}/Z.md`), { targetPosition: { x: 24, y: 2 } });
+  await drag(row(name), row(`${box}/Z.md`), { x: 24, y: 2 });
   await expect(row(`${box}/${name}`)).toBeVisible();
   const names = () => page.locator(`details[data-path="${box}"] > ul > li > .file-button`)
     .evaluateAll(buttons => buttons.map(b => b.dataset.path.split("/").pop()));

@@ -69,10 +69,13 @@ test("Live and Read keep the same paragraph and heading spacing at either densit
   let previous;
   for (const density of ["comfortable", "compact"]) {
     await page.locator("html").evaluate((node, value) => { node.dataset.density = value; }, density);
-    const spacing = async root => root.evaluate(node => {
-      const p = getComputedStyle(node.querySelector("p"));
-      return [parseFloat(p.marginBottom), parseFloat(getComputedStyle(node.querySelector("h2")).marginTop), p.lineHeight];
-    });
+    const spacing = async root => {
+      await expect(root.locator("h2")).toHaveText("Next");
+      return root.evaluate(node => {
+        const p = getComputedStyle(node.querySelector("p"));
+        return [parseFloat(p.marginBottom), parseFloat(getComputedStyle(node.querySelector("h2")).marginTop), p.lineHeight];
+      });
+    };
     await chooseView(page, "rich");
     const live = await spacing(page.locator(".ProseMirror"));
     await chooseView(page, "preview");
@@ -141,7 +144,7 @@ test("canvas panels fade on both entry and exit without delaying sidebar state o
   const menuExit = await menuPanel.evaluate(node => {
     node.hidePopover();
     getComputedStyle(node).opacity;
-    return { inert: node.inert, fades: node.getAnimations().some(animation => animation.animationName === "folio-more-out") };
+    return { inert: node.inert, fades: node.getAnimations().some(animation => animation.transitionProperty === "opacity") };
   });
   expect(menuExit).toEqual({ inert: true, fades: true });
   await expect(menuPanel).toBeHidden();

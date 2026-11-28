@@ -1,5 +1,8 @@
 import "./browser/document-cases.mjs";
 import "./browser/panel-cases.mjs";
+import "./browser/workbook-cases.mjs";
+import "./browser/file-sharing-cases.mjs";
+import "./browser/metadata-cases.mjs";
 import "./browser/ui-cases.mjs";
 import "./browser/canvas-cases.mjs";
 import "./browser/focus-cases.mjs";
@@ -43,3 +46,4 @@ import "./browser/network-host-cases.mjs";
 import "./browser/save-status-cases.mjs";
 import "./browser/note-creation-cases.mjs";
 import "./browser/frontend-migration-cases.mjs";
+import "./browser/experience-motion-cases.mjs";

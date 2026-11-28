@@ -18,12 +18,21 @@ test("link selection stays native and editing requires an explicit action", asyn
   await expect(page.getByRole("toolbar", { name: "Link actions" })).toBeVisible();
   await capture(page, "lightweight-link-actions", browserName);
   const box = await link.boundingBox();
-  await page.mouse.move(box.x + 12, box.y + box.height / 2);
+  // Match native pointer pixels instead of fractional font bounds.
+  const start = Math.round(box.x + 12);
+  const end = Math.round(box.x + box.width - 15);
+  const y = Math.round(box.y + box.height / 2);
+  await page.mouse.move(start, y);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 15, box.y + box.height / 2, { steps: 12 });
-  const selected = await page.evaluate(() => document.getSelection().toString());
-  expect(selected.length).toBeGreaterThan(5);
-  await page.mouse.up();
+  let selected;
+  try {
+    for (let step = 1; step <= 12; step++)
+      await page.mouse.move(Math.round(start + (end - start) * step / 12), y);
+    await expect.poll(() => page.evaluate(() => document.getSelection().toString().length)).toBeGreaterThan(5);
+    selected = await page.evaluate(() => document.getSelection().toString());
+  } finally {
+    await page.mouse.up();
+  }
   await expect(page.locator(".folio-link-dialog")).toBeHidden();
   await expect(page.getByRole("toolbar", { name: "Link actions" })).toBeHidden();
   expect(await page.evaluate(() => document.getSelection().toString())).toBe(selected);
@@ -43,6 +52,9 @@ test("new notes save the current text first without a discard prompt", async ({ 
   await page.keyboard.insertText(" Keep this edit.");
   await page.locator("#new-menu > button").click(); await page.locator("#new-from-template").click();
   await expect(page.locator("#new-note-dialog")).toBeVisible();
+  await page.locator("#new-note-title").fill("Saved follow-up");
+  await page.locator("#create-note").click();
+  await expect(page.locator("#document-title")).toHaveText("Saved follow-up");
   await expect(page.locator("#confirmation-dialog")).toBeHidden();
   await expect(page.locator("#document-modified")).toBeHidden();
   expect(await fs.readFile(path.join(root, "Save-before-new.md"), "utf8")).toContain("Keep this edit.");
@@ -104,6 +116,9 @@ test("continuing to type while a transition saves cancels navigation and keeps n
 
 test("failed transition saves offer retry and keep-editing choices without losing the draft", async ({ page, browserName }) => {
   await page.setViewportSize({ width: 390, height: 680 });
+  await openSettingsDialog(page);
+  await page.locator("#settings-auto-save").selectOption("5000");
+  await page.locator("#settings-save").click();
   await chooseView(page, "editor");
   let writes = 0;
   await page.route("**/api/document", route => {
@@ -114,8 +129,10 @@ test("failed transition saves offer retry and keep-editing choices without losin
   await page.locator("#editor").fill("# Retry this draft\n");
   await page.locator("#sidebar-toggle").click();
   await page.locator("#new-menu > button").click(); await page.locator("#new-from-template").click();
-  const confirmation = page.locator("#confirmation-dialog");
-  await expect(confirmation).toBeVisible();
+  const confirmation = page.locator("#new-note-dialog");
+  await page.locator("#new-note-title").fill("Retry follow-up");
+  await page.locator("#create-note").click();
+  await expect(confirmation.locator("[data-confirmation-region]")).toBeVisible();
   await expect(confirmation.locator("[data-confirmation-message]")).toContainText("Temporary save failure.");
   await expect(page.locator("#status-notices")).toBeHidden();
   await expect(confirmation.getByRole("button", { name: "Keep editing", exact: true })).toBeFocused();
@@ -130,7 +147,7 @@ test("failed transition saves offer retry and keep-editing choices without losin
   await expect(page.locator("#document-message")).toBeVisible();
   await expect(page.locator("#document-message")).not.toHaveAttribute("data-status-suspended");
   await confirmation.getByRole("button", { name: "Retry save", exact: true }).click();
-  await expect(page.locator("#new-note-dialog")).toBeVisible();
+  await expect(page.locator("#document-title")).toHaveText("Retry follow-up");
   await expect(confirmation).toBeHidden();
   expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe("# Retry this draft\n");
 });
@@ -145,6 +162,9 @@ test("collaborative notes are durably saved before opening note creation", async
     await expect(bob.locator("#editor")).toHaveValue(/Keep the shared edit/);
     await alice.locator("#new-menu > button").click(); await alice.locator("#new-from-template").click();
     await expect(alice.locator("#new-note-dialog")).toBeVisible();
+    await alice.locator("#new-note-title").fill("Shared follow-up");
+    await alice.locator("#create-note").click();
+    await expect(alice.locator("#document-title")).toHaveText("Shared follow-up");
     await expect(alice.locator("#confirmation-dialog")).toBeHidden();
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toContain("Keep the shared edit.");
   } finally { await library.close(); }
@@ -215,7 +235,7 @@ test("settings search reveals matching controls and clearing restores the previo
   await page.locator("#settings-search").fill("JPEG quality");
   await expect(page.locator('[data-settings-panel="library"]')).toBeVisible();
   await expect(page.locator("#settings-image-quality")).toBeInViewport();
-  await expect(page.locator("#settings-image-quality").locator("..")).toHaveAttribute("data-search-match", "");
+  await expect(page.locator(".setting-card:has(#settings-image-quality)")).toHaveAttribute("data-search-match", "");
   await expect(page.locator("#settings-search")).toBeFocused();
   await capture(page, "located-settings-match", browserName);
   await page.emulateMedia({ colorScheme: "dark" });

@@ -22,6 +22,7 @@ const generated = new Set([
   "web/public/model.mjs",
   "web/public/workspace-model.mjs",
   "web/public/input-latency.mjs",
+  "web/public/mermaid-renderer.html",
 ]);
 const ignoredDirectories = new Set([
   ".git", "build", "dist", "node_modules", "target", "test-results",

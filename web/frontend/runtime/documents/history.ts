@@ -11,7 +11,9 @@ import { api } from "../core/api";
 import { appState, dirty } from "../core/bootstrap";
 import { createListRow, documentNotice, notice } from "../core/dom";
 import { confirmAction, showDialog } from "../dialogs/dialogs";
-import { listen } from "../lifecycle";
+import { applicationLifetime, listen } from "../lifecycle";
+import { buttonFeedback, resetButtonFeedback } from "../../../shared/feedback";
+import { saveBeforeLeaving } from "./saving";
 import { refreshFiles } from "../navigation/library";
 import { projectOwns } from "../projects/permissions";
 import { closeFileContextMenu } from "../navigation/files";
@@ -45,18 +47,30 @@ export function initializeDocumentsHistory(): void {
     historyView = null;
   });
   listen(element("history-copy"), "click", async () => {
+    const view = historyView;
+    const selected = view?.selected;
     try {
-      await copyPlainText(requireValue(requireValue(historyView).selected).content);
-      documentNotice("");
+      await copyPlainText(requireValue(selected).content);
+      if (historyView === view && view?.selected === selected && historyDialog.open)
+        buttonFeedback(element("history-copy"), "Copied", applicationLifetime());
     } catch (errorCause) {
       const error = errorContext(errorCause);
-      notice(element("history-message"), `Copy failed: ${error.message}`, "error");
+      if (historyView === view && historyDialog.open)
+        notice(element("history-message"), `Copy failed: ${error.message}`, "error");
     }
   });
   listen(element("history-restore"), "click", async () => {
     const view = historyView;
     if (!view?.selected || historyBusy) return;
-    if (!(await confirmAction("Restore this version? Editors must reopen the note", { label: "Restore version" })))
+    if (
+      !(await confirmAction(
+        "Restore this version? The current version stays in history. Other editors must reopen the note.",
+        {
+          label: "Restore version",
+          tone: "destructive",
+        },
+      ))
+    )
       return;
     historyBusy = true;
     element("history-restore").disabled = true;
@@ -64,6 +78,13 @@ export function initializeDocumentsHistory(): void {
     try {
       if (view.project !== projectModel.active?.id || view.document !== documentSession.id)
         throw new Error("Document changed");
+      const active = view.id === documentSession.current?.id;
+      if (active) {
+        if (!(await saveBeforeLeaving("restore a version"))) return;
+        if (view.project !== projectModel.active?.id || view.document !== documentSession.id)
+          throw new Error("Document changed");
+        view.version = requireValue(documentSession.current).version;
+      }
       const document = await api("/api/history/restore", {
         decode: decodedDocument,
         method: "POST",
@@ -73,8 +94,11 @@ export function initializeDocumentsHistory(): void {
           version: view.version,
         },
       });
+      if (historyView !== view || view.project !== projectModel.active?.id || view.document !== documentSession.id)
+        return;
       historyDialog.close();
-      useDocument(document, appState.currentRoot, new URL(appState.committedUrl), "replace");
+      if (active) useDocument(document, appState.currentRoot, new URL(appState.committedUrl), "replace");
+      else documentNotice("Version restored", "success");
       void refreshFiles();
     } catch (errorCause) {
       const error = errorContext(errorCause);
@@ -112,7 +136,13 @@ async function recycleEntry(path: string, kind: "file" | "directory"): Promise<v
   try {
     const id = await entryResourceId(path, kind);
     const version = kind === "file" && affectsOpen() ? documentSession.current?.version : undefined;
-    if (!(await confirmAction(`Recycle “${path}”? Public links are revoked`, { label: "Recycle" })) || !sameScope())
+    if (
+      !(await confirmAction(`Recycle “${path}”? Public links are revoked`, {
+        label: "Recycle",
+        tone: "destructive",
+      })) ||
+      !sameScope()
+    )
       return;
     if (unsafe()) {
       documentNotice("Save the open note first", "warning");
@@ -145,17 +175,19 @@ async function recycleEntry(path: string, kind: "file" | "directory"): Promise<v
     if (sameScope()) documentNotice(`Delete failed: ${errorContext(cause).message}`, "error");
   }
 }
-export async function openHistory(): Promise<void> {
-  if (!documentSession.current || !projectModel.active?.owned) return;
+export async function openHistory(id = documentSession.current?.id): Promise<void> {
+  if (!id || !projectModel.active?.owned) return;
   closeMenus();
   const generation = ++historyGeneration;
   historyView = {
-    id: documentSession.current.id,
-    path: documentSession.current.path,
+    id,
+    path: "",
     project: projectModel.active.id,
     document: documentSession.id,
     selected: null,
   };
+  const view = historyView;
+  resetButtonFeedback(element("history-copy"));
   element("history-list").replaceChildren();
   element("history-diff").textContent = "";
   element("history-restore").disabled = true;
@@ -163,12 +195,26 @@ export async function openHistory(): Promise<void> {
   showDialog(historyDialog);
   notice(element("history-message"), "Loading history…");
   try {
-    const result = await api(`/api/history?document=${encodeURIComponent(historyView.id)}`, {
+    const source =
+      id === documentSession.current?.id
+        ? documentSession.current
+        : await api(`/api/document?id=${encodeURIComponent(id)}&render=source`, { decode: decodedDocument });
+    const result = await api(`/api/history?document=${encodeURIComponent(view.id)}`, {
       decode: decodedHistory,
     });
-    if (generation !== historyGeneration || !historyDialog.open) return;
-    historyView.version = result.currentVersion;
-    historyView.current = documentSession.current.content;
+    if (
+      generation !== historyGeneration ||
+      historyView !== view ||
+      !historyDialog.open ||
+      view.document !== documentSession.id ||
+      view.project !== projectModel.active?.id
+    )
+      return;
+    view.path = source.path;
+    element("history-title").textContent =
+      id === documentSession.current?.id ? "History" : `History · ${source.title || source.path}`;
+    view.version = source.version === result.currentVersion ? result.currentVersion : undefined;
+    view.current = id === documentSession.current?.id ? appState.editor.value : source.content;
     element("history-list").replaceChildren(
       ...result.revisions.map((revision: HistoryRevision) => {
         const button = document.createElement("button");
@@ -187,12 +233,18 @@ export async function openHistory(): Promise<void> {
     if (result.revisions.length) await selectHistoryVersion(result.revisions[0].id);
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    notice(element("history-message"), error.message, "error");
+    if (generation === historyGeneration && historyView === view && historyDialog.open)
+      notice(element("history-message"), error.message, "error");
   }
 }
 async function selectHistoryVersion(id: number): Promise<void> {
   const view = historyView;
+  if (!view || historyBusy) return;
   const generation = ++historyGeneration;
+  view.selected = null;
+  resetButtonFeedback(element("history-copy"));
+  element("history-copy").disabled = true;
+  element("history-restore").disabled = true;
   notice(element("history-message"), "Loading version…");
   try {
     const result = await api(
@@ -220,7 +272,13 @@ async function selectHistoryVersion(id: number): Promise<void> {
     }
     notice(
       element("history-message"),
-      !changes ? "Diff too large, showing version" : remaining <= 0 ? "Preview truncated" : "",
+      !requireValue(view).version
+        ? "Note changed. Reopen history to compare the latest version."
+        : !changes
+          ? "Diff too large, showing version"
+          : remaining <= 0
+            ? "Preview truncated"
+            : "",
       "warning",
     );
     element("history-copy").disabled = false;
@@ -228,7 +286,8 @@ async function selectHistoryVersion(id: number): Promise<void> {
       !requireValue(view).version || requireValue(view).version === result.revision.version;
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    notice(element("history-message"), error.message, "error");
+    if (generation === historyGeneration && historyView === view && historyDialog.open)
+      notice(element("history-message"), error.message, "error");
   }
 }
 async function openTrash(): Promise<void> {

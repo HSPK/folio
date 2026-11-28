@@ -1,4 +1,4 @@
-import { browserPageUrl, test, expect, chooseView, userDocumentUrl, openFixture, fs, path, root } from "./fixture.mjs";
+import { browserPageUrl, test, expect, chooseView, userDocumentUrl, openFixture, fs, path, root, primaryModifier } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 import { pasteImage } from "./project-cases.mjs";
 
@@ -82,7 +82,7 @@ test("document UUID navigation, save and local asset URLs contain no mutable pat
       if (url.searchParams.has("path") || url.searchParams.has("file")) paths.push(request.url());
     }
   });
-  await link.click({modifiers:["Control"]});
+  await link.click({modifiers:[primaryModifier]});
   await expect(page.locator("#document-title")).toHaveText("Second");
   const second = (await browserPageUrl(page)).searchParams.get("document");
   expect(second).toMatch(uuid);
@@ -96,7 +96,7 @@ test("document UUID navigation, save and local asset URLs contain no mutable pat
   await expect(page.locator("#document-title")).toHaveText("Second");
   await chooseView(page, "editor");
   await page.locator("#editor").fill("# UUID saved\n");
-  await page.keyboard.press("Control+s");
+  await page.keyboard.press(`${primaryModifier}+s`);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   await page.reload();
   await expect(page.locator("#document-title")).toHaveText("Second");

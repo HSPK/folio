@@ -27,7 +27,7 @@ import { deferScrollbars } from "./scrollbars.ts";
 import { createSlashMenu } from "./slash-menu.ts";
 import { math } from "./math.ts";
 import { replaceRemoteSource } from "./remote-source.ts";
-import { currentViewSelection, jumpToHeading } from "./cursor-coordinates.ts";
+import { currentViewSelection, jumpToHeading, nativeNavigationEvents } from "./cursor-coordinates.ts";
 import { createLiveCaret } from "./live-caret.ts";
 import { mountMetadata } from "./metadata.ts";
 import { wiki } from "./wiki.ts";
@@ -44,13 +44,12 @@ import { createImageFlowPlugins, imageSelectionAtPoint } from "./image-flow.ts";
 import { imageBoundarySelection, isImageNode } from "./image-model.ts";
 import { captureImagePreview, imagePreviewPlugin } from "./image-preview.ts";
 import { autoLinks } from "./auto-links.ts";
-import { createLinkTools } from "./links.ts";
+import { createLinkTools, linkTitle } from "./links.ts";
 import { createEditorViews } from "./editor-views.ts";
 import "./node-tools.css";
 import "./collaboration.css";
 
-// Our decorations supply Rust-compatible IDs without rewriting the document's heading nodes.
-// Empty paragraphs stay Markdown spacing instead of becoming HTML placeholders.
+// Keep our Rust-compatible heading IDs and Markdown empty lines instead of the default plugins.
 const notesCommonmark = commonmark.filter(
   (plugin) => plugin !== syncHeadingIdPlugin && !remarkPreserveEmptyLinePlugin.includes(plugin),
 );
@@ -307,6 +306,7 @@ function createOwnedEditor(
               headingsFor_fn: headingsFor,
             }),
             handleDOMEvents: {
+              ...nativeNavigationEvents,
               click(_view, event) {
                 const link = closestElement(event.target, "a");
                 if (!link) return false;
@@ -520,10 +520,7 @@ function createOwnedEditor(
         if (url) {
           if (node.getAttribute(attribute) !== url) node.setAttribute(attribute, url);
         } else if (node.hasAttribute(attribute)) node.removeAttribute(attribute);
-        if (node.tagName === "A")
-          node.title = url
-            ? "Ctrl/Cmd+click to open; use Link actions to edit"
-            : "Link unavailable. Check its target in Link actions.";
+        if (node.tagName === "A") node.title = linkTitle(Boolean(url));
       }
       linkTools.refresh();
     },

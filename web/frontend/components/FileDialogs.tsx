@@ -8,6 +8,7 @@ import {
   startTreeRename,
 } from "../runtime/navigation/files";
 import { createTreeEntry, duplicateTreeFile } from "../runtime/navigation/creation";
+import { closeFileDetails } from "../runtime/navigation/file-properties";
 import { element } from "../types/elements";
 import { navigateMenu } from "./primitives";
 
@@ -39,7 +40,7 @@ export function FileDialogs() {
             }}
           />
           <p id="new-note-hint" class="form-hint"></p>
-          <p id="new-note-error" class="notice is-error" role="alert" hidden></p>
+          <p id="new-note-error" class="notice is-error" role="alert" data-inline-status hidden></p>
           <label for="new-note-template">Template</label>
           <select id="new-note-template">
             <option value="blank">Blank note</option>
@@ -153,20 +154,11 @@ export function FileDialogs() {
         <button type="button" role="menuitem" data-note-action="copy-text" data-menu-icon="copy">
           Copy Markdown
         </button>
-        <button type="button" role="menuitem" data-note-action="workspace-favorite" data-menu-icon="star">
-          Favorite
-        </button>
         <button type="button" role="menuitem" data-note-action="document-tags-open" data-menu-icon="tag">
           Edit tags
         </button>
-        <button type="button" role="menuitem" data-note-action="share-page" data-menu-icon="link">
-          Share page
-        </button>
         <button type="button" role="menuitem" data-note-action="backlinks-open" data-menu-icon="arrow-left-right">
           Backlinks
-        </button>
-        <button type="button" role="menuitem" data-note-action="attachments-open" data-menu-icon="paperclip">
-          Attachments
         </button>
         <button type="button" role="menuitem" data-note-action="history-open" data-menu-icon="clock">
           History
@@ -202,17 +194,17 @@ export function FileDialogs() {
             <dd id="details-modified"></dd>
           </div>
         </dl>
-        <form id="file-properties-form" hidden>
+        <form id="file-properties-form" aria-describedby="file-properties-error" hidden>
           <label for="file-property-title">Title</label>
           <input id="file-property-title" maxlength={512} autocomplete="off" />
           <label for="file-property-tags">Tags</label>
           <input id="file-property-tags" placeholder="Comma-separated tags" autocomplete="off" />
           <label for="file-property-description">Description</label>
           <textarea id="file-property-description" rows={3} maxlength={8192}></textarea>
-          <p id="file-properties-error" class="notice is-error" role="alert" hidden></p>
+          <p id="file-properties-error" class="notice is-error" role="alert" data-inline-status hidden></p>
         </form>
         <div class="dialog-actions">
-          <button id="close-details" type="button" onClick={() => element("details-dialog").close()}>
+          <button id="close-details" type="button" onClick={() => void closeFileDetails()}>
             Close
           </button>
           <button id="file-properties-save" type="submit" form="file-properties-form" class="button-primary" hidden>

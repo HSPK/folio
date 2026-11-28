@@ -3,9 +3,18 @@
 .popup-panel[popover] {
   position: fixed; inset: auto; z-index: 30; margin: 0;
   max-width: calc(100vw - 24px); max-height: min(680px, calc(100dvh - 88px));
-  transition: display var(--motion-panel-duration) allow-discrete, overlay var(--motion-panel-duration) allow-discrete;
+  opacity: 1; transform: none;
+  transition: opacity var(--motion-panel-duration) var(--motion-easing),
+    transform var(--motion-panel-duration) var(--motion-easing),
+    display var(--motion-panel-duration) allow-discrete, overlay var(--motion-panel-duration) allow-discrete;
 }
-.popup-panel[popover]:not(:popover-open) { display: none; }
+.popup-panel[popover]:not(:popover-open) {
+  display: none; opacity: 0; transform: translateY(-4px); pointer-events: none;
+  transition-duration: var(--motion-hover-duration);
+}
+@starting-style {
+  .popup-panel[popover]:popover-open { opacity: 0; transform: translateY(-4px); }
+}
 .startup-screen {
   display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center;
   width: min(100% - 40px, 520px); min-height: 100dvh; margin-inline: auto;

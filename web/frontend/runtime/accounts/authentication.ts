@@ -10,7 +10,7 @@ import {
   readNoteRoute,
 } from "@folio/model";
 import { updateShell } from "../../state/shell";
-import { element, clearTimer } from "../../types/elements";
+import { element, clearTimer, requiredQuery } from "../../types/elements";
 import { errorContext, type RuntimeError } from "../../types/errors";
 import { isDocumentPayload } from "../../types/guards";
 import {
@@ -149,6 +149,7 @@ export function showAuthentication(setup: boolean, message = "", registration = 
   element("auth-use-invitation").hidden = setup || authInvitation;
   element("auth-back-login").hidden = !authInvitation;
   element("auth-confirm-field").hidden = !(setup || authInvitation);
+  requiredQuery(document, "#auth-username-hint", HTMLElement).hidden = !(setup || authInvitation);
   element("auth-confirm").required = setup || authInvitation;
   element("auth-password").autocomplete = setup || authInvitation ? "new-password" : "current-password";
   element("auth-confirm").autocomplete = "new-password";
@@ -156,10 +157,12 @@ export function showAuthentication(setup: boolean, message = "", registration = 
   setText(element("auth-submit"), setup ? "Create administrator" : authInvitation ? "Create account" : "Log in");
   element("logout").hidden = true;
   refreshControls();
+  const username = element("auth-username");
+  if (authenticationSession.user?.username && !setup) username.value = authenticationSession.user.username;
   window.requestAnimationFrame(() => {
-    if (authenticationSession.user?.username && !setup)
-      element("auth-username").value = authenticationSession.user.username;
-    element("auth-username").focus();
+    const screen = element("auth-screen");
+    const active = document.activeElement;
+    if (!screen.hidden && (!active || !screen.contains(active) || !active.getClientRects().length)) username.focus();
   });
 }
 export function hideAuthentication(): void {

@@ -1,5 +1,6 @@
 import { TextSelection } from "@milkdown/prose/state";
 import type { EditorView } from "@milkdown/prose/view";
+import { syncViewSelection } from "./cursor-coordinates.ts";
 
 // While a trusted input event is being handled, Chrome reports every caret change to its browser process
 // synchronously, and that report walks the whole editable document: about 16 ms per key in a 1 MB note.
@@ -37,7 +38,10 @@ function later(view: EditorView, action: () => void) {
     );
   }
   queue.push(() => {
-    if (!view.isDestroyed) action();
+    if (!view.isDestroyed) {
+      if (view.state.selection instanceof TextSelection) syncViewSelection(view);
+      action();
+    }
   });
   channel.port2.postMessage(0);
 }

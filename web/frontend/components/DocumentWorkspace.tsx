@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import { primaryShortcut } from "../../shared/keyboard";
 import { shell, viewLabels } from "../state/shell";
 import { activePanelPath } from "../state/library";
 import { documentSession } from "../state/document";
@@ -35,7 +36,7 @@ export function DocumentWorkspace() {
     >
       <IconButton
         id="sidebar-toggle"
-        title="Show sidebar (Ctrl+Shift+L)"
+        title={`Show sidebar (${primaryShortcut("Shift+L")})`}
         label="Show sidebar"
         icon="sidebar"
         aria-controls="sidebar"
@@ -152,10 +153,10 @@ export function DocumentWorkspace() {
                   onClick={openCommandPanel}
                   hidden
                 >
-                  Commands <kbd>Ctrl/Cmd+K</kbd>
+                  Commands <kbd>{primaryShortcut("K")}</kbd>
                 </button>
                 <button id="workspace-search-open" type="button" data-menu-icon="search">
-                  Search notes <kbd>Ctrl/Cmd+P</kbd>
+                  Search notes <kbd>{primaryShortcut("P")}</kbd>
                 </button>
                 <button id="workspace-open" type="button" data-menu-icon="clock" hidden>
                   Favorites and recent notes
@@ -346,7 +347,7 @@ export function DocumentWorkspace() {
           aria-label="Document outline"
           aria-controls="outline-panel"
           aria-expanded="false"
-          title="Document outline (Ctrl/Cmd+Shift+1)"
+          title={`Document outline (${primaryShortcut("Shift+1")})`}
         >
           <span id="outline-rail" class="outline-rail" aria-hidden="true"></span>
         </button>

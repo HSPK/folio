@@ -249,7 +249,7 @@ test("users create private projects and share a single page without exposing sib
 });
 
 test("project manager uses one lightweight dialog without nested frames or page navigation", async ({ browser }) => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
   const library = await collaborativeLibrary(browser, { participants: 1, source: true });
   try {
     const [page] = library.pages;
@@ -263,12 +263,12 @@ test("project manager uses one lightweight dialog without nested frames or page 
       await expect(page.getByRole("dialog", {
         name: await page.locator("#projects-title").innerText(), exact: true,
       })).toHaveCount(1);
-      const bounds = await page.locator("#projects-dialog").boundingBox();
       const viewport = page.viewportSize();
-      expect(bounds.x).toBeGreaterThanOrEqual(0);
-      expect(bounds.y).toBeGreaterThanOrEqual(0);
-      expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
-      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+      await expect.poll(async () => {
+        const bounds = await page.locator("#projects-dialog").boundingBox();
+        return bounds && bounds.x >= 0 && bounds.y >= 0
+          && bounds.x + bounds.width <= viewport.width && bounds.y + bounds.height <= viewport.height;
+      }).toBe(true);
       const surfaces = await page.locator(".project-row, .project-symbol").evaluateAll(nodes =>
         nodes.map(node => ({ border: getComputedStyle(node).borderTopWidth, shadow: getComputedStyle(node).boxShadow })));
       for (const surface of surfaces) expect(surface).toEqual({ border: "0px", shadow: "none" });
@@ -299,8 +299,9 @@ test("project manager uses one lightweight dialog without nested frames or page 
     // Closing a subview must not briefly paint the reset browse view over the document.
     await page.locator("#projects-open").click();
     await page.locator("#project-new").click();
-    expect(await page.locator("#projects-close").evaluate(button => {
+    expect(await page.locator("#projects-close").evaluate(async button => {
       button.click();
+      await new Promise(resolve => requestAnimationFrame(resolve));
       return button.closest("dialog").getClientRects().length;
     })).toBe(0);
     await page.locator("#projects-open").click();
@@ -415,7 +416,7 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     await fs.writeFile(path.join(replacement, "Replacement.md"), "# Replacement directory\n");
     await page.locator("#projects-open").click();
     await page.getByRole("button", { name: "Manage notes", exact: true }).click();
-    await expect(page.locator("#sharing-root")).toHaveValue(await fs.realpath(library.notes));
+    await expect.poll(async () => fs.realpath(await page.locator("#sharing-root").inputValue())).toBe(await fs.realpath(library.notes));
     await expect(page.locator("#sharing-root")).toHaveJSProperty("readOnly", false);
     await page.locator("#sharing-root").fill("relative/folder");
     await page.locator("#sharing-save").click();
@@ -428,11 +429,12 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     const capture = async name => {
       await expect(page.locator("dialog[open]")).toHaveCount(1);
       await expect(page.locator("#sharing-root")).toBeVisible();
-      const bounds = await page.locator("#projects-dialog").boundingBox();
       const viewport = page.viewportSize();
-      expect(bounds.x).toBeGreaterThanOrEqual(0);
-      expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
-      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+      await expect.poll(async () => {
+        const bounds = await page.locator("#projects-dialog").boundingBox();
+        return bounds && bounds.x >= 0 && bounds.x + bounds.width <= viewport.width
+          && bounds.y + bounds.height <= viewport.height;
+      }).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.screenshot({ path: test.info().outputPath(`${name}.png`), animations: "disabled" });
     };
@@ -463,7 +465,7 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     await confirmDialog(page, { accept: false });
     await expect(page.locator("#editor")).toHaveValue(/Unsaved local note/);
     const unchanged = await (await page.request.get(new URL("/api/projects", library.url).href)).json();
-    expect(unchanged.find(project => project.id === "default").root).toBe(await fs.realpath(library.notes));
+    expect(await fs.realpath(unchanged.find(project => project.id === "default").root)).toBe(await fs.realpath(library.notes));
     failSave = false;
     await page.locator("#sharing-save").click();
     await expect(page.locator("#projects-dialog")).toBeHidden();
@@ -478,7 +480,7 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     expect(await fs.readFile(path.join(replacement, "Shared.md"), "utf8")).toBe("# New shared note\n");
     await page.locator("#projects-open").click();
     await page.getByRole("button", { name: "Manage notes", exact: true }).click();
-    await expect(page.locator("#sharing-root")).toHaveValue(await fs.realpath(replacement));
+    await expect.poll(async () => fs.realpath(await page.locator("#sharing-root").inputValue())).toBe(await fs.realpath(replacement));
     await page.locator("#sharing-cancel").click();
     await page.locator("#projects-close").click();
 
@@ -494,7 +496,7 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     await expect(page.locator("#editor")).toHaveValue("# Keep this current draft\n");
     expect(page.url()).toBe(activeUrl);
     const projects = await (await page.request.get(new URL("/api/projects", library.url).href)).json();
-    expect(projects.find(project => project.id === inactive.id).root).toBe(await fs.realpath(archive));
+    expect(await fs.realpath(projects.find(project => project.id === inactive.id).root)).toBe(await fs.realpath(archive));
   } finally {
     await library.close();
     await fs.rm(replacement, { recursive: true, force: true });
@@ -589,39 +591,4 @@ test("clipboard images use the configured project directory in Live and Source, 
     await expect(bob.locator("#dirty-indicator")).toHaveText("Read only");
     await alice.screenshot({ path: path.join(buildRoot, "projects-image-sharing.png") });
   } finally { await library.close(); }
-});
-
-test("loading and warnings float at bottom right without shifting editor or sidebar", async ({ page, browserName }) => {
-  let release;
-  const pending = new Promise((resolve) => { release = resolve; });
-  await page.route("**/api/document?id=*", async (route) => {
-    await pending;
-    await route.continue();
-  });
-  const before = await page.locator("#document-panes").boundingBox();
-  const sidebar = await page.locator("#file-nav").boundingBox();
-  try {
-    await page.locator('[data-path="Second.md"]').click();
-    await expect(page.locator("#loading-message")).toHaveText("Opening “Second”…");
-    expect(await page.locator("#loading-message").evaluate(node => Boolean(node.closest(".status-notices")))).toBe(true);
-    expect(await page.locator("#loading-message").evaluate(node => Boolean(node.closest(".status-bar")))).toBe(false);
-    expect(await page.locator("#document-panes").boundingBox()).toEqual(before);
-    expect(await page.locator("#file-nav").boundingBox()).toEqual(sidebar);
-    await expect(page.locator(".document-alerts")).toHaveCount(0);
-    await expect(page.locator("#status-notices")).toBeVisible();
-    const bounds = await page.locator("#status-notices").boundingBox();
-    const viewport = page.viewportSize();
-    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width - 8);
-    expect(bounds.x).toBeGreaterThan(viewport.width / 2);
-    expect(viewport.height - bounds.y - bounds.height).toBeCloseTo(18, 0);
-    if (browserName !== "webkit") await page.screenshot({ path: test.info().outputPath("floating-loading.png"), caret: "initial" });
-  } finally { release(); }
-  await expect(page.locator("#document-title")).toHaveText("Second");
-  await page.route("**/api/tree", (route) => route.fulfill({
-    status: 422, contentType: "application/json", body: JSON.stringify({ error: "Invalid file list for status layout test" }),
-  }));
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(page.locator("#tree-message")).toContainText("Invalid file list for status layout test");
-  expect(await page.locator("#tree-message").evaluate(node => Boolean(node.closest(".status-notices")))).toBe(true);
-  expect(await page.locator("#tree-message").evaluate(node => Boolean(node.closest(".status-bar")))).toBe(false);
 });

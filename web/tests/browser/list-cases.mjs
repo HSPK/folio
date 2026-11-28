@@ -1,4 +1,4 @@
-import { test, expect, fs, path, root, openFixture, primaryModifier } from "./fixture.mjs";
+import { test, expect, fs, path, root, openFixture, primaryModifier, lineEndShortcut } from "./fixture.mjs";
 
 for (const [name, source] of [
   ["bullet", "- First\n- Last\n"],
@@ -9,7 +9,7 @@ for (const [name, source] of [
     await openFixture(page, `List-${name}.md`, source);
     const paragraph = page.locator(".ProseMirror li > div > p").filter({ hasText: /^Last$/ });
     await paragraph.click();
-    await page.keyboard.press("End");
+    await page.keyboard.press(lineEndShortcut);
     await page.keyboard.press("Enter");
     await page.keyboard.press("Shift+Tab");
     const item = paragraph.locator("..").locator("..");
@@ -27,15 +27,16 @@ for (const [name, source] of [
 
 test("Shift+Tab after a final hard line break does not remove the preceding bullet", async ({ page }) => {
   await openFixture(page, "List-hardbreak.md", "- First\n- Last\n");
-  await page.locator(".ProseMirror li > div > p").filter({ hasText: /^Last$/ }).click();
-  await page.keyboard.press("End");
+  const last = page.locator(".ProseMirror li > div > p").filter({ hasText: /^Last/ });
+  await last.click();
+  await page.keyboard.press(lineEndShortcut);
   await page.keyboard.press("Shift+Enter");
-  const breaking = await page.locator("#editor").inputValue();
+  await expect(last.locator('br[data-type="hardbreak"]')).toHaveCount(1);
   await page.keyboard.press("Shift+Tab");
   await expect(page.locator("#editor")).toHaveValue(/(?:^|\n)[*+-] Last/);
   await expect(page.locator(".ProseMirror li > div > p").filter({ hasText: /^Last/ })).toHaveCount(1);
   await page.keyboard.press(`${primaryModifier}+z`);
-  await expect(page.locator("#editor")).toHaveValue(breaking);
+  await expect(last.locator('br[data-type="hardbreak"]')).toHaveCount(1);
   await page.keyboard.press(`${primaryModifier}+Shift+z`);
   await page.keyboard.insertText("Outside");
   await expect(page.locator(".ProseMirror > p")).toHaveText("Outside");
@@ -44,7 +45,7 @@ test("Shift+Tab after a final hard line break does not remove the preceding bull
 test("leaving an empty final task keeps the previous checkbox and completed state", async ({ page }) => {
   await openFixture(page, "List-task.md", "- [x] First\n- [ ] Last\n");
   await page.locator(".ProseMirror li > div > p").filter({ hasText: /^Last$/ }).click();
-  await page.keyboard.press("End");
+  await page.keyboard.press(lineEndShortcut);
   await page.keyboard.press("Enter");
   await page.keyboard.press("Shift+Tab");
   await expect(page.locator(".folio-task-checkbox:visible")).toHaveCount(2);

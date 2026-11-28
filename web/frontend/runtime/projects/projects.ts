@@ -30,9 +30,10 @@ import { confirmAction, hasDialogConfirmation } from "../dialogs/dialogs";
 import { captureDraft, discardLocalDraft } from "../documents/drafts";
 import { imageUploading } from "../documents/images";
 import { cancelDocumentLoad, clearDocument, commitUrl, restoreCommittedUrl } from "../documents/navigation";
-import { documentResource, requestResourceLink, resourceState } from "../documents/resources";
+import { documentResource, resourceState } from "../documents/resources";
 import { cancelAutoSave, saveBeforeLeaving, scheduleAutoSave } from "../documents/saving";
-import { applicationSignal, listen, onApplicationDispose } from "../lifecycle";
+import { applicationLifetime, applicationSignal, listen, onApplicationDispose } from "../lifecycle";
+import { buttonFeedback } from "../../../shared/feedback";
 import { renderFiles } from "../navigation/library";
 import { clearTreePrefetch } from "../navigation/tree";
 import { cancelSettings } from "../preferences/settings";
@@ -86,9 +87,8 @@ export function initializeProjectsProjects(): void {
     }
   });
   listen(element("projects-open"), "click", () => void openProjects());
-  listen(element("settings-projects-open"), "click", () => {
-    cancelSettings();
-    void openProjects();
+  listen(element("settings-projects-open"), "click", async () => {
+    if (await cancelSettings()) await openProjects();
   });
   listen(element("project-create-form"), "submit", async (event) => {
     if (!(event.target instanceof Element)) return;
@@ -186,7 +186,7 @@ export function initializeProjectsProjects(): void {
       }
       await copyPlainText(link ? publicShareUrl(link.token) : compactPageUrl(url).href);
       if (projectState.sharingTarget !== target || !projectManagerOpen()) return;
-      setText(element("sharing-copy-link"), "Copied");
+      buttonFeedback(element("sharing-copy-link"), "Copied", applicationLifetime());
       setText(element("sharing-feedback"), "Link copied");
       element("sharing-feedback").hidden = false;
       documentNotice("");
@@ -200,53 +200,6 @@ export function projectStorageKey() {
   return `folio.projects.${authenticationSession.user?.username ?? "local"}`;
 }
 
-export function projectUrl(
-  value: string | null | undefined,
-  documentPath: string | undefined = documentSession.current?.path,
-) {
-  if (!value || !value.startsWith("/")) return value ?? null;
-  const url = expandedPageUrl(new URL(value, window.location.href));
-  const project = documentSession.current?.project ?? projectModel.active?.id ?? "local";
-  const asset = url.pathname === "/assets" && isResourceId(url.searchParams.get("id"));
-  const document = url.pathname === "/" && isResourceId(url.searchParams.get("document"));
-  if (!asset && !document) {
-    const path = decodeURIComponent(url.pathname.slice(1));
-    const resource = resourceState.resourceLocations.get(resourceState.resourceLocation(project, path));
-    if (!resource) {
-      requestResourceLink(path, /\.(md|markdown)$/i.test(path) ? "document" : "asset");
-      return null;
-    }
-    url.search = "";
-    if (resource.kind === "document") {
-      url.pathname = "/";
-      url.searchParams.set("document", resource.id);
-    } else if (resource.kind === "asset") {
-      url.pathname = "/assets";
-      url.searchParams.set("id", resource.id);
-    } else return null;
-  }
-  const context =
-    resourceState.resourceLocations.get(resourceState.resourceLocation(project, documentPath ?? ""))?.id ??
-    documentSession.resourceId;
-  if (publicState.publicView) {
-    if (url.pathname === "/assets") {
-      url.pathname = "/api/public/assets";
-      url.searchParams.set("share", requireValue(publicState.publicToken, "Public link identity"));
-      if (context) url.searchParams.set("document", context);
-    } else if (url.pathname === "/") {
-      if (url.searchParams.get("document") !== documentSession.current?.id) return null;
-      const shared = new URL(publicShareUrl(publicState.publicToken));
-      return shared.pathname + url.hash;
-    }
-    return url.pathname + url.search + url.hash;
-  }
-  if (projectModel.active && (url.pathname === "/assets" || url.pathname === "/")) {
-    url.searchParams.set("project", project);
-  }
-  if (url.pathname === "/assets" && context) url.searchParams.set("document", context);
-  const target = url.pathname === "/" ? compactPageUrl(url) : url;
-  return target.pathname + target.search + target.hash;
-}
 export function updateProjectControls(): void {
   element("settings-open").hidden = publicState.publicView;
   element("sidebar-toggle").hidden = publicState.publicView;

@@ -3,6 +3,7 @@ import { applyAppearance } from "@folio/editor-runtime";
 import { element, clearTimer } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { settingsState } from "../preferences/settings";
+import { preferencesRevision } from "../preferences/saving";
 import { publicState } from "../sharing/public";
 import { api } from "./api";
 import { appState } from "./bootstrap";
@@ -39,6 +40,12 @@ export async function refreshAppearance(force = false): Promise<void> {
   const controller = new AbortController();
   appState.appearanceController = controller;
   const ticket = ++appState.appearanceGeneration;
+  const revision = preferencesRevision();
+  const current = () =>
+    ticket === appState.appearanceGeneration &&
+    !controller.signal.aborted &&
+    revision === preferencesRevision() &&
+    !element("settings-dialog").open;
   let timedOut = false;
   const timeout = window.setTimeout(() => {
     timedOut = true;
@@ -50,10 +57,10 @@ export async function refreshAppearance(force = false): Promise<void> {
       signal: controller.signal,
     });
     clearTimer(timeout);
-    if (ticket !== appState.appearanceGeneration || controller.signal.aborted) return;
-    const result = await applyAppearance(settings);
+    if (!current()) return;
     settingsState.sharedAppearance = settings;
-    if (ticket !== appState.appearanceGeneration || controller.signal.aborted) return;
+    const result = await applyAppearance(settings);
+    if (!current()) return;
     appearanceNotice(result.warning);
   } catch (errorCause) {
     const error = errorContext(errorCause);

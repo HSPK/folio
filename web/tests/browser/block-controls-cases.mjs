@@ -7,6 +7,22 @@ const source = 'Intro **kept**.\n\n```rust\nfn main() {\n    kept();\n}\n```\n\n
 const blockMenu = page => page.getByRole("menu", { name: "Block actions", exact: true });
 const grip = page => page.locator(".folio-block-grip");
 
+async function clickCaret(paragraph, offset) {
+  const caret = await paragraph.evaluate((node, offset) => {
+    const range = node.ownerDocument.createRange();
+    range.setStart(node.firstChild, offset);
+    range.collapse(true);
+    const rect = range.getBoundingClientRect();
+    const bounds = node.getBoundingClientRect();
+    return { x: Math.round(rect.left - bounds.left), y: Math.round(rect.top + rect.height / 2 - bounds.top) };
+  }, offset);
+  await paragraph.click({ position: caret });
+  await expect.poll(() => paragraph.evaluate(node => {
+    const selection = node.ownerDocument.getSelection();
+    return selection.anchorNode === node.firstChild ? selection.anchorOffset : null;
+  })).toBe(offset);
+}
+
 for (const width of [1440, 651]) {
   test(`desktop block controls activate only on click and stay with the clicked block at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
@@ -61,7 +77,7 @@ for (const width of [1440, 651]) {
       await block.scrollIntoViewIfNeeded();
       const before = await block.boundingBox();
       const contentLeft = label === "Table" ? (await block.locator(".folio-table-scroll").boundingBox()).x : before.x;
-      await block.click();
+      await (label === "Table" ? block.locator("th, td").first() : block).click();
       await expect(grip(page)).toBeVisible();
       const handle = await grip(page).boundingBox();
       const add = await page.getByRole("button", { name: "Add below", exact: true }).boundingBox();
@@ -80,6 +96,7 @@ for (const width of [1440, 651]) {
         context.fillRect(0, 0, 1, 1);
         return context.getImageData(0, 0, 1, 1).data[3] === 255 ? "opaque" : getComputedStyle(node).backgroundColor;
       })).toBe("opaque");
+      if (label === "Table") await expect(block.locator(".folio-table-selection")).toBeVisible();
       const selection = label === "Table" ? await block.locator(".folio-table-selection").boundingBox() : null;
       const menu = await openBlock(page, block, label);
       expect(await block.boundingBox()).toEqual(before);
@@ -160,8 +177,7 @@ for (const [selector, label] of [
     await openFixture(page, `Block-toggle-${label.replaceAll(" ", "-")}.md`, source);
     const editor = page.locator(".ProseMirror");
     const paragraph = editor.locator(":scope > p").first();
-    await paragraph.click();
-    await paragraph.evaluate(node => node.ownerDocument.getSelection().setBaseAndExtent(node.firstChild, 2, node.firstChild, 2));
+    await clickCaret(paragraph, 2);
     const menu = await openBlock(page, page.locator(selector), label);
     await expect(grip(page)).toHaveAttribute("aria-expanded", "true");
     await expect(editor.locator(".ProseMirror-selectednode, .selectedCell")).toHaveCount(0);
@@ -347,8 +363,7 @@ for (const [label, body, selector] of [
       await openFixture(page, `Menu-focus-${label.replaceAll(" ", "-")}-${dismissBy}.md`, source);
       const editor = page.locator(".ProseMirror");
       const origin = editor.locator(":scope > p").first();
-      await origin.click();
-      await origin.evaluate(node => node.ownerDocument.getSelection().setBaseAndExtent(node.firstChild, 2, node.firstChild, 2));
+      await clickCaret(origin, 2);
       await (await openBlock(page, origin, "Text")).press("Escape");
       const block = page.locator(selector);
       await block.scrollIntoViewIfNeeded();
@@ -380,8 +395,8 @@ test("menu dismissal preserves both the page viewport and a horizontally scrolle
     + "```text\ncursor " + "x".repeat(600) + "\n```\n\n" + "Tail.\n\n".repeat(20));
   const block = page.locator(".folio-code-block");
   await block.scrollIntoViewIfNeeded();
-  await block.locator("code").click();
-  await block.locator("code").evaluate(node => node.ownerDocument.getSelection().setBaseAndExtent(node.firstChild, 2, node.firstChild, 2));
+  await block.locator("code").hover();
+  await clickCaret(block.locator("code"), 2);
   await (await openBlock(page, block, "Code block")).press("Escape");
   const viewport = block.locator("pre");
   await viewport.evaluate(node => { node.scrollLeft = 300; });

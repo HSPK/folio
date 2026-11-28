@@ -104,8 +104,7 @@ impl Root {
         getrandom::fill(&mut random).map_err(|error| ApiError::internal(error.to_string()))?;
         let filename = format!("image-{}.{}", crate::server::hex(&random), extension);
         let mut staged = super::StagedFile::write(&parent, bytes, None)?;
-        check()?;
-        staged.commit(filename.as_ref(), false)?;
+        staged.commit(filename.as_ref(), false, check)?;
         parent.sync()?;
         Ok(format!("{directory}/{filename}"))
     }

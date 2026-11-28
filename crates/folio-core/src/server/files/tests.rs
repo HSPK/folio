@@ -298,7 +298,7 @@ fn cancelled_saves_and_failed_replacements_clean_staging_files() {
     let resolved = root.resolve("directory.md").unwrap();
     {
         let mut staged = StagedFile::write(&resolved.parent, b"never published", None).unwrap();
-        assert!(staged.commit(&resolved.name, true).is_err());
+        assert!(staged.commit(&resolved.name, true, || Ok(())).is_err());
     }
     assert!(fixture.0.join("directory.md").is_dir());
     assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 2);
@@ -556,7 +556,7 @@ fn a_held_parent_cannot_be_replaced_with_an_escaping_directory() {
         .unwrap();
     }
     let mut staged = StagedFile::write(&resolved.parent, b"inside", None).unwrap();
-    staged.commit(&resolved.name, false).unwrap();
+    staged.commit(&resolved.name, false, || Ok(())).unwrap();
     assert_eq!(
         fs::read_to_string(fixture.0.join("outside").join("note.md")).unwrap(),
         "outside"
@@ -572,3 +572,7 @@ fn a_held_parent_cannot_be_replaced_with_an_escaping_directory() {
         "inside"
     );
 }
+
+#[cfg(windows)]
+#[path = "windows_tests.rs"]
+mod windows;

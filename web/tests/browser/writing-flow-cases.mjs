@@ -21,13 +21,16 @@ test("view switching preserves source selections and the reading position after 
   await expect.poll(() => page.evaluate(() => document.getSelection().anchorNode?.textContent)).toContain("Paragraph 45");
   await capture(page, "retained-live-position", browserName);
   await chooseView(page, "preview");
+  await expect(page.locator("#preview p").filter({ hasText: /^Paragraph 45:/ })).toContainText(" inserted");
   await expect(page.locator("#preview p").filter({ hasText: /^Paragraph 45:/ })).toBeInViewport();
-  await page.locator("#preview p").filter({ hasText: /^Paragraph 55:/ }).evaluate(node => {
-    const root = document.getElementById("preview");
+  await page.locator("#preview").evaluate(root => {
+    const node = [...root.querySelectorAll("p")].find(node => node.textContent.startsWith("Paragraph 55:"));
     root.scrollTop += node.getBoundingClientRect().top - root.getBoundingClientRect().top - 25;
   });
   await chooseView(page, "editor");
-  expect(await page.locator("#editor").evaluate(node => node.value.slice(node.selectionStart, node.selectionStart + 20))).toContain("Paragraph 55");
+  await expect(page.locator("#editor")).toBeFocused();
+  await expect.poll(() => page.locator("#editor").evaluate(node =>
+    node.value.slice(node.selectionStart, node.selectionStart + 20))).toContain("Paragraph 55");
 });
 
 test("file menus rename the target inline without changing its display title", async ({ page, browserName }) => {

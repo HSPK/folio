@@ -14,6 +14,7 @@ export async function confirmDocumentLeave(request: LeaveConfirmation, owner: Ab
       {
         label: snapshot.conflict && action === "reload this note from disk" ? "Use latest" : "Discard changes",
         cancelLabel: "Keep editing",
+        tone: "destructive",
         signal,
       },
     );

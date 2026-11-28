@@ -11,6 +11,8 @@
       body:has(#folio-boot) { margin: 0; background: #f5f4ef; color: #484844; }
       #folio-boot { min-height: 100dvh; display: grid; place-items: center; }
       #folio-boot h1 { margin: 0; font: 500 1rem/1.5 system-ui, sans-serif; }
+      #folio-boot > div { display: grid; justify-items: center; gap: 12px; padding: 24px; }
+      #folio-boot button { min-height: 44px; padding: 8px 18px; border: 1px solid currentColor; border-radius: 999px; background: none; color: inherit; font: 500 .85rem/1.5 system-ui, sans-serif; cursor: pointer; }
       @media (prefers-color-scheme: dark) { body:has(#folio-boot) { background: #202020; color: #deded9; } }
       @media (scripting: none) { #folio-root { display: none; } }
     </style>

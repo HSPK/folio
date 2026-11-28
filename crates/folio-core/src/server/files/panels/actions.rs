@@ -105,8 +105,7 @@ pub(in crate::server) async fn duplicate(
         let bytes = super::super::read_limited(&mut file, 16 << 20, "Workspace files")?;
         let target = state.root.resolve(&q.destination)?;
         let mut staged = super::super::StagedFile::write(&target.parent, &bytes, None)?;
-        work.check()?;
-        staged.commit(&target.name, false)?;
+        staged.commit(&target.name, false, || work.check())?;
         drop(staged);
         target.parent.sync()?;
         let path = state.root.canonical_file_path(&q.destination)?;

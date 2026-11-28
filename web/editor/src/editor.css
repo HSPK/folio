@@ -87,7 +87,7 @@ folio-diagram img { display: block; max-width: 100%; height: auto; margin: auto;
 .markdown-body folio-diagram:not([data-state="error"]) + pre[data-code-language="Mermaid"] { display: none; }
 .folio-code-block:has(> folio-diagram) .folio-code-language { grid-row: 1; align-self: center; }
 .folio-diagram-toggle { grid-column: 2; grid-row: 1; justify-self: end; z-index: 1; padding: .25em .6em; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: 0.8rem var(--font-ui, sans-serif); cursor: pointer; }
-.folio-diagram-toggle:is(:hover, :focus-visible) { background: var(--subtle-surface); color: var(--ink); }
+.folio-diagram-toggle:is(:hover, :focus-visible) { background: var(--subtle-surface); color: var(--text); }
 .folio-code-block:has(> folio-diagram):not([data-diagram-source]) :is(.folio-code-gutter, .folio-code-scroll) { display: none; }
 .markdown-body pre[data-code-language]::before { content: attr(data-code-language); }
 .folio-prose .folio-code-gutter { color: var(--muted, #999); opacity: 0.5; text-align: end; padding-inline-end: 1em; user-select: none; }

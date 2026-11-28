@@ -48,7 +48,7 @@ export function WorkspaceShell() {
         <section class="auth-card">
           <img src="/icon.svg" alt="" width="52" height="52" />
           <h1 id="auth-title">Log in to Folio</h1>
-          <form id="auth-form" onSubmit={submitAuthentication}>
+          <form id="auth-form" aria-describedby="auth-error" onSubmit={submitAuthentication}>
             <div id="auth-invitation-field" hidden>
               <label for="auth-invitation">Invitation key</label>
               <input
@@ -72,14 +72,19 @@ export function WorkspaceShell() {
               minLength="3"
               maxLength="64"
               pattern={"[A-Za-z0-9][A-Za-z0-9._\\-]{2,63}"}
+              aria-describedby="auth-username-hint"
+              title="3-64 characters. Start with a letter or number; letters, numbers, dots, underscores and hyphens are allowed."
             />
+            <p id="auth-username-hint" class="form-hint" hidden>
+              3–64 letters, numbers, dots, underscores or hyphens. Start with a letter or number.
+            </p>
             <label for="auth-password">Password</label>
             <input id="auth-password" name="password" type="password" autocomplete="current-password" required />
             <div id="auth-confirm-field" hidden>
               <label for="auth-confirm">Confirm password</label>
               <input id="auth-confirm" name="confirm" type="password" autocomplete="new-password" />
             </div>
-            <p id="auth-error" class="notice is-error" role="alert" hidden></p>
+            <p id="auth-error" class="notice is-error" role="alert" data-inline-status hidden></p>
             <button id="auth-submit" class="button-primary auth-submit" type="submit">
               Log in
             </button>

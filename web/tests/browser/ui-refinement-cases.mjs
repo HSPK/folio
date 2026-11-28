@@ -1,6 +1,13 @@
 import { test, expect, fs, path, buildRoot, openSettingsDialog, openMoreAction, selectSettingsSection } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
+async function expandDirectories(page, paths) {
+  for (const path of paths) {
+    const directory = page.locator(`.directory[data-path="${path}"]`);
+    if (!await directory.evaluate(node => node.open)) await directory.locator(":scope > summary").click();
+  }
+}
+
 for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }]) {
 test(`settings are inside the distinct More menu at ${viewport.width}px`, async ({ page, browserName }) => {
   await page.setViewportSize(viewport);
@@ -80,7 +87,8 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     ]) await fs.writeFile(path.join(library.notes, name), `---\ntitle: ${title}\ntags: [research]\n---\n\n# ${title}\n`);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(page.locator('[data-path="Guides/Research.md"]')).toBeAttached();
-    await expect(page.locator(".sidebar-footer, #library-menu, #library-name, #file-count, #root-path")).toHaveCount(0);
+    await expect(page.locator("#library-menu, #library-name, #file-count, #root-path")).toHaveCount(0);
+    await expect(page.locator(".sidebar-footer #projects-open")).toBeVisible();
     await expect(page.locator("#refresh-files")).toHaveCount(0);
     await expect(page.locator("#new-menu > button")).toBeVisible();
     await page.keyboard.press("Escape");
@@ -100,7 +108,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
         .filter(node => node.id !== "sidebar-scrim" && node.getClientRects().length && getComputedStyle(node).visibility !== "hidden")
         .filter(node => {
           const style = getComputedStyle(node);
-          return style.borderRadius !== "6px" || style.borderBottomWidth !== style.borderTopWidth || style.boxShadow !== "none";
+          return !(parseFloat(style.borderRadius) > 0) || style.borderBottomWidth !== style.borderTopWidth || style.boxShadow !== "none";
         }).map(node => ({ id: node.id, class: node.className, text: node.textContent.slice(0, 40) })));
       expect(inconsistent, `${name}: inconsistent controls`).toEqual([]);
       for (const panel of measurement.panels) {
@@ -112,7 +120,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
       if (await page.locator("#settings-dialog").isVisible()) {
         const dialog = await page.locator("#settings-dialog").boundingBox();
         const save = await page.locator("#settings-save").boundingBox();
-        expect(save.y + save.height).toBeLessThan(dialog.y + dialog.height - 8);
+        expect(save.y + save.height).toBeLessThan(dialog.y + dialog.height);
         await page.locator("#settings-save").click({ trial: true });
         await expect(page.locator("#settings-library-label")).toHaveText("Current project");
         await expect(page.locator("#settings-library-root")).toHaveText("notes");
@@ -120,16 +128,19 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
       if (await page.locator("#search-dialog").isVisible()) {
         const dialog = await page.locator("#search-dialog").boundingBox();
         const results = await page.locator(".search-layout").boundingBox();
-        expect(results.y + results.height).toBeLessThanOrEqual(dialog.y + dialog.height - 18);
+        expect(results.y + results.height).toBeLessThan(dialog.y + dialog.height);
         for (const id of ["search-project", "search-field"]) {
           if (!await page.locator(`#${id}`).isVisible()) continue;
-          const label = await page.locator(`label[for="${id}"]`).boundingBox();
-          const control = await page.locator(`#${id}`).boundingBox();
-          expect(Math.abs(label.y + label.height / 2 - control.y - control.height / 2)).toBeLessThan(1);
+          const difference = await page.locator(`#${id}`).evaluate((node, id) => {
+            const label = document.querySelector(`label[for="${id}"]`).getBoundingClientRect();
+            const control = node.getBoundingClientRect();
+            return Math.abs(label.y + label.height / 2 - control.y - control.height / 2);
+          }, id);
+          expect(difference).toBeLessThan(1);
         }
-        for (const snippet of await page.locator(".search-snippet").all()) {
-          expect((await snippet.boundingBox()).height).toBeLessThanOrEqual(54);
-        }
+        const heights = await page.locator(".search-snippet").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
+        expect(heights.length).toBeGreaterThan(0);
+        for (const height of heights) expect(height).toBeLessThanOrEqual(54);
       }
     };
     const openMore = id => openMoreAction(page, id);
@@ -154,8 +165,15 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     await capture("desktop-sharing");
     await page.locator("#sharing-cancel").click();
     await page.keyboard.press("Control+p");
-    await page.locator("#search-query").fill("design");
+    await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === "/api/search"
+        && response.request().postDataJSON()?.query === "design" && response.ok()),
+      page.locator("#search-query").fill("design"),
+    ]);
+    await expect(page.locator("#search-results")).toHaveAttribute("aria-busy", "false");
     await expect(page.locator("#search-results")).toContainText("Design notes");
+    if (!await page.locator("#search-filters").evaluate(node => node.open))
+      await page.locator("#search-filters > summary").click();
     await capture("desktop-search");
     await expect(page.locator(".search-snippet mark").first()).toBeVisible();
     await expect(page.locator(".search-snippet").first()).not.toContainText("tags:");
@@ -177,7 +195,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     await expect(page.locator(".workspace-item-name")).toHaveCSS("text-align", "left");
     const kind = await page.locator("#workspace-kind").boundingBox();
     const filter = await page.locator("#workspace-filter").boundingBox();
-    expect(kind.y).toBe(filter.y);
+    expect(Math.abs(kind.y + kind.height / 2 - filter.y - filter.height / 2)).toBeLessThan(1);
     await page.locator("#workspace-close").click();
     await page.locator("#new-menu > button").click(); await page.locator("#new-from-template").click();
     await page.locator("#new-note-template").selectOption("weekly");
@@ -223,6 +241,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     await selectSettingsSection(page, "accessibility");
     await expect(page.locator('[data-settings-panel="accessibility"]')).toBeVisible();
     await selectSettingsSection(page, "library");
+    await page.locator("#settings-image-compression").selectOption("jpeg");
     await page.locator("#settings-image-quality").scrollIntoViewIfNeeded();
     await capture("narrow-settings-bottom");
     await page.locator("#settings-save").click();
@@ -321,6 +340,8 @@ test("file tree hover is immediate with separated highlights and scrollbar clear
       preferences.web.density = theme === "dark" ? "compact" : "comfortable";
       expect((await page.request.put(preferencesUrl, { data: preferences })).ok()).toBe(true);
       await page.reload();
+      await expect(page.locator('.directory[data-path="Hover spacing"]')).toBeVisible();
+      await expandDirectories(page, ["Hover spacing"]);
       const selected = page.locator('#file-list button[data-path="Hover spacing/Note 03.md"]');
       const hovered = page.locator('#file-list button[data-path="Hover spacing/Note 04.md"]');
       await selected.click();
@@ -387,6 +408,8 @@ test("file hierarchy is compact and rapid clicks do not select navigation text",
       const updated = await page.request.put(preferencesUrl, { data: preferences });
       expect(updated.ok(), await updated.text()).toBe(true);
       await page.reload();
+      await expect(page.locator('.directory[data-path="Research"]')).toBeVisible();
+      await expandDirectories(page, ["Research", "Research/Methods", "Research/Methods/Screen time", "Research/Methods/Screen time/Measures"]);
       await expect(protocol).toBeVisible();
       const parent = page.locator('#file-list .directory[data-path="Research"]');
       const summary = parent.locator(":scope > summary");

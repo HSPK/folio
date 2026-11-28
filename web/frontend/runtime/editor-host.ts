@@ -15,7 +15,7 @@ import { onApplicationDispose, ownApplicationResource } from "./lifecycle";
 import { setView } from "./navigation/files";
 import { renderOutline, setCurrentOutline } from "./navigation/outline";
 import { visibleLibraryFiles } from "./preferences/settings";
-import { projectUrl } from "./projects/projects";
+import { projectUrl } from "./documents/resources";
 import { openWorkspaceSearch } from "./search/search";
 import { publicState } from "./sharing/public";
 

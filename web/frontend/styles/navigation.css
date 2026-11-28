@@ -20,6 +20,18 @@
 .tree-entry-icon:hover, .tree-entry-icon:focus-visible { background: var(--selection); color: var(--text); outline: none; }
 #entry-icon-popup { inset: auto; margin: 0; width: 218px; padding: 8px; border: 1px solid var(--panel-border); background: var(--surface); color: var(--text); }
 #entry-icon-popup:not(:popover-open), .sheet-column-menu:not(:popover-open) { display: none; }
+.context-menu, .sheet-column-menu {
+  opacity: 1; transform: translateY(0);
+  transition: opacity var(--motion-panel-duration) var(--motion-easing),
+    transform var(--motion-panel-duration) var(--motion-easing),
+    display var(--motion-panel-duration) allow-discrete, overlay var(--motion-panel-duration) allow-discrete;
+}
+.context-menu[hidden], #entry-icon-popup:not(:popover-open), .sheet-column-menu:not(:popover-open) {
+  opacity: 0; transform: translateY(-4px); pointer-events: none; transition-duration: var(--motion-hover-duration);
+}
+@starting-style {
+  .context-menu:not([hidden]), #entry-icon-popup:popover-open, .sheet-column-menu:popover-open { opacity: 0; transform: translateY(-4px); }
+}
 #entry-icon-popup .context-icons { border: 0; margin: 0; padding: 0; }
 #file-properties-form { margin-top: 16px; }
 #file-properties-form label { margin-top: 10px; }
@@ -132,8 +144,9 @@ body[data-share-page] #panel-close { display: none; }
 .sheet-filter-heading svg { width: 13px; height: 13px; }
 .sheet-column-menu .sheet-sort { flex: none; display: flex; flex-direction: column; gap: 1px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .sheet-sort button { display: flex; align-items: center; gap: 9px; min-height: 29px; padding: 4px 8px; text-align: start; font-size: 12px; }
-.sheet-sort button span:first-child { width: 15px; flex: none; text-align: center; color: var(--muted); font-size: 15px; }
-.sheet-sort button span:last-child { margin-left: auto; width: 15px; flex: none; color: var(--accent-text); text-align: center; }
+.sheet-sort button .folio-icon { width: 15px; height: 15px; flex: none; color: var(--muted); }
+.sheet-sort button > .sheet-sort-mark { margin-left: auto; color: var(--accent-text); }
+.sheet-sort button[aria-pressed="false"] > .sheet-sort-mark { visibility: hidden; }
 .sheet-column-menu input[type="search"] { flex: none; width: calc(100% - 4px); margin: 8px 2px 4px; padding: 5px 8px; font-size: 12px; }
 .sheet-column-menu p[role="status"] { flex: none; margin: 0; padding: 4px 7px; color: var(--muted); }
 .sheet-column-menu p[role="status"]:empty { display: none; }

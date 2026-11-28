@@ -176,7 +176,7 @@ async function uploadImageFile(image: File, operation: ImageOperation, signal?: 
   }
   const url = imageMarkdownPath(result.path, result.documentPath);
   if (!ownsPage(operation) || resource !== documentSession.current?.id || !projectWritable())
-    throw new Error("Page changed during upload");
+    throw new Error(`Page changed; image at ${url}`);
   if (
     result.documentPath !==
     (operation.resource.startsWith("local-new:") ? documentSession.current.path : operation.path)

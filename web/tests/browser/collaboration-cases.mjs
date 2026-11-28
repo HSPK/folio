@@ -448,7 +448,9 @@ test("collaborative large Source uses virtual editing and protects external disk
     for (const page of library.pages) await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     await expect.poll(() => fs.readFile(path.join(library.notes, "Shared.md"), "utf8"))
       .toBe(`Bob\n\n${content}Alice 中文\n`);
-    await fs.writeFile(path.join(library.notes, "Shared.md"), "# Externally replaced\n");
+    await expect(async () => {
+      await fs.writeFile(path.join(library.notes, "Shared.md"), "# Externally replaced\n");
+    }).toPass({ timeout: 5000 });
     await alice.keyboard.insertText("Keep this draft");
     await expect(alice.locator("#collaboration-message")).toContainText("note changed elsewhere");
     await expect(bob.locator("#collaboration-message")).toContainText("note changed elsewhere");
@@ -471,11 +473,22 @@ test("administrator creates one-use invitations and manages invited users from S
     expect(invitation).toMatch(/^[a-f0-9]{24}\.[a-f0-9]{64}$/);
     const page = await guest.newPage();
     await page.goto(library.url);
+    await page.evaluate(() => {
+      const requestFrame = window.requestAnimationFrame.bind(window);
+      const callbacks = [];
+      window.requestAnimationFrame = callback => callbacks.push(callback);
+      window.flushAuthenticationFrames = () => {
+        window.requestAnimationFrame = requestFrame;
+        for (const callback of callbacks) callback(performance.now());
+      };
+    });
     await page.locator("#auth-use-invitation").click();
     await page.locator("#auth-invitation").fill(invitation);
     await page.locator("#auth-username").fill("charlie");
     await page.locator("#auth-password").fill("charlie test password long enough");
     await page.locator("#auth-confirm").fill("charlie test password long enough");
+    await page.evaluate(() => window.flushAuthenticationFrames());
+    await expect(page.locator("#auth-confirm")).toBeFocused();
     const invalidFields = await page.locator("#auth-form").evaluate(form => [...form.elements]
       .filter(element => element instanceof HTMLInputElement && !element.validity.valid)
       .map(element => ({ id: element.id, missing: element.validity.valueMissing, pattern: element.validity.patternMismatch, length: element.value.length })));

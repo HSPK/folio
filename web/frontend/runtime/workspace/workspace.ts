@@ -68,6 +68,8 @@ export function initializeWorkspaceWorkspace(): void {
     const value = !workspaceModel.lists.favorites.some((note) => sameWorkspaceNote(note, project, id));
     try {
       await changeWorkspace({ action: "favorite", project, id, value });
+      if (projectModel.active?.id === project && documentSession.current?.id === id)
+        documentNotice(value ? "Added to favorites" : "Removed from favorites", "success");
     } catch (errorCause) {
       if (isAbortError(errorCause)) return;
       const error = errorContext(errorCause);

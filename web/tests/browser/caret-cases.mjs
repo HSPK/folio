@@ -46,6 +46,11 @@ for (const width of [1440, 390]) {
     });
     const spacing = parseFloat(typography.line);
     await block.locator("pre").click();
+    await expect.poll(async () => {
+      const caret = await caretBox(page);
+      const bounds = await code.boundingBox();
+      return caret.y >= bounds.y - 1 && caret.y < bounds.y + bounds.height;
+    }).toBe(true);
     const empty = await caretBox(page);
     await page.keyboard.insertText("x");
     const first = await expectGlyphCaret(page, code);
