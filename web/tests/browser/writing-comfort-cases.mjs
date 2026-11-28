@@ -17,6 +17,20 @@ test("link selection stays native and editing requires an explicit action", asyn
       type: "initial", editable: node.isContentEditable, draggable: node.draggable,
       userSelect: getComputedStyle(node).userSelect, userModify: getComputedStyle(node).webkitUserModify,
     }];
+    const prototype = Object.getPrototypeOf(document.getSelection());
+    for (const method of ["collapse", "extend", "setBaseAndExtent", "removeAllRanges", "addRange"]) {
+      const original = prototype[method];
+      prototype[method] = function (...args) {
+        window.linkSelectionEvents.push({
+          type: `write:${method}`,
+          args: args.map(value => value instanceof Node ? value.nodeName : value instanceof Range ? {
+            start: value.startOffset, end: value.endOffset,
+          } : value),
+          stack: new Error().stack,
+        });
+        return Reflect.apply(original, this, args);
+      };
+    }
     for (const type of ["pointerdown", "mousedown", "mousemove", "mouseup", "selectstart", "dragstart", "selectionchange"]) {
       document.addEventListener(type, event => {
         const selection = document.getSelection();
