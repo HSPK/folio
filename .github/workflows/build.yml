@@ -45,9 +45,6 @@ jobs:
         run: cargo test --locked --workspace
       - name: Build headless core
         run: cargo build --locked -p folio-cli
-      - name: Test native link selection
-        working-directory: web
-        run: npx playwright test --grep "link selection stays native" --output test-results-native
       - name: Test browser editor against core CLI
         working-directory: web
         run: npx playwright test
@@ -56,9 +53,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: folio-browser-${{ runner.os }}
-          path: |
-            web/test-results
-            web/test-results-native
+          path: web/test-results
           if-no-files-found: ignore
           retention-days: 7
       - name: Build Windows wrapper
