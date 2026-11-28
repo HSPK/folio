@@ -60,6 +60,7 @@ for (const width of [1440, 390]) {
     try {
       const [page] = library.pages;
       await page.setViewportSize({ width, height: 960 });
+      await expect(page.locator("body")).toHaveAttribute("data-sidebar", width === 390 ? "closed" : "open");
       if (await page.locator("body").getAttribute("data-sidebar") === "closed")
         await page.locator("#sidebar-toggle").click();
       await page.locator("#projects-open").click();

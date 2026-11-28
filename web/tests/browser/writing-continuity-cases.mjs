@@ -1,5 +1,28 @@
 import { test, expect, openFixture, documentEndShortcut } from "./fixture.mjs";
 
+test("typing and Enter follow a native caret before selectionchange reaches the editor", async ({ page }) => {
+  for (const key of ["x", "Shift+Enter"]) {
+    await openFixture(page, "Native-caret.md", "First.\n\nLast.\n");
+    const editor = page.locator(".ProseMirror");
+    await editor.focus();
+    await editor.evaluate(node => {
+      window.holdNativeSelection = event => event.stopImmediatePropagation();
+      document.addEventListener("selectionchange", window.holdNativeSelection, true);
+      const last = node.lastElementChild.firstChild;
+      document.getSelection().setBaseAndExtent(last, 2, last, 2);
+    });
+    try {
+      await page.keyboard.press(key);
+      await expect(editor.locator(":scope > p").first()).toHaveText("First.");
+      await expect(editor.locator(":scope > p").first().locator("br")).toHaveCount(0);
+      if (key === "x") await expect(editor.locator(":scope > p").last()).toHaveText("Laxst.");
+      else await expect(editor.locator(":scope > p").last().locator("br")).toHaveCount(1);
+    } finally {
+      await page.evaluate(() => document.removeEventListener("selectionchange", window.holdNativeSelection, true));
+    }
+  }
+});
+
 async function pressBelowDocument(page) {
   const scroller = page.locator(".folio-live-scroll");
   await page.locator(".ProseMirror > :last-child").scrollIntoViewIfNeeded();

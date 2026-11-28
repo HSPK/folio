@@ -348,7 +348,10 @@ for (const [label, body, selector] of [
       const editor = page.locator(".ProseMirror");
       const origin = editor.locator(":scope > p").first();
       await origin.click();
-      await origin.evaluate(node => node.ownerDocument.getSelection().setBaseAndExtent(node.firstChild, 2, node.firstChild, 2));
+      await origin.evaluate(node => new Promise(resolve => {
+        node.ownerDocument.addEventListener("selectionchange", () => requestAnimationFrame(resolve), { once: true });
+        node.ownerDocument.getSelection().setBaseAndExtent(node.firstChild, 2, node.firstChild, 2);
+      }));
       await (await openBlock(page, origin, "Text")).press("Escape");
       const block = page.locator(selector);
       await block.scrollIntoViewIfNeeded();

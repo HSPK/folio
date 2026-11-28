@@ -27,15 +27,16 @@ for (const [name, source] of [
 
 test("Shift+Tab after a final hard line break does not remove the preceding bullet", async ({ page }) => {
   await openFixture(page, "List-hardbreak.md", "- First\n- Last\n");
-  await page.locator(".ProseMirror li > div > p").filter({ hasText: /^Last$/ }).click();
+  const last = page.locator(".ProseMirror li > div > p").filter({ hasText: /^Last/ });
+  await last.click();
   await page.keyboard.press(lineEndShortcut);
   await page.keyboard.press("Shift+Enter");
-  const breaking = await page.locator("#editor").inputValue();
+  await expect(last.locator('br[data-type="hardbreak"]')).toHaveCount(1);
   await page.keyboard.press("Shift+Tab");
   await expect(page.locator("#editor")).toHaveValue(/(?:^|\n)[*+-] Last/);
   await expect(page.locator(".ProseMirror li > div > p").filter({ hasText: /^Last/ })).toHaveCount(1);
   await page.keyboard.press(`${primaryModifier}+z`);
-  await expect(page.locator("#editor")).toHaveValue(breaking);
+  await expect(last.locator('br[data-type="hardbreak"]')).toHaveCount(1);
   await page.keyboard.press(`${primaryModifier}+Shift+z`);
   await page.keyboard.insertText("Outside");
   await expect(page.locator(".ProseMirror > p")).toHaveText("Outside");

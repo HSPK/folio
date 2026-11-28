@@ -263,12 +263,12 @@ test("project manager uses one lightweight dialog without nested frames or page 
       await expect(page.getByRole("dialog", {
         name: await page.locator("#projects-title").innerText(), exact: true,
       })).toHaveCount(1);
-      const bounds = await page.locator("#projects-dialog").boundingBox();
       const viewport = page.viewportSize();
-      expect(bounds.x).toBeGreaterThanOrEqual(0);
-      expect(bounds.y).toBeGreaterThanOrEqual(0);
-      expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
-      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+      await expect.poll(async () => {
+        const bounds = await page.locator("#projects-dialog").boundingBox();
+        return bounds && bounds.x >= 0 && bounds.y >= 0
+          && bounds.x + bounds.width <= viewport.width && bounds.y + bounds.height <= viewport.height;
+      }).toBe(true);
       const surfaces = await page.locator(".project-row, .project-symbol").evaluateAll(nodes =>
         nodes.map(node => ({ border: getComputedStyle(node).borderTopWidth, shadow: getComputedStyle(node).boxShadow })));
       for (const surface of surfaces) expect(surface).toEqual({ border: "0px", shadow: "none" });
@@ -429,11 +429,12 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     const capture = async name => {
       await expect(page.locator("dialog[open]")).toHaveCount(1);
       await expect(page.locator("#sharing-root")).toBeVisible();
-      const bounds = await page.locator("#projects-dialog").boundingBox();
       const viewport = page.viewportSize();
-      expect(bounds.x).toBeGreaterThanOrEqual(0);
-      expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
-      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+      await expect.poll(async () => {
+        const bounds = await page.locator("#projects-dialog").boundingBox();
+        return bounds && bounds.x >= 0 && bounds.x + bounds.width <= viewport.width
+          && bounds.y + bounds.height <= viewport.height;
+      }).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.screenshot({ path: test.info().outputPath(`${name}.png`), animations: "disabled" });
     };

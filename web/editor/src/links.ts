@@ -80,6 +80,7 @@ export function linkTitle(available: boolean) {
 }
 export function linkMarkView(mark: Mark, path: string, transformUrl: MarkdownUrl): MarkView {
   const dom = document.createElement("a");
+  dom.draggable = false;
   const target = resolveMarkdownUrl(mark.attrs.href, path);
   if (target) dom.dataset.noteUrl = target;
   const href = target ? transformUrl(target, path) : null;

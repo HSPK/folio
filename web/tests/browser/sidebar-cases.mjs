@@ -4,6 +4,7 @@ import { summarizeTimings } from "./performance-helpers.mjs";
 for (const width of [1440, 390]) {
   test(`sidebar refresh preserves the chosen open or closed state over shared defaults at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
+    await expect(page.locator("body")).toHaveAttribute("data-sidebar", width === 390 ? "closed" : "open");
     let defaultOpen = true;
     await page.route("**/api/preferences", async route => {
       if (route.request().method() !== "GET") return route.continue();
