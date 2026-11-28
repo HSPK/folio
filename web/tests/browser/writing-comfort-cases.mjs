@@ -149,15 +149,16 @@ test("link selection stays native and editing requires an explicit action", asyn
         await control.mouse.move(bounds.x + bounds.width - 15, bounds.y + bounds.height / 2, { steps: 12 });
         state.withoutScriptsOrStyles = await control.evaluate(() => document.getSelection().toString());
         await control.mouse.up();
-        const select = async () => {
+        const select = async (offset = 0, rounded = false) => {
           await control.evaluate(() => document.getSelection().removeAllRanges());
           try { await clonedLink.scrollIntoViewIfNeeded({ timeout: 1000 }); } catch { return ""; }
           const bounds = await clonedLink.boundingBox();
           if (!bounds?.width || !bounds.height) return "";
-          await control.mouse.move(bounds.x + 12, bounds.y + bounds.height / 2);
+          const y = rounded ? Math.round(bounds.y + bounds.height / 2 + offset) : bounds.y + bounds.height / 2 + offset;
+          await control.mouse.move(bounds.x + 12, y);
           await control.mouse.down();
           try {
-            await control.mouse.move(bounds.x + bounds.width - 15, bounds.y + bounds.height / 2, { steps: 12 });
+            await control.mouse.move(bounds.x + bounds.width - 15, y, { steps: 12 });
             return await control.evaluate(() => document.getSelection().toString());
           } finally { await control.mouse.up(); }
         };
@@ -215,6 +216,16 @@ test("link selection stays native and editing requires an explicit action", asyn
                   window.nativeCssRules[index].style.removeProperty(property);
                 }, { index, property });
                 state.propertyTrials.push({ property, text: await select() });
+              }
+              await control.evaluate(() => window.nativeCssRules.forEach(rule => { rule.style.cssText = rule.text; }));
+              state.typography = await clonedLink.evaluate(node => ({
+                font: getComputedStyle(node).font, rect: node.getBoundingClientRect().toJSON(),
+                paragraph: node.closest("p").getBoundingClientRect().toJSON(),
+              }));
+              state.pointerTrials = [];
+              for (const offset of [-4, -2, -1, 0, 1, 2, 4]) {
+                for (const rounded of [false, true])
+                  state.pointerTrials.push({ offset, rounded, text: await select(offset, rounded) });
               }
             }
           }
