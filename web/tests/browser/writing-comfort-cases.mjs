@@ -80,18 +80,22 @@ test("link selection stays native and editing requires an explicit action", asyn
       body: JSON.stringify(await page.evaluate(() => window.linkSelectionEvents), null, 2),
       contentType: "application/json",
     });
-    if (!selected) {
+    if (!selected || process.env.FOLIO_NATIVE_DIAGNOSTICS) {
       const state = await page.evaluate(() => ({
         body: document.body.outerHTML.slice(0, document.body.outerHTML.indexOf(">") + 1),
         userSelect: getComputedStyle(document.body).userSelect,
       }));
       const cdp = await page.context().newCDPSession(page);
       await cdp.send("Emulation.setScriptExecutionDisabled", { value: true });
-      await page.mouse.move(box.x + 12, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(box.x + box.width - 15, box.y + box.height / 2, { steps: 12 });
+      const pointer = (type, x, buttons) => cdp.send("Input.dispatchMouseEvent", {
+        type, x, y: box.y + box.height / 2, buttons, button: type === "mouseMoved" ? "none" : "left",
+        clickCount: type === "mouseMoved" ? 0 : 1,
+      });
+      await pointer("mouseMoved", box.x + 12, 0);
+      await pointer("mousePressed", box.x + 12, 1);
+      for (let step = 1; step <= 12; step++) await pointer("mouseMoved", box.x + 12 + (box.width - 27) * step / 12, 1);
       state.withoutScripts = await page.evaluate(() => document.getSelection().toString());
-      await page.mouse.up();
+      await pointer("mouseReleased", box.x + box.width - 15, 0);
       await cdp.send("Emulation.setScriptExecutionDisabled", { value: false });
       await cdp.detach();
       const control = await page.context().newPage();
