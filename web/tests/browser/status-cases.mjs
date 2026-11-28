@@ -73,6 +73,20 @@ test("a dialog error stays with its form when a background status was already fl
   await expect(stack).not.toContainText("Settings could not be saved");
 });
 
+test("background warnings wait until the active dialog closes", async ({ page }) => {
+  const warning = page.locator("#document-message");
+  await warning.evaluate(node => {
+    node.textContent = "The selected font is unavailable; using a fallback.";
+    node.classList.add("is-warning");
+    node.hidden = false;
+  });
+  await expect(warning).toBeVisible();
+  await openSettingsDialog(page);
+  await expect(warning).toBeHidden();
+  await page.locator("#settings-cancel").click();
+  await expect(warning).toBeVisible();
+});
+
 test("an outage shows one passive status and reconnects automatically", async ({ page, browserName }) => {
   const before = await page.locator("#document-panes").boundingBox();
   await page.route("**/api/tree", route => route.fulfill({

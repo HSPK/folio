@@ -61,7 +61,7 @@ for (const width of [1440, 651]) {
       await block.scrollIntoViewIfNeeded();
       const before = await block.boundingBox();
       const contentLeft = label === "Table" ? (await block.locator(".folio-table-scroll").boundingBox()).x : before.x;
-      await block.click();
+      await (label === "Table" ? block.locator("th, td").first() : block).click();
       await expect(grip(page)).toBeVisible();
       const handle = await grip(page).boundingBox();
       const add = await page.getByRole("button", { name: "Add below", exact: true }).boundingBox();
@@ -80,6 +80,7 @@ for (const width of [1440, 651]) {
         context.fillRect(0, 0, 1, 1);
         return context.getImageData(0, 0, 1, 1).data[3] === 255 ? "opaque" : getComputedStyle(node).backgroundColor;
       })).toBe("opaque");
+      if (label === "Table") await expect(block.locator(".folio-table-selection")).toBeVisible();
       const selection = label === "Table" ? await block.locator(".folio-table-selection").boundingBox() : null;
       const menu = await openBlock(page, block, label);
       expect(await block.boundingBox()).toEqual(before);

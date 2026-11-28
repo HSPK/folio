@@ -74,26 +74,32 @@ test("link selection stays native and editing requires an explicit action", asyn
       contentType: "application/json",
     });
     if (!selected) {
-      await page.evaluate(() => {
-        const probe = document.createElement("div");
-        probe.id = "native-link-probe";
-        probe.contentEditable = "true";
-        probe.style.cssText = "position:fixed;left:20px;top:20px;z-index:2147483647;padding:20px;background:white;color:black;font:17px sans-serif";
-        probe.innerHTML = 'Visit <a href="https://example.com/guide" draggable="false">https://example.com/guide</a> for details.';
-        document.body.append(probe);
-      });
-      const probe = page.locator("#native-link-probe a");
-      await probe.click();
-      const bounds = await probe.boundingBox();
-      await page.mouse.move(bounds.x + 12, bounds.y + bounds.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(bounds.x + bounds.width - 15, bounds.y + bounds.height / 2, { steps: 12 });
-      const plain = await page.evaluate(() => ({
-        text: document.getSelection().toString(),
-        anchor: document.getSelection().anchorOffset, focus: document.getSelection().focusOffset,
+      const state = await page.evaluate(() => ({
+        body: document.body.outerHTML.slice(0, document.body.outerHTML.indexOf(">") + 1),
+        userSelect: getComputedStyle(document.body).userSelect,
       }));
-      await page.mouse.up();
-      await test.info().attach("plain-native-link", { body: JSON.stringify(plain), contentType: "application/json" });
+      const control = await page.context().newPage();
+      await control.setContent(`<style>p{width:max-content;font:17px sans-serif}</style>
+        <p contenteditable="true"><a id="link" href="https://example.com/guide" draggable="false">https://example.com/guide</a></p>
+        <p contenteditable="true"><a id="explicit" href="https://example.com/guide" draggable="false" style="user-select:text">https://example.com/guide</a></p>
+        <p id="text" contenteditable="true">https://example.com/guide</p>`);
+      const samples = {};
+      for (const id of ["link", "explicit", "text"]) {
+        const bounds = await control.locator(`#${id}`).boundingBox();
+        await control.mouse.move(bounds.x + 12, bounds.y + bounds.height / 2);
+        await control.mouse.down();
+        await control.mouse.move(bounds.x + bounds.width - 15, bounds.y + bounds.height / 2, { steps: 12 });
+        samples[id] = await control.evaluate(() => ({
+          text: document.getSelection().toString(),
+          anchor: document.getSelection().anchorOffset, focus: document.getSelection().focusOffset,
+          focused: document.hasFocus(),
+        }));
+        await control.mouse.up();
+      }
+      await test.info().attach("plain-native-link", {
+        body: JSON.stringify({ state, samples }), contentType: "application/json",
+      });
+      await control.close();
     }
   }
   await expect(page.locator(".folio-link-dialog")).toBeHidden();
