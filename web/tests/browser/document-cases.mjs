@@ -94,12 +94,12 @@ test("source changes switch to inline editing and auto-save after one second idl
   await chooseView(page, "editor");
   const content = "# Changed in source\n\nA **bold** paragraph.\n";
   await page.locator("#editor").fill(content);
+  await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
+  expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe(initialText);
   await chooseView(page, "rich");
   await page.locator("#more-menu > button").focus();
   await expect(page.getByRole("heading", { name: "Changed in source", exact: true })).toBeVisible();
   await expect(page.locator(".ProseMirror")).toContainText("A bold paragraph.");
-  await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
-  expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe(initialText);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe(content);
   await expect(page.locator("#document-message")).toBeHidden();

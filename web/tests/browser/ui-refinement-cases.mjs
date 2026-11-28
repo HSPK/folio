@@ -131,13 +131,16 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
         expect(results.y + results.height).toBeLessThan(dialog.y + dialog.height);
         for (const id of ["search-project", "search-field"]) {
           if (!await page.locator(`#${id}`).isVisible()) continue;
-          const label = await page.locator(`label[for="${id}"]`).boundingBox();
-          const control = await page.locator(`#${id}`).boundingBox();
-          expect(Math.abs(label.y + label.height / 2 - control.y - control.height / 2)).toBeLessThan(1);
+          const difference = await page.locator(`#${id}`).evaluate((node, id) => {
+            const label = document.querySelector(`label[for="${id}"]`).getBoundingClientRect();
+            const control = node.getBoundingClientRect();
+            return Math.abs(label.y + label.height / 2 - control.y - control.height / 2);
+          }, id);
+          expect(difference).toBeLessThan(1);
         }
-        for (const snippet of await page.locator(".search-snippet").all()) {
-          expect((await snippet.boundingBox()).height).toBeLessThanOrEqual(54);
-        }
+        const heights = await page.locator(".search-snippet").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
+        expect(heights.length).toBeGreaterThan(0);
+        for (const height of heights) expect(height).toBeLessThanOrEqual(54);
       }
     };
     const openMore = id => openMoreAction(page, id);
@@ -162,7 +165,12 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     await capture("desktop-sharing");
     await page.locator("#sharing-cancel").click();
     await page.keyboard.press("Control+p");
-    await page.locator("#search-query").fill("design");
+    await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === "/api/search"
+        && response.request().postDataJSON()?.query === "design" && response.ok()),
+      page.locator("#search-query").fill("design"),
+    ]);
+    await expect(page.locator("#search-results")).toHaveAttribute("aria-busy", "false");
     await expect(page.locator("#search-results")).toContainText("Design notes");
     if (!await page.locator("#search-filters").evaluate(node => node.open))
       await page.locator("#search-filters > summary").click();

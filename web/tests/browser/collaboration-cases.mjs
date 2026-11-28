@@ -473,11 +473,22 @@ test("administrator creates one-use invitations and manages invited users from S
     expect(invitation).toMatch(/^[a-f0-9]{24}\.[a-f0-9]{64}$/);
     const page = await guest.newPage();
     await page.goto(library.url);
+    await page.evaluate(() => {
+      const requestFrame = window.requestAnimationFrame.bind(window);
+      const callbacks = [];
+      window.requestAnimationFrame = callback => callbacks.push(callback);
+      window.flushAuthenticationFrames = () => {
+        window.requestAnimationFrame = requestFrame;
+        for (const callback of callbacks) callback(performance.now());
+      };
+    });
     await page.locator("#auth-use-invitation").click();
     await page.locator("#auth-invitation").fill(invitation);
     await page.locator("#auth-username").fill("charlie");
     await page.locator("#auth-password").fill("charlie test password long enough");
     await page.locator("#auth-confirm").fill("charlie test password long enough");
+    await page.evaluate(() => window.flushAuthenticationFrames());
+    await expect(page.locator("#auth-confirm")).toBeFocused();
     const invalidFields = await page.locator("#auth-form").evaluate(form => [...form.elements]
       .filter(element => element instanceof HTMLInputElement && !element.validity.valid)
       .map(element => ({ id: element.id, missing: element.validity.valueMissing, pattern: element.validity.patternMismatch, length: element.value.length })));

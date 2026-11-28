@@ -6,6 +6,7 @@ for (const [side, narrow] of [["above", false], ["below", false], ["above", true
     const source = `${"Before.\n\n".repeat(25)}/\n\n${"After.\n\n".repeat(25)}`;
     await openFixture(page, `Slash-position-${side}-${narrow}.md`, source);
     const paragraph = page.locator(".ProseMirror p").filter({ hasText: /^\/h?$/ });
+    await page.locator(".ProseMirror").focus();
     await paragraph.evaluate((node, side) => {
       const scroller = node.closest("[data-editor-scroller]");
       const viewport = scroller.getBoundingClientRect();

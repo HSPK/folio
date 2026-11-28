@@ -31,7 +31,7 @@ test("settings dropdowns share the More menu surface and keep native selection",
   }
 });
 
-test("non-critical messages show in full in a modal, avoid Save and can be dismissed", async ({ page, browserName }) => {
+test("unrelated warnings wait for a modal to close and can be dismissed without stealing focus", async ({ page, browserName }) => {
   await page.setViewportSize({ width: 390, height: 680 });
   await page.route("**/api/appearance", route => route.fulfill({
     json: { theme: "system", latinFont: "sans-serif", cjkFont: "Folio Missing Audit Font" },
@@ -44,27 +44,27 @@ test("non-critical messages show in full in a modal, avoid Save and can be dismi
   await font.focus();
   await expect(font).toBeFocused();
   await expect(page.getByRole("button", { name: "Toggle status messages", exact: true })).toBeHidden();
-  await expect(warning).toBeVisible();
-  await expect.poll(async () => {
-    const stack = await page.locator("#status-notices").boundingBox();
-    const actions = await page.locator(".settings-actions").boundingBox();
-    return stack.y + stack.height <= actions.y - 7;
-  }).toBe(true);
+  await expect(warning).toBeHidden();
+  await expect(page.locator("#status-notices")).toBeHidden();
   const save = await page.locator("#settings-save").boundingBox();
   expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.id, {
     x: save.x + save.width / 2, y: save.y + save.height / 2,
   })).toBe("settings-save");
   await page.locator("#settings-save").click({ trial: true });
   if (browserName !== "webkit") {
-    await page.screenshot({ path: test.info().outputPath("warning-avoids-modal-actions.png") });
+    await page.screenshot({ path: test.info().outputPath("warning-waits-for-modal.png") });
     await page.emulateMedia({ colorScheme: "dark" });
-    await page.screenshot({ path: test.info().outputPath("warning-avoids-modal-actions-dark.png") });
+    await page.screenshot({ path: test.info().outputPath("warning-waits-for-modal-dark.png") });
     await page.emulateMedia({ colorScheme: "light" });
   }
+  await page.locator("#settings-cancel").click();
+  await expect(warning).toBeVisible();
+  const editor = page.locator(".ProseMirror");
+  await editor.focus();
   const card = page.locator(".status-card").filter({ has: warning });
   await card.getByRole("button", { name: "Dismiss message" }).click();
   await expect(card).toBeHidden();
-  await expect(font).toBeFocused();
+  await expect(editor).toBeFocused();
 });
 
 test("actionable modal errors remain visible when other messages are collapsed", async ({ page }) => {

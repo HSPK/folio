@@ -157,10 +157,12 @@ export function showAuthentication(setup: boolean, message = "", registration = 
   setText(element("auth-submit"), setup ? "Create administrator" : authInvitation ? "Create account" : "Log in");
   element("logout").hidden = true;
   refreshControls();
+  const username = element("auth-username");
+  if (authenticationSession.user?.username && !setup) username.value = authenticationSession.user.username;
   window.requestAnimationFrame(() => {
-    if (authenticationSession.user?.username && !setup)
-      element("auth-username").value = authenticationSession.user.username;
-    element("auth-username").focus();
+    const screen = element("auth-screen");
+    const active = document.activeElement;
+    if (!screen.hidden && (!active || !screen.contains(active) || !active.getClientRects().length)) username.focus();
   });
 }
 export function hideAuthentication(): void {
