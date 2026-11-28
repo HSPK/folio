@@ -1,8 +1,9 @@
-import { test, expect, openFixture } from "./fixture.mjs";
+import { test, expect, openFixture, documentEndShortcut } from "./fixture.mjs";
 
 async function pressBelowDocument(page) {
   const scroller = page.locator(".folio-live-scroll");
-  await scroller.evaluate(node => node.scrollTo(0, node.scrollHeight));
+  await page.locator(".ProseMirror > :last-child").scrollIntoViewIfNeeded();
+  await scroller.evaluate(node => node.scrollTo({ top: node.scrollHeight, behavior: "instant" }));
   const bounds = await scroller.boundingBox();
   const end = await page.locator(".ProseMirror").boundingBox();
   expect(end.y + end.height).toBeLessThan(bounds.y + bounds.height - 12);
@@ -38,7 +39,7 @@ test("a trailing code block can be left by pointer, Arrow Down and a second empt
 
   await openFixture(page, "Leave-code-keys.md", "# Code\n\n```js\nconst a = 1;\nconst b = 2;\n```\n");
   await code.click();
-  await page.keyboard.press("Control+End");
+  await page.keyboard.press(documentEndShortcut);
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.insertText("!");
@@ -48,10 +49,10 @@ test("a trailing code block can be left by pointer, Arrow Down and a second empt
   await expect(page.locator(".ProseMirror > p").last()).toHaveText("After arrow");
   await expect(code).toHaveText("const a = 1;\nconst b = 2;!");
 
+  await expect(page.locator("#editor")).toHaveValue("# Code\n\n```js\nconst a = 1;\nconst b = 2;!\n```\n\nAfter arrow\n");
+  await openFixture(page, "Leave-code-enter.md", "# Code\n\n```js\nconst a = 1;\nconst b = 2;!\n```\n");
   await code.click();
-  await page.keyboard.press("Control+End");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("End");
+  await page.keyboard.press(documentEndShortcut);
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await expect(code).toHaveText("const a = 1;\nconst b = 2;!\n\n");
@@ -60,6 +61,6 @@ test("a trailing code block can be left by pointer, Arrow Down and a second empt
   await page.keyboard.insertText("After enter");
   await expect(page.locator(".ProseMirror > p").nth(0)).toHaveText("After enter");
   await expect(page.locator("#editor")).toHaveValue(
-    "# Code\n\n```js\nconst a = 1;\nconst b = 2;!\n```\n\nAfter enter\n\nAfter arrow\n",
+    "# Code\n\n```js\nconst a = 1;\nconst b = 2;!\n```\n\nAfter enter\n",
   );
 });

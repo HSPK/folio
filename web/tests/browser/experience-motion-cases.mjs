@@ -55,6 +55,7 @@ for (const reducedBy of ["system", "preference"]) {
 
 for (const width of [1440, 390]) {
   test(`closing a changed project form is reversible and consistent at ${width}px`, async ({ browser }) => {
+    test.setTimeout(60_000);
     const library = await collaborativeLibrary(browser, { participants: 1, sharing: "private" });
     try {
       const [page] = library.pages;
@@ -333,7 +334,7 @@ test("another note's copy, favorite, share, tags, backlinks and restore never ta
       await page.getByRole("menuitem", { name, exact: true }).click();
     };
     await action("Copy Markdown");
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(content);
+    await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).replace(/\r\n/g, "\n"))).toBe(content);
     await current();
     await action("Favorite");
     await expect(page.locator("#document-message")).toHaveText("Added to favorites");

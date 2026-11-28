@@ -250,6 +250,13 @@ test("the whole-table menu preserves an existing column selection rather than ex
   await table.locator("td").first().click();
   await openTableTools(page, 0, "column");
   await expect(table.locator(".selectedCell")).toHaveCount(3);
+  await expect.poll(async () => {
+    const height = await table.locator(".selectedCell").evaluateAll(cells => {
+      const bounds = cells.map(cell => cell.getBoundingClientRect());
+      return Math.max(...bounds.map(rect => rect.bottom)) - Math.min(...bounds.map(rect => rect.top));
+    });
+    return Math.abs((await table.locator(".folio-table-selection").boundingBox()).height - height);
+  }).toBeLessThan(1);
   const before = await table.locator(".folio-table-selection").boundingBox();
   const grip = page.locator(".folio-block-grip");
   await grip.click();

@@ -49,6 +49,8 @@ let diagnostics = "";
 
 export const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 export const primaryModifier = process.platform === "darwin" ? "Meta" : "Control";
+export const documentEndShortcut = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End";
+export const lineEndShortcut = process.platform === "darwin" ? "Meta+ArrowRight" : "End";
 export async function confirmDialog(page, { accept = true } = {}) {
   const region = page.locator("[data-confirmation-region]:visible");
   await expect(region).toHaveCount(1);

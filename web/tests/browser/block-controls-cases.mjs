@@ -381,7 +381,10 @@ test("menu dismissal preserves both the page viewport and a horizontally scrolle
   const block = page.locator(".folio-code-block");
   await block.scrollIntoViewIfNeeded();
   await block.locator("code").click();
-  await block.locator("code").evaluate(node => node.ownerDocument.getSelection().setBaseAndExtent(node.firstChild, 2, node.firstChild, 2));
+  await block.locator("code").evaluate(node => new Promise(resolve => {
+    node.ownerDocument.addEventListener("selectionchange", () => requestAnimationFrame(resolve), { once: true });
+    node.ownerDocument.getSelection().setBaseAndExtent(node.firstChild, 2, node.firstChild, 2);
+  }));
   await (await openBlock(page, block, "Code block")).press("Escape");
   const viewport = block.locator("pre");
   await viewport.evaluate(node => { node.scrollLeft = 300; });

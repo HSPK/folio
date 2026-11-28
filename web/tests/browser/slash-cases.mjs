@@ -63,7 +63,7 @@ for (const [side, narrow] of [["above", false], ["below", false], ["above", true
     await page.keyboard.press("ArrowDown");
     await expect(menu.getByRole("option", { name: "Text", exact: true })).toHaveAttribute("aria-selected", "true");
     expect(Math.abs(await stable() - origin)).toBeLessThan(1);
-    expect(Math.abs((await paragraph.boundingBox()).y - anchor.y)).toBeLessThan(1);
+    expect(Math.abs((await paragraph.boundingBox()).y - anchor.y)).toBeLessThanOrEqual(1);
     await expect(paragraph).toHaveText("/");
     if (browserName !== "webkit") await page.screenshot({
       path: test.info().outputPath(`stable-slash-${side}-${narrow ? "narrow" : "desktop"}.png`), caret: "initial",

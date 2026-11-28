@@ -1,6 +1,6 @@
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { keymap, type Command } from "@codemirror/view";
-import { defaultKeymap, historyKeymap, indentWithTab, isolateHistory, selectLine } from "@codemirror/commands";
+import { defaultKeymap, historyKeymap, indentWithTab, isolateHistory, redo, selectLine } from "@codemirror/commands";
 
 const insertLineAbove: Command = ({ state, dispatch }) => {
   if (state.readOnly) return false;
@@ -29,6 +29,7 @@ export const sourceCommands = [
   keymap.of([
     { key: "Mod-Shift-Enter", run: insertLineAbove, preventDefault: true },
     { key: "Mod-l", run: selectLine, preventDefault: true },
+    { key: "Mod-Shift-z", run: redo, preventDefault: true },
     ...defaultKeymap,
     ...historyKeymap,
     indentWithTab,

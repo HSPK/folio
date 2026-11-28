@@ -1,4 +1,4 @@
-import { test, expect, fs, path, root, buildRoot, initialText, chooseView, reloadDocument, openFixture, metadataField, confirmDialog, primaryModifier } from "./fixture.mjs";
+import { test, expect, fs, path, root, buildRoot, initialText, chooseView, reloadDocument, openFixture, metadataField, confirmDialog, primaryModifier, documentEndShortcut } from "./fixture.mjs";
 
 test("opening uses the metadata title instead of the nested markdown path", async ({ page }) => {
   await fs.mkdir(path.join(root, "Opening titles"), { recursive: true });
@@ -122,7 +122,7 @@ test("large Source documents use the virtual editor and save exact Unicode text"
   }
   await expect(editor).toHaveAttribute("aria-label", "Markdown source");
   await editor.focus();
-  await page.keyboard.press(primaryModifier === "Meta" ? "Meta+ArrowDown" : "Control+End");
+  await page.keyboard.press(documentEndShortcut);
   await page.keyboard.insertText("Written virtually 中文");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
   await page.keyboard.press(`${primaryModifier}+z`);
@@ -242,7 +242,7 @@ test("external disk edits follow Live, Source and Read without reopening the not
   await expect(source).toHaveValue("Longer second\n\nCaret here\n");
   expect(await source.evaluate(node => node.selectionStart)).toBe(16);
   await expect(source).toBeFocused();
-  await source.press("Control+End");
+  await source.press(documentEndShortcut);
   await page.keyboard.insertText("Local word");
   await expect.poll(() => fs.readFile(file, "utf8")).toContain("Local word");
   await fs.writeFile(file, "From agent again\n\nCaret here\nLocal word");

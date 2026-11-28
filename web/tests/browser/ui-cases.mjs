@@ -1,5 +1,5 @@
 import {
-  test, expect, fs, path, root, buildRoot, initialText, chooseView, openFixture, primaryModifier, openSettingsDialog, selectSettingsSection,
+  test, expect, fs, path, root, buildRoot, initialText, chooseView, openFixture, primaryModifier, openSettingsDialog, selectSettingsSection, documentEndShortcut,
 } from "./fixture.mjs";
 
 test("slash commands insert blocks without a permanent formatting toolbar", async ({ page, browserName }) => {
@@ -458,7 +458,7 @@ test("source scrollbars do not change textarea width or consume a gutter", async
   expect(await source.evaluate((element) => element.clientWidth)).toBe(width);
   expect(await source.evaluate((element) => element.offsetWidth - element.clientWidth)).toBe(0);
   await source.evaluate((element) => { element.scrollTop = 0; element.setSelectionRange(0, 0); });
-  await source.press("Control+End");
+  await source.press(documentEndShortcut);
   await expect.poll(() => source.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   await chooseView(page, "preview");
   const preview = page.locator("#preview");

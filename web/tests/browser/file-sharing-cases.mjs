@@ -153,6 +153,7 @@ test("file menus share read-only PDF, XLSX and code links without exposing the w
       await owner.locator("#panel-more").click();
       await expect(menu.getByRole("menuitem", { name: "Share file", exact: true })).toBeVisible();
       await expect(menu.getByRole("menuitem", { name: "Copy link", exact: true })).toBeVisible();
+      await owner.evaluate(() => { window.copiedLink = null; });
       await menu.getByRole("menuitem", { name: "Copy link", exact: true }).click();
       await expect.poll(() => owner.evaluate(() => window.copiedLink)).toMatch(/asset=[a-f0-9-]+/);
       const internal = await owner.evaluate(() => window.copiedLink);

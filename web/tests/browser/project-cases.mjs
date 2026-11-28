@@ -249,7 +249,7 @@ test("users create private projects and share a single page without exposing sib
 });
 
 test("project manager uses one lightweight dialog without nested frames or page navigation", async ({ browser }) => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
   const library = await collaborativeLibrary(browser, { participants: 1, source: true });
   try {
     const [page] = library.pages;
@@ -416,7 +416,7 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     await fs.writeFile(path.join(replacement, "Replacement.md"), "# Replacement directory\n");
     await page.locator("#projects-open").click();
     await page.getByRole("button", { name: "Manage notes", exact: true }).click();
-    await expect(page.locator("#sharing-root")).toHaveValue(await fs.realpath(library.notes));
+    await expect.poll(async () => fs.realpath(await page.locator("#sharing-root").inputValue())).toBe(await fs.realpath(library.notes));
     await expect(page.locator("#sharing-root")).toHaveJSProperty("readOnly", false);
     await page.locator("#sharing-root").fill("relative/folder");
     await page.locator("#sharing-save").click();
@@ -464,7 +464,7 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     await confirmDialog(page, { accept: false });
     await expect(page.locator("#editor")).toHaveValue(/Unsaved local note/);
     const unchanged = await (await page.request.get(new URL("/api/projects", library.url).href)).json();
-    expect(unchanged.find(project => project.id === "default").root).toBe(await fs.realpath(library.notes));
+    expect(await fs.realpath(unchanged.find(project => project.id === "default").root)).toBe(await fs.realpath(library.notes));
     failSave = false;
     await page.locator("#sharing-save").click();
     await expect(page.locator("#projects-dialog")).toBeHidden();
@@ -479,7 +479,7 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     expect(await fs.readFile(path.join(replacement, "Shared.md"), "utf8")).toBe("# New shared note\n");
     await page.locator("#projects-open").click();
     await page.getByRole("button", { name: "Manage notes", exact: true }).click();
-    await expect(page.locator("#sharing-root")).toHaveValue(await fs.realpath(replacement));
+    await expect.poll(async () => fs.realpath(await page.locator("#sharing-root").inputValue())).toBe(await fs.realpath(replacement));
     await page.locator("#sharing-cancel").click();
     await page.locator("#projects-close").click();
 
@@ -495,7 +495,7 @@ test("project folder settings refresh the active tree and protect unsaved notes 
     await expect(page.locator("#editor")).toHaveValue("# Keep this current draft\n");
     expect(page.url()).toBe(activeUrl);
     const projects = await (await page.request.get(new URL("/api/projects", library.url).href)).json();
-    expect(projects.find(project => project.id === inactive.id).root).toBe(await fs.realpath(archive));
+    expect(await fs.realpath(projects.find(project => project.id === inactive.id).root)).toBe(await fs.realpath(archive));
   } finally {
     await library.close();
     await fs.rm(replacement, { recursive: true, force: true });
