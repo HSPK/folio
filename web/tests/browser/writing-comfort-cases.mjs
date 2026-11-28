@@ -18,8 +18,10 @@ test("link selection stays native and editing requires an explicit action", asyn
       userSelect: getComputedStyle(node).userSelect, userModify: getComputedStyle(node).webkitUserModify,
     }];
     const prototype = Object.getPrototypeOf(document.getSelection());
-    for (const method of ["collapse", "extend", "setBaseAndExtent", "removeAllRanges", "addRange"]) {
+    for (const method of ["collapse", "extend", "setBaseAndExtent", "removeAllRanges", "addRange",
+      "setPosition", "modify", "empty", "collapseToStart", "collapseToEnd", "deleteFromDocument", "selectAllChildren"]) {
       const original = prototype[method];
+      if (typeof original !== "function") continue;
       prototype[method] = function (...args) {
         window.linkSelectionEvents.push({
           type: `write:${method}`,
@@ -28,6 +30,15 @@ test("link selection stays native and editing requires an explicit action", asyn
           } : value),
           stack: new Error().stack,
         });
+        return Reflect.apply(original, this, args);
+      };
+    }
+    for (const method of ["setStart", "setEnd", "setStartBefore", "setEndAfter", "collapse", "selectNode", "selectNodeContents"]) {
+      const original = Range.prototype[method];
+      Range.prototype[method] = function (...args) {
+        const selection = document.getSelection();
+        if (selection.rangeCount && selection.getRangeAt(0) === this)
+          window.linkSelectionEvents.push({ type: `range:${method}`, stack: new Error().stack });
         return Reflect.apply(original, this, args);
       };
     }
@@ -99,6 +110,45 @@ test("link selection stays native and editing requires an explicit action", asyn
         await page.mouse.up();
       }
       const control = await page.context().newPage();
+      const html = await page.evaluate(() => {
+        const clone = document.documentElement.cloneNode(true);
+        for (const script of clone.querySelectorAll("script")) script.remove();
+        return `<!doctype html>${clone.outerHTML}`;
+      });
+      const cloneUrl = new URL("/native-drag-control", page.url()).href;
+      await control.route(cloneUrl, route => route.fulfill({ contentType: "text/html", body: html }));
+      await control.goto(cloneUrl);
+      const clonedLink = control.locator(".ProseMirror a");
+      await clonedLink.scrollIntoViewIfNeeded();
+      state.ancestry = await clonedLink.evaluate(node => {
+        const result = [];
+        for (let element = node; element; element = element.parentElement) {
+          const style = getComputedStyle(element);
+          result.push({
+            tag: element.tagName, class: element.className, userSelect: style.userSelect,
+            editable: element.contentEditable, draggable: element.draggable,
+          });
+        }
+        return result;
+      });
+      const clonedBox = await clonedLink.boundingBox();
+      await control.mouse.move(clonedBox.x + 12, clonedBox.y + clonedBox.height / 2);
+      await control.mouse.down();
+      await control.mouse.move(clonedBox.x + clonedBox.width - 15, clonedBox.y + clonedBox.height / 2, { steps: 12 });
+      state.withoutApplicationScripts = await control.evaluate(() => document.getSelection().toString());
+      await control.mouse.up();
+      if (!state.withoutApplicationScripts) {
+        await control.evaluate(() => {
+          for (const sheet of document.styleSheets) sheet.disabled = true;
+        });
+        await clonedLink.scrollIntoViewIfNeeded();
+        const bounds = await clonedLink.boundingBox();
+        await control.mouse.move(bounds.x + 12, bounds.y + bounds.height / 2);
+        await control.mouse.down();
+        await control.mouse.move(bounds.x + bounds.width - 15, bounds.y + bounds.height / 2, { steps: 12 });
+        state.withoutScriptsOrStyles = await control.evaluate(() => document.getSelection().toString());
+        await control.mouse.up();
+      }
       await control.setContent(`<style>p{width:max-content;font:17px sans-serif}</style>
         <p contenteditable="true"><a id="link" href="https://example.com/guide" draggable="false">https://example.com/guide</a></p>
         <p contenteditable="true"><a id="explicit" href="https://example.com/guide" draggable="false" style="user-select:text">https://example.com/guide</a></p>
