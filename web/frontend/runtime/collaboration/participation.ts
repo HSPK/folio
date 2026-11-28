@@ -3,7 +3,7 @@ import { documentSession } from "../../state/document";
 import { decodedParticipation } from "../../api/contracts";
 import { createSaveSnapshot } from "@folio/model";
 import type { Participation } from "../../types/domain";
-import { clearTimer, requireValue } from "../../types/elements";
+import { element, clearTimer, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { connectionFailure, refreshControls } from "../accounts/authentication";
 import { connectivity, isConnectionLoss } from "../core/recovery";
@@ -15,26 +15,29 @@ import { acceptDocumentPermissions, resourceState } from "../documents/resources
 import { rememberUnconfirmedSave, saveDocument } from "../documents/saving";
 import { listen, onApplicationDispose } from "../lifecycle";
 import { publicState, requestPublicPassword } from "../sharing/public";
-import { collaborationState, connectCollaboration, startCollaboration, stopCollaboration } from "./collaboration";
+import {
+  collaborativeTarget,
+  collaboration,
+  connectCollaboration,
+  startCollaboration,
+  stopCollaboration,
+} from "./collaboration";
 import { collaborationNotice, renderCollaborators } from "./presence";
-class ParticipationState {
-  documentParticipation!: Participation | null;
-}
-export const participationState = new ParticipationState();
+export let documentParticipation: Participation | null;
+
 export function initializeCollaborationParticipation(): void {
-  participationState.documentParticipation = null;
+  documentParticipation = null;
   onApplicationDispose(stopDocumentParticipation);
   listen(document, "compositionstart", (event) => {
     if (!(event.target instanceof Element)) return;
-    if (participationState.documentParticipation && collaborationState.collaborativeTarget(event.target))
-      participationState.documentParticipation.composing = true;
+    if (documentParticipation && collaborativeTarget(event.target)) documentParticipation.composing = true;
   });
   listen(document, "compositionend", (event) => {
     if (!(event.target instanceof Element)) return;
-    if (participationState.documentParticipation && collaborationState.collaborativeTarget(event.target)) {
-      const current = participationState.documentParticipation;
+    if (documentParticipation && collaborativeTarget(event.target)) {
+      const current = documentParticipation;
       window.setTimeout(() => {
-        if (current === participationState.documentParticipation) current.composing = false;
+        if (current === documentParticipation) current.composing = false;
       }, 0);
     }
   });
@@ -46,8 +49,8 @@ export function stopDocumentParticipation({
 }: {
   notify?: boolean;
 } = {}): void {
-  const current = participationState.documentParticipation;
-  participationState.documentParticipation = null;
+  const current = documentParticipation;
+  documentParticipation = null;
   if (!current) return;
   clearTimer(current.timer);
   current.controller?.abort();
@@ -82,22 +85,20 @@ export async function startDocumentParticipation({
     controller: null,
     polling: false,
     recoveryRecord: null,
-    resumeSnapshot: collaborationState.collaboration?.initialized
+    resumeSnapshot: collaboration?.initialized
       ? {
-          snapshot: createSaveSnapshot(documentSession.current, appState.ui.editor.value),
+          snapshot: createSaveSnapshot(documentSession.current, appState.editor.value),
           id: documentSession.id,
           root: documentSession.current.root,
         }
       : null,
   };
-  participationState.documentParticipation = current;
-  if (!collaborationState.collaboration?.initialized) await recoverDocumentDraft();
-  if (current === participationState.documentParticipation) await pollDocumentParticipation(current);
+  documentParticipation = current;
+  if (!collaboration?.initialized) await recoverDocumentDraft();
+  if (current === documentParticipation) await pollDocumentParticipation(current);
 }
-export async function pollDocumentParticipation(
-  current: Participation | null = participationState.documentParticipation,
-): Promise<void> {
-  if (!current || current !== participationState.documentParticipation || current.polling) return;
+export async function pollDocumentParticipation(current: Participation | null = documentParticipation): Promise<void> {
+  if (!current || current !== documentParticipation || current.polling) return;
   clearTimer(current.timer);
   current.polling = true;
   current.controller = new AbortController();
@@ -113,7 +114,7 @@ export async function pollDocumentParticipation(
       signal: current.controller.signal,
       body: { document: current.resource, participant: current.participant, ready: current.ready },
     });
-    if (current !== participationState.documentParticipation || current.id !== documentSession.id) return;
+    if (current !== documentParticipation || current.id !== documentSession.id) return;
     if (
       !["solo", "prepare", "join"].includes(status.phase) ||
       (status.participant !== null && !/^[a-f0-9]{48}$/.test(status.participant ?? ""))
@@ -122,18 +123,13 @@ export async function pollDocumentParticipation(
     }
     current.participant = status.participant;
     const wasPreparing = current.preparing;
-    const previousCollaboration = collaborationState.collaboration;
+    const previousCollaboration = collaboration;
     const permissionsChanged = acceptDocumentPermissions(status.permissions);
     let prepared = false;
-    if (
-      status.phase === "solo" &&
-      current.resumeSnapshot &&
-      collaborationState.collaboration &&
-      !collaborationState.collaboration.connected
-    ) {
+    if (status.phase === "solo" && current.resumeSnapshot && collaboration && !collaboration.connected) {
       if (dirty()) rememberUnconfirmedSave(current.resumeSnapshot);
       await persistCurrentDraft();
-      if (current !== participationState.documentParticipation) return;
+      if (current !== documentParticipation) return;
       stopCollaboration();
       current.resumeSnapshot = null;
     }
@@ -141,31 +137,31 @@ export async function pollDocumentParticipation(
       delay = 3000;
       current.ready = false;
       current.preparing = false;
-      if (collaborationState.collaboration) {
+      if (collaboration) {
         await persistCurrentDraft();
-        if (current !== participationState.documentParticipation) return;
+        if (current !== documentParticipation) return;
         stopCollaboration();
         collaborationNotice("Shared editing permission removed", true);
       }
-    } else if (status.phase === "solo" && !collaborationState.collaboration) {
+    } else if (status.phase === "solo" && !collaboration) {
       current.ready = false;
       current.preparing = false;
       collaborationNotice(current.recoveryRecord ? "Local draft kept" : "");
-    } else if (status.phase === "prepare" && collaborationState.collaboration?.initialized) {
+    } else if (status.phase === "prepare" && collaboration?.initialized) {
       current.ready = true;
     } else if (
       status.phase === "prepare" &&
-      !collaborationState.collaboration &&
+      !collaboration &&
       !current.ready &&
       !current.composing &&
       !documentSession.conflict &&
-      !appState.element("draft-recovery-dialog").open
+      !element("draft-recovery-dialog").open
     ) {
       prepared = true;
       current.preparing = true;
       refreshControls();
       await persistCurrentDraft();
-      if (current !== participationState.documentParticipation) return;
+      if (current !== documentParticipation) return;
       if (current.recoveryRecord && dirty()) {
         showDraftRecovery(current.recoveryRecord);
         current.preparing = false;
@@ -173,7 +169,7 @@ export async function pollDocumentParticipation(
         return;
       }
       if (dirty() && !documentSession.saving && !documentSession.conflict) await saveDocument(true);
-      if (current !== participationState.documentParticipation) return;
+      if (current !== documentParticipation) return;
       current.ready = !dirty() && !documentSession.saving && !documentSession.conflict;
       if (!current.ready) current.preparing = false;
       collaborationNotice(
@@ -184,29 +180,29 @@ export async function pollDocumentParticipation(
     } else if (status.phase === "join") {
       current.preparing = false;
       current.resumeSnapshot = null;
-      if (!collaborationState.collaboration) await startCollaboration();
+      if (!collaboration) await startCollaboration();
       else if (
-        !collaborationState.collaboration.connected &&
-        !collaborationState.collaboration.retry &&
-        !collaborationState.collaboration.connecting &&
-        !collaborationState.collaboration.unmerged &&
-        !collaborationState.collaboration.failed
+        !collaboration.connected &&
+        !collaboration.retry &&
+        !collaboration.connecting &&
+        !collaboration.unmerged &&
+        !collaboration.failed
       ) {
-        await connectCollaboration(collaborationState.collaboration);
+        await connectCollaboration(collaboration);
       }
     }
     if (
       prepared ||
       permissionsChanged ||
       wasPreparing !== current.preparing ||
-      previousCollaboration !== collaborationState.collaboration
+      previousCollaboration !== collaboration
     ) {
       renderCollaborators();
       refreshControls();
     }
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    if (current !== participationState.documentParticipation || aborted(error)) return;
+    if (current !== documentParticipation || aborted(error)) return;
     current.ready = false;
     current.preparing = false;
     if (isConnectionLoss(error)) {
@@ -223,11 +219,11 @@ export async function pollDocumentParticipation(
     }
     if ([401, 403, 404].includes(error.status)) {
       acceptDocumentPermissions({ writable: false, collaborative: false, owner: false });
-      if (collaborationState.collaboration) {
+      if (collaboration) {
         await persistCurrentDraft().catch((failure) =>
           console.error("Could not persist the revoked session's draft.", failure),
         );
-        if (current !== participationState.documentParticipation) return;
+        if (current !== documentParticipation) return;
         stopCollaboration();
       }
       if (publicState.publicView && error.status === 401) requestPublicPassword();
@@ -237,7 +233,7 @@ export async function pollDocumentParticipation(
     delay = 3000;
   } finally {
     current.polling = false;
-    if (current === participationState.documentParticipation)
+    if (current === documentParticipation)
       current.timer = window.setTimeout(() => void pollDocumentParticipation(current), delay);
   }
 }

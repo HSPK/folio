@@ -3,17 +3,17 @@ import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
 import { decodedDocument } from "../../api/contracts";
 import { isAbortError } from "../../api/error";
-import { mergeSharedUpdates } from "@folio/editor-runtime";
+import { mergeSharedUpdates, createButton } from "@folio/editor-runtime";
 import type { DocumentSessionId, DraftIdentity, DraftSnapshot, LocalDraft } from "@folio/model";
 import { createDraftRecovery } from "../../services/draft-recovery";
 import { createDraftRepository, createDraftWriteQueue, type DraftRepository } from "../../services/draft-repository";
 import { draftNonce } from "../../storage/draft-crypto";
 import { createIndexedDbDraftStore } from "../../storage/draft-indexeddb";
-import { clearTimer, requireValue } from "../../types/elements";
+import { element, clearTimer, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { closeMenus, refreshControls } from "../accounts/authentication";
-import { collaborationLocked, collaborationState } from "../collaboration/collaboration";
-import { participationState } from "../collaboration/participation";
+import { collaborationLocked, collaboration } from "../collaboration/collaboration";
+import { documentParticipation } from "../collaboration/participation";
 import { collaborationNotice, collaborativeSelection } from "../collaboration/presence";
 import { api } from "../core/api";
 import { appState, dirty, rootChanged } from "../core/bootstrap";
@@ -69,7 +69,7 @@ export function initializeDocumentsDrafts(): void {
     session: documentSession,
     project: draftProject,
     shared: () => {
-      const current = collaborationState.collaboration;
+      const current = collaboration;
       return current?.initialized && !current.closed ? current : null;
     },
     canWrite: () =>
@@ -91,9 +91,9 @@ export function initializeDocumentsDrafts(): void {
         timeoutMs: 15000,
       }),
     applySource(text) {
-      if (!documentSession.conflict) notice(appState.ui.conflictMessage, "");
+      if (!documentSession.conflict) notice(element("conflict-message"), "");
       refreshControls();
-      appState.ui.editor.applyEdit(text);
+      appState.editor.applyEdit(text);
       loadInlineEditor();
     },
     save: () => saveDocument(),
@@ -117,19 +117,19 @@ export function initializeDocumentsDrafts(): void {
       .close()
       .catch((error) => console.warn("Accepted local recovery writes could not finish during disposal.", error));
   });
-  const dialog = appState.element("draft-recovery-dialog");
-  listen(appState.element("draft-recovery-close"), "click", () => dialog.close());
+  const dialog = element("draft-recovery-dialog");
+  listen(element("draft-recovery-close"), "click", () => dialog.close());
   listen(dialog, "close", () => workflow.cancel());
-  listen(appState.element("draft-recovery-copy"), "click", async () => {
+  listen(element("draft-recovery-copy"), "click", async () => {
     const record = requireValue(selected, "Recovery copy");
     try {
       await copyPlainText(record.source);
     } catch (cause) {
       if (!owner.aborted && selected === record)
-        notice(appState.element("draft-recovery-error"), errorContext(cause).message, "error");
+        notice(element("draft-recovery-error"), errorContext(cause).message, "error");
     }
   });
-  listen(appState.element("draft-recovery-discard"), "click", async () => {
+  listen(element("draft-recovery-discard"), "click", async () => {
     const record = requireValue(selected, "Recovery copy");
     const scope = authenticationSession.scope;
     try {
@@ -141,15 +141,15 @@ export function initializeDocumentsDrafts(): void {
       if (!owner.aborted && authenticationSession.isCurrent(scope) && selected === record) dialog.close();
     } catch (cause) {
       if (!owner.aborted && authenticationSession.isCurrent(scope) && selected === record)
-        notice(appState.element("draft-recovery-error"), errorContext(cause).message, "error");
+        notice(element("draft-recovery-error"), errorContext(cause).message, "error");
     }
   });
-  listen(appState.element("draft-recovery-apply"), "click", async () => {
+  listen(element("draft-recovery-apply"), "click", async () => {
     if (applying) return;
     const record = requireValue(selected, "Recovery copy");
     applying = true;
-    appState.element("draft-recovery-apply").disabled = true;
-    notice(appState.element("draft-recovery-error"), "");
+    element("draft-recovery-apply").disabled = true;
+    notice(element("draft-recovery-error"), "");
     try {
       const result = await workflow.apply(record);
       if (owner.aborted || selected !== record) return;
@@ -159,11 +159,10 @@ export function initializeDocumentsDrafts(): void {
         (documentSession.current?.id !== record.document || draftProject() !== record.project)
       )
         dialog.close();
-      else if (result === "unsaved")
-        notice(appState.element("draft-recovery-error"), "Not saved, recovery copy kept", "error");
+      else if (result === "unsaved") notice(element("draft-recovery-error"), "Not saved, recovery copy kept", "error");
     } catch (cause) {
       if (!owner.aborted && selected === record)
-        notice(appState.element("draft-recovery-error"), errorContext(cause).message, "error");
+        notice(element("draft-recovery-error"), errorContext(cause).message, "error");
     } finally {
       if (!owner.aborted) {
         applying = false;
@@ -171,33 +170,32 @@ export function initializeDocumentsDrafts(): void {
       }
     }
   });
-  listen(appState.element("drafts-open"), "click", async () => {
+  listen(element("drafts-open"), "click", async () => {
     closeMenus();
     const scope = authenticationSession.scope;
     try {
       const records = await currentDraftOwner().list();
       if (owner.aborted || !authenticationSession.isCurrent(scope)) return;
-      appState.element("drafts-list").replaceChildren(
+      element("drafts-list").replaceChildren(
         ...records.map((record) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.textContent = `${record.path} · ${new Date(record.updated).toLocaleString()}`;
+          const button = createButton({ label: `${record.path} · ${new Date(record.updated).toLocaleString()}` });
           button.addEventListener("click", () => {
             if (owner.aborted || !authenticationSession.isCurrent(scope)) return;
-            appState.element("drafts-dialog").close();
+            element("drafts-dialog").close();
             showDraftRecovery(record);
           });
+
           return button;
         }),
       );
-      notice(appState.element("drafts-message"), records.length ? "" : "No local drafts");
-      showDialog(appState.element("drafts-dialog"));
+      notice(element("drafts-message"), records.length ? "" : "No local drafts");
+      showDialog(element("drafts-dialog"));
     } catch (cause) {
       if (!owner.aborted && authenticationSession.isCurrent(scope))
         documentNotice(`Recovery unavailable: ${errorContext(cause).message}`, "error");
     }
   });
-  listen(appState.element("drafts-close"), "click", () => appState.element("drafts-dialog").close());
+  listen(element("drafts-close"), "click", () => element("drafts-dialog").close());
   listen(window, "pagehide", () => {
     void persistCurrentDraft().catch(console.error);
   });
@@ -206,7 +204,7 @@ export function initializeDocumentsDrafts(): void {
   });
 }
 
-export function localRecoveryAvailable() {
+function localRecoveryAvailable() {
   return Boolean(crypto.subtle);
 }
 
@@ -215,7 +213,7 @@ function currentDraftIdentity(): DraftIdentity {
     authenticationSession.mode === "users"
       ? authenticationSession.user?.draftKey
       : publicState.publicView
-        ? publicState.publicToken
+        ? publicState.recoveryKey
         : appState.token;
   const scope =
     authenticationSession.mode === "users"
@@ -230,7 +228,7 @@ function currentDraftOwner() {
   return requireValue(repository, "Local recovery repository").owner(currentDraftIdentity());
 }
 
-export function encodeDraftUpdates(updates: Uint8Array[]) {
+function encodeDraftUpdates(updates: Uint8Array[]) {
   if (!updates.length) return "";
   const bytes = mergeSharedUpdates(updates);
   const parts: string[] = [];
@@ -238,22 +236,22 @@ export function encodeDraftUpdates(updates: Uint8Array[]) {
     parts.push(String.fromCharCode(...bytes.subarray(offset, offset + 32768)));
   return btoa(parts.join(""));
 }
-export function decodeDraftUpdates(value: string) {
+function decodeDraftUpdates(value: string) {
   return value ? Uint8Array.from(atob(value), (character) => character.charCodeAt(0)) : null;
 }
-export function draftProject() {
+function draftProject() {
   return projectModel.active?.id ?? (publicState.publicView ? "public" : appState.currentRoot);
 }
 export function captureDraft(): DraftSnapshot | null {
-  if (!documentSession.current) return null;
-  const shared = collaborationState.collaboration?.id === documentSession.id ? collaborationState.collaboration : null;
+  if (!documentSession.current || !documentSession.resourceId) return null;
+  const shared = collaboration?.id === documentSession.id ? collaboration : null;
   if (touched !== documentSession.id && !shared?.localModified && !shared?.recoveryRecord) return null;
   return {
     keep: dirty() || Boolean(shared?.localUpdates.size || shared?.pending.size || shared?.unmerged),
     project: draftProject(),
     document: documentSession.current.id,
     path: documentSession.current.path,
-    source: appState.ui.editor.value,
+    source: appState.editor.value,
     version: documentSession.current.version,
     room: shared?.room ?? null,
     updates: encodeDraftUpdates(shared ? [...shared.localUpdates.values()] : []),
@@ -261,9 +259,6 @@ export function captureDraft(): DraftSnapshot | null {
     selection: collaborativeSelection(),
     tab,
   };
-}
-export function removeDraftRecord(key: string, generation: string | null = null) {
-  return currentDraftOwner().remove(key, generation);
 }
 export async function discardLocalDraft(snapshot: DraftSnapshot | null): Promise<void> {
   if (!snapshot || !localRecoveryAvailable()) return;
@@ -311,22 +306,19 @@ export function finishLocalDraft(): void {
   if (
     !documentSession.current ||
     dirty() ||
-    collaborationState.collaboration?.localUpdates.size ||
-    collaborationState.collaboration?.pending.size ||
-    collaborationState.collaboration?.unmerged
+    collaboration?.localUpdates.size ||
+    collaboration?.pending.size ||
+    collaboration?.unmerged
   )
     return;
-  if (collaborationState.collaboration && !collaborationState.collaboration.initialized) return;
-  const pending = persistAccepted(collaborationState.collaboration?.recoveryRecord ?? null);
+  if (collaboration && !collaboration.initialized) return;
+  const pending = persistAccepted(collaboration?.recoveryRecord ?? null);
   touched = null;
-  if (collaborationState.collaboration) {
-    collaborationState.collaboration.localModified = false;
-    collaborationState.collaboration.recoveryRecord = null;
+  if (collaboration) {
+    collaboration.localModified = false;
+    collaboration.recoveryRecord = null;
   }
   void pending.catch(console.error);
-}
-export async function loadDraftForDocument(project: string | null, id: string) {
-  return currentDraftOwner().forDocument(project, id);
 }
 export async function recoverDocumentDraft(): Promise<void> {
   if (!documentSession.current || !localRecoveryAvailable()) return;
@@ -338,23 +330,23 @@ export async function recoverDocumentDraft(): Promise<void> {
     const reader = currentDraftOwner();
     const record = await reader.forDocument(draftProject(), documentSession.current.id);
     if (!record || !current()) return;
-    if (record.source === appState.ui.editor.value && !record.updates) {
+    if (record.source === appState.editor.value && !record.updates) {
       if (!dirty()) await reader.remove(record.key, record.generation);
       return;
     }
     if (
-      !collaborationState.collaboration &&
-      participationState.documentParticipation &&
+      !collaboration &&
+      documentParticipation &&
       resourceState.documentPermissions?.collaborative &&
       record.room &&
       !record.unmerged
     ) {
-      participationState.documentParticipation.recoveryRecord = record;
+      documentParticipation.recoveryRecord = record;
       collaborationNotice("Local draft kept");
       return;
     }
-    if (collaborationState.collaboration) {
-      const shared = collaborationState.collaboration;
+    if (collaboration) {
+      const shared = collaboration;
       if (!shared.initialized && record.room && !record.unmerged) {
         const update = decodeDraftUpdates(record.updates);
         if (update) {
@@ -375,7 +367,7 @@ export async function recoverDocumentDraft(): Promise<void> {
 }
 
 function updateRecoveryControls(record: LocalDraft) {
-  appState.element("draft-recovery-apply").disabled =
+  element("draft-recovery-apply").disabled =
     applying ||
     !documentSession.current ||
     documentSession.current.id !== record.document ||
@@ -385,10 +377,10 @@ function updateRecoveryControls(record: LocalDraft) {
 export function showDraftRecovery(record: LocalDraft): void {
   recovery?.cancel();
   selected = record;
-  appState.element("draft-recovery-info").textContent = `${record.path} · ${new Date(record.updated).toLocaleString()}`;
-  appState.element("draft-recovery-source").value = record.source.slice(0, 200000);
+  element("draft-recovery-info").textContent = `${record.path} · ${new Date(record.updated).toLocaleString()}`;
+  element("draft-recovery-source").value = record.source.slice(0, 200000);
   updateRecoveryControls(record);
-  notice(appState.element("draft-recovery-error"), record.source.length > 200000 ? "Preview truncated" : "");
-  showDialog(appState.element("draft-recovery-dialog"), { restoreParent: true });
+  notice(element("draft-recovery-error"), record.source.length > 200000 ? "Preview truncated" : "");
+  showDialog(element("draft-recovery-dialog"), { restoreParent: true });
 }
 import { copyPlainText } from "../../../shared/clipboard";

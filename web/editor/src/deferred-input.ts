@@ -14,6 +14,7 @@ function flush() {
   for (let action = queue.shift(); action; action = queue.shift()) action();
 }
 channel.port1.onmessage = flush;
+export { flush as flushDeferredInput };
 
 function later(view: EditorView, action: () => void) {
   if (!watched.has(view.dom)) {
@@ -72,8 +73,7 @@ function deleteBesideCaret(view: EditorView, backward: boolean) {
   if (!node) return;
   let size = node.nodeSize;
   if (node.isText && node.text) {
-    const graphemes = [...segmenter.segment(node.text)];
-    size = (backward ? graphemes.at(-1) : graphemes[0])?.segment.length ?? 1;
+    size = segmenter.segment(node.text).containing(backward ? node.text.length - 1 : 0)?.segment.length ?? 1;
   }
   const { from } = selection;
   view.dispatch(view.state.tr.delete(backward ? from - size : from, backward ? from : from + size).scrollIntoView());

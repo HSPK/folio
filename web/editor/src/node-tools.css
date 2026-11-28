@@ -102,10 +102,16 @@
 .folio-image-preview::backdrop { background: #00000070; }
 .folio-image-preview > img { display: block; max-width: calc(100vw - 64px); max-height: calc(100dvh - 96px); object-fit: contain; }
 .folio-image-preview > button { display: flex; margin: 0 0 10px auto; padding: 5px; border: 0; background: transparent; color: var(--text); }
-.folio-prose .folio-table-scroll { margin: 1em 0; overflow-x: auto; }
-.folio-prose .folio-table-scroll > table { margin: 0; }
-.folio-table-wrapper { position: relative; margin: 1.4em 0 2em; }
-.folio-prose .folio-table-wrapper > .folio-table-scroll { margin: 0; }
+.folio-prose .folio-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.folio-table-sheet { position: relative; }
+.folio-prose .folio-table-sheet > table { margin: 0; }
+.folio-table-wrapper { position: relative; min-width: 0; margin: 1em 0 2em -20px; padding: 20px 0 0 20px; }
+.folio-table-resizers { position: absolute; inset: 0; pointer-events: none; }
+.folio-table-resizers > [role="separator"] { position: absolute; top: 0; width: 9px; z-index: 3; pointer-events: auto; cursor: col-resize; touch-action: none; user-select: none; }
+.folio-table-resizers > [role="separator"]:is(:hover, :focus-visible)::after { content: ""; position: absolute; inset: 20% 2px 20% auto; width: 3px; border-radius: 3px; background: var(--muted); }
+.folio-table-sheet[data-resizing] { cursor: col-resize; user-select: none; }
+.folio-table-sheet table[data-wrap="false"] :is(th, td) > p { white-space: pre; overflow-x: auto; }
+.folio-table-sheet table[data-wrap="true"] :is(th, td) { overflow-wrap: anywhere; }
 .folio-prose .folio-table-wrapper table { font-size: .94em; line-height: 1.6; }
 .folio-prose .folio-table-wrapper :is(td, th) { padding: .55em .75em; border-color: color-mix(in srgb, var(--text) 13%, var(--surface)); background: transparent; }
 .folio-prose .folio-table-wrapper th { background: var(--table-header-background, color-mix(in srgb, var(--text) 6%, var(--surface))); font-weight: 550; }
@@ -116,18 +122,15 @@
   min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted);
   opacity: 0; pointer-events: none; cursor: pointer;
 }
-.folio-table-grip { z-index: 3; }
+.folio-prose .folio-table-grip { z-index: 3; border-radius: 5px; background: var(--subtle-surface, #eee); color: var(--muted); }
+.folio-prose .folio-table-grip:is(:hover, :focus-visible, [aria-expanded="true"]) { background: color-mix(in srgb, var(--text) 14%, var(--surface)); color: var(--text); }
 .folio-prose :is(.folio-table-grip, .folio-table-add) { transition: opacity var(--motion-hover-duration, 120ms) ease-out, background-color 80ms ease-out; }
 .folio-table-grip .folio-icon { stroke-width: 2.2; }
 .folio-table-column-grip .folio-icon { transform: rotate(90deg); }
-.folio-table-grip[aria-expanded="true"] {
-  --control-background: var(--focus); --control-hover-background: var(--focus); --control-color: var(--surface);
-  border-color: var(--focus); background: var(--focus); color: var(--surface);
-}
 .folio-table-add { z-index: 1; }
 .folio-table-add-region { position: absolute; z-index: 1; }
-.folio-table-add-region-row { left: 0; right: 0; bottom: -24px; height: 24px; }
-.folio-table-add-region-column { right: -20px; top: 0; bottom: 0; width: 20px; }
+.folio-table-add-region-row { left: 20px; right: 0; bottom: -24px; height: 24px; }
+.folio-table-add-region-column { right: -20px; top: 20px; bottom: 0; width: 20px; }
 .folio-table-add .folio-icon { width: 13px; height: 13px; }
 .folio-table-add-row { left: 0; right: 0; bottom: 0; height: 16px; }
 .folio-table-add-column { right: 0; top: 0; bottom: 0; width: 14px; }
@@ -146,6 +149,12 @@
   background: transparent; color: var(--muted, #777); cursor: pointer;
 }
 .folio-block-controls > button:hover { background: var(--control-hover-background, #eee); color: var(--text, #333); }
+.folio-block-grip, .folio-table-grip {
+  --control-hover-background: color-mix(in srgb, var(--text) 14%, var(--surface));
+  --control-focus-background: var(--control-hover-background);
+}
+.folio-block-controls > .folio-block-grip { background: var(--subtle-surface, #eee); }
+.folio-block-controls > .folio-block-grip:is(:hover, :focus-visible, [aria-expanded="true"]) { background: color-mix(in srgb, var(--text) 14%, var(--surface)); }
 .folio-block-controls > [hidden] { display: none; }
 .folio-prose .folio-math-block.ProseMirror-selectednode { outline: 1px solid var(--focus, #70899c); outline-offset: 2px; }
 .folio-block-grip .folio-icon { stroke-width: 2.2; }
@@ -153,13 +162,12 @@
   --control-background: var(--control-hover-background); --control-color: var(--text);
 }
 .folio-block-tools, .folio-table-tools { display: grid; gap: 5px; max-height: calc(100dvh - 24px); padding: var(--menu-padding, 6px); overflow: auto; }
-.folio-block-menu-heading, .folio-table-menu-heading { padding: 4px 8px; color: var(--muted); font-size: 11px; font-weight: 550; }
 .folio-block-actions, .folio-table-actions { display: grid; gap: 2px; }
 .folio-block-actions > button, .folio-table-actions > button { justify-content: flex-start; gap: 10px; min-height: var(--menu-item-height, 32px); }
 .folio-block-actions > [data-block-action="delete"], .folio-table-actions > [data-table-action="delete"] { color: var(--error, #bd4545); }
-.folio-table-alignment { padding-top: 5px; border-top: 1px solid var(--border); }
-.folio-table-alignment .folio-menu-check { margin-inline-start: auto; width: 14px; height: 14px; opacity: 0; }
-.folio-table-alignment [aria-checked="true"] .folio-menu-check { opacity: 1; }
+.folio-table-alignment, .folio-table-display { padding-top: 5px; border-top: 1px solid var(--border); }
+.folio-table-tools .folio-menu-check { margin-inline-start: auto; width: 14px; height: 14px; opacity: 0; }
+.folio-table-tools [aria-checked="true"] .folio-menu-check { opacity: 1; }
 .folio-table-alignment [aria-checked="true"] { background: var(--control-selected-background); }
 .folio-table-export { border-top: 1px solid var(--border); }
 .folio-table-tools summary { padding: 7px 6px; cursor: pointer; font-size: 12px; }
@@ -173,6 +181,9 @@
 .folio-link-actions[hidden] { display: none; }
 .folio-link-actions button { padding: 4px 8px; font: inherit; }
 .folio-link-actions p { flex-basis: 100%; margin: 4px 6px; color: var(--error); }
+@media (max-width: 650px) {
+  .folio-block-controls { display: none; }
+}
 @media (pointer: coarse) {
   .folio-node-toolbar button { min-height: 36px; min-width: 36px; }
   .folio-prose .folio-image-resize { width: 10px; height: 44px; }

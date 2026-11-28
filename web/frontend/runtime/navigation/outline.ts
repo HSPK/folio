@@ -3,23 +3,20 @@ import type { DocumentSessionId } from "@folio/model";
 import { shell } from "../../state/shell";
 import type { SourceChanges } from "@folio/editor-runtime";
 import type { Heading } from "../../types/domain";
-import { clearTimer, htmlChildren } from "../../types/elements";
+import { element, clearTimer, htmlChildren } from "../../types/elements";
 import { isRecord } from "../../types/guards";
 import { setSidebar } from "../accounts/authentication";
 import { appState } from "../core/bootstrap";
 import { listen, onApplicationDispose } from "../lifecycle";
 import { settingsState } from "../preferences/settings";
 
-class OutlineState {
-  outlineDocument!: DocumentSessionId | null;
-  outlinePinned!: boolean;
-  outlineDismissed!: boolean;
-  outlineCloseTimer!: number | null;
-  outlineScrollFrame!: number | null;
-  outlineHeadingCache!: { root: HTMLElement; revision: number; headings: HTMLElement[] } | null;
-  outlineOpenOnLoad!: boolean;
-}
-export const outlineState = new OutlineState();
+let outlineDocument: DocumentSessionId | null;
+let outlinePinned: boolean;
+let outlineDismissed: boolean;
+let outlineCloseTimer: number | null;
+let outlineScrollFrame: number | null;
+let outlineHeadingCache: { root: HTMLElement; revision: number; headings: HTMLElement[]; index: number } | null;
+let outlineOpenOnLoad: boolean;
 
 function isSourceChanges(value: unknown): value is SourceChanges {
   return (
@@ -36,38 +33,54 @@ function isSourceChanges(value: unknown): value is SourceChanges {
 }
 
 export function initializeNavigationOutline(): void {
-  outlineState.outlineDocument = null;
-  outlineState.outlinePinned = false;
-  outlineState.outlineDismissed = false;
-  outlineState.outlineCloseTimer = null;
-  outlineState.outlineScrollFrame = null;
+  outlineDocument = null;
+  outlinePinned = false;
+  outlineDismissed = false;
+  outlineCloseTimer = null;
+  outlineScrollFrame = null;
   onApplicationDispose(() => {
-    clearTimer(outlineState.outlineCloseTimer);
-    if (outlineState.outlineScrollFrame !== null) cancelAnimationFrame(outlineState.outlineScrollFrame);
-    outlineState.outlineHeadingCache = null;
+    clearTimer(outlineCloseTimer);
+    if (outlineScrollFrame !== null) cancelAnimationFrame(outlineScrollFrame);
+    outlineHeadingCache = null;
   });
-  outlineState.outlineHeadingCache = null;
-  outlineState.outlineOpenOnLoad = false;
-  appState.ui.outlinePanel.hidden = false;
-  listen(appState.ui.outlineTab, "click", () => {
-    if (outlineState.outlinePinned) closeDocumentOutline({ dismiss: true });
+  outlineHeadingCache = null;
+  outlineOpenOnLoad = false;
+  element("outline-panel").hidden = false;
+  listen(element("outline-tab"), "click", () => {
+    if (outlinePinned) closeDocumentOutline({ dismiss: true });
     else openDocumentOutline({ pin: true });
   });
-  listen(appState.ui.outlineNavigation, "pointerenter", () => openDocumentOutline());
-  listen(appState.ui.outlineNavigation, "pointerleave", () => {
-    outlineState.outlineDismissed = false;
+  listen(element("document-outline"), "pointerenter", () => openDocumentOutline());
+  listen(element("document-outline"), "pointerleave", () => {
+    outlineDismissed = false;
     deferOutlineClose();
   });
-  listen(appState.ui.outlineNavigation, "focusin", () => openDocumentOutline());
-  listen(appState.ui.outlineNavigation, "focusout", deferOutlineClose);
-  listen(appState.ui.outlineNavigation, "keydown", navigateOutlineKeys);
+  listen(element("document-outline"), "focusin", () => openDocumentOutline());
+  listen(element("document-outline"), "focusout", deferOutlineClose);
+  listen(element("document-outline"), "keydown", navigateOutlineKeys);
   listen(document, "pointerdown", (event) => {
     if (!(event.target instanceof Element)) return;
 
-    if (!appState.ui.outlineNavigation.contains(event.target)) closeDocumentOutline();
+    if (
+      (outlineOpenOnLoad || outlineDismissed || element("document-outline").hasAttribute("data-open")) &&
+      !element("document-outline").contains(event.target)
+    )
+      closeDocumentOutline();
   });
-  listen(appState.ui.panes, "scroll", scheduleOutlineLocation, true);
-  listen(appState.ui.panes, "keyup", () => {
+  listen(
+    element("document-panes"),
+    "scroll",
+    (event) => {
+      const target = event.target;
+      if (
+        target === element("preview") ||
+        (target instanceof HTMLElement && target.hasAttribute("data-editor-scroller"))
+      )
+        scheduleOutlineLocation();
+    },
+    true,
+  );
+  listen(element("document-panes"), "keyup", () => {
     if (shell.view !== "rich") scheduleOutlineLocation();
   });
   listen(window, "resize", scheduleOutlineLocation);
@@ -90,17 +103,16 @@ export function refreshOutline(): void {
   appState.outlineTimer = null;
   const changes = appState.outlineChanges;
   appState.outlineChanges = null;
-  if (appState.outlineSource === appState.ui.editor.value && outlineState.outlineDocument === documentSession.id)
-    return;
-  appState.outlineSource = appState.ui.editor.value;
+  if (appState.outlineSource === appState.editor.value && outlineDocument === documentSession.id) return;
+  appState.outlineSource = appState.editor.value;
   renderOutline(documentSession.current ? appState.outlineExtractor.extract(appState.outlineSource, changes) : []);
 }
 
 export function renderOutline(items: Heading[]): void {
-  const changedDocument = outlineState.outlineDocument !== documentSession.id;
-  const openOnLoad = outlineState.outlineOpenOnLoad;
-  outlineState.outlineDocument = documentSession.id;
-  outlineState.outlineHeadingCache = null;
+  const changedDocument = outlineDocument !== documentSession.id;
+  const openOnLoad = outlineOpenOnLoad;
+  outlineDocument = documentSession.id;
+  outlineHeadingCache = null;
   if (changedDocument) {
     closeDocumentOutline();
     appState.currentOutlineButton = null;
@@ -119,7 +131,7 @@ export function renderOutline(items: Heading[]): void {
       fragment.append(row);
       return button;
     });
-    appState.ui.outlineList.replaceChildren(fragment);
+    element("outline-list").replaceChildren(fragment);
   }
   const minimumLevel = items.reduce((minimum, item) => Math.min(minimum, item.level), 6);
   items.forEach((item, index) => {
@@ -133,27 +145,33 @@ export function renderOutline(items: Heading[]): void {
   });
   appState.outlineItems = items;
   appState.outlineById = new Map(items.map((item, index) => [item.id, appState.outlineButtons[index]]));
-  appState.ui.outlineEmpty.hidden = items.length > 0;
-  appState.ui.outlineNavigation.hidden = !documentSession.current || !items.length;
-  if (appState.ui.outlineNavigation.hidden) closeDocumentOutline();
+  element("outline-empty").hidden = items.length > 0;
+  element("document-outline").hidden = !documentSession.current || !items.length;
+  if (element("document-outline").hidden) closeDocumentOutline();
   const count = Math.min(items.length, 24);
-  if (appState.ui.outlineRail.childElementCount !== count) {
-    appState.ui.outlineRail.replaceChildren(...Array.from({ length: count }, () => document.createElement("span")));
+  if (element("outline-rail").childElementCount !== count) {
+    element("outline-rail").replaceChildren(...Array.from({ length: count }, () => document.createElement("span")));
   }
   for (let index = 0; index < count; index++) {
     const heading = Math.floor((index * items.length) / count);
-    const mark = htmlChildren(appState.ui.outlineRail)[index];
+    const mark = htmlChildren(element("outline-rail"))[index];
     mark.dataset.heading = String(heading);
     mark.dataset.level = String(items[heading].level);
   }
-  setCurrentOutline(
+  highlightOutline(
     appState.currentOutlineButton ? items[Number(appState.currentOutlineButton.dataset.heading)]?.id : items[0]?.id,
+    true,
   );
   if (changedDocument && openOnLoad && items.length) openDocumentOutline({ pin: true });
 }
 
 export function setCurrentOutline(id: string | null | undefined): void {
+  highlightOutline(id, false);
+}
+
+function highlightOutline(id: string | null | undefined, rebuilt: boolean): void {
   const next = id ? (appState.outlineById.get(id) ?? null) : null;
+  if (!rebuilt && appState.currentOutlineButton === next) return;
   if (appState.currentOutlineButton !== next) {
     appState.currentOutlineButton?.removeAttribute("aria-current");
     if (appState.currentOutlineButton) appState.currentOutlineButton.tabIndex = -1;
@@ -162,7 +180,7 @@ export function setCurrentOutline(id: string | null | undefined): void {
   appState.currentOutlineButton?.setAttribute("aria-current", "location");
   if (appState.currentOutlineButton) appState.currentOutlineButton.tabIndex = 0;
   const index = Number(appState.currentOutlineButton?.dataset.heading ?? 0);
-  const marks = htmlChildren(appState.ui.outlineRail);
+  const marks = htmlChildren(element("outline-rail"));
   marks.forEach((mark, at) =>
     mark.classList.toggle(
       "is-current",
@@ -174,91 +192,102 @@ export function setCurrentOutline(id: string | null | undefined): void {
 
 export function openDocumentOutline({ pin = false, focus = false }: { pin?: boolean; focus?: boolean } = {}): void {
   refreshOutline();
-  if (appState.ui.outlineNavigation.hidden) {
-    outlineState.outlineOpenOnLoad ||= pin && !documentSession.current;
+  if (element("document-outline").hidden) {
+    outlineOpenOnLoad ||= pin && !documentSession.current;
     return;
   }
-  if (outlineState.outlineDismissed && !pin) return;
+  if (outlineDismissed && !pin) return;
   if (appState.compactLayout.matches && (pin || focus)) setSidebar(false);
-  clearTimer(outlineState.outlineCloseTimer);
-  outlineState.outlineDismissed = false;
-  outlineState.outlinePinned ||= pin;
-  appState.ui.outlineNavigation.setAttribute("data-open", "");
-  appState.ui.outlineTab.setAttribute("aria-expanded", "true");
-  appState.ui.outlinePanel.inert = false;
-  appState.ui.outlinePanel.setAttribute("aria-hidden", "false");
-  if (focus) appState.ui.outlineTab.focus({ preventScroll: true });
+  clearTimer(outlineCloseTimer);
+  outlineDismissed = false;
+  outlinePinned ||= pin;
+  element("document-outline").setAttribute("data-open", "");
+  element("outline-tab").setAttribute("aria-expanded", "true");
+  element("outline-panel").inert = false;
+  element("outline-panel").setAttribute("aria-hidden", "false");
+  if (focus) element("outline-tab").focus({ preventScroll: true });
 }
 
 export function closeDocumentOutline({
   focus = false,
   dismiss = false,
 }: { focus?: boolean; dismiss?: boolean } = {}): void {
-  clearTimer(outlineState.outlineCloseTimer);
-  outlineState.outlinePinned = false;
-  outlineState.outlineOpenOnLoad = false;
-  outlineState.outlineDismissed = dismiss;
-  appState.ui.outlineNavigation.removeAttribute("data-open");
-  appState.ui.outlineTab.setAttribute("aria-expanded", "false");
-  appState.ui.outlinePanel.inert = true;
-  appState.ui.outlinePanel.setAttribute("aria-hidden", "true");
-  if (focus) appState.ui.outlineTab.focus({ preventScroll: true });
+  clearTimer(outlineCloseTimer);
+  outlinePinned = false;
+  outlineOpenOnLoad = false;
+  outlineDismissed = dismiss;
+  element("document-outline").removeAttribute("data-open");
+  element("outline-tab").setAttribute("aria-expanded", "false");
+  element("outline-panel").inert = true;
+  element("outline-panel").setAttribute("aria-hidden", "true");
+  if (focus) element("outline-tab").focus({ preventScroll: true });
 }
 
-export function deferOutlineClose(): void {
-  clearTimer(outlineState.outlineCloseTimer);
-  outlineState.outlineCloseTimer = window.setTimeout(() => {
-    if (!outlineState.outlinePinned && !appState.ui.outlineNavigation.matches(":hover, :focus-within"))
-      closeDocumentOutline();
+function deferOutlineClose(): void {
+  clearTimer(outlineCloseTimer);
+  outlineCloseTimer = window.setTimeout(() => {
+    if (!outlinePinned && !element("document-outline").matches(":hover, :focus-within")) closeDocumentOutline();
   }, 160);
 }
 
-export function updateOutlineLocation(): void {
-  outlineState.outlineScrollFrame = null;
+function updateOutlineLocation(): void {
+  outlineScrollFrame = null;
   if (!appState.outlineItems.length || !documentSession.current) return;
   const mode = shell.view;
   if (mode !== "rich" && mode !== "preview") {
-    const heading =
-      appState.outlineItems.findLast((item) => item.from <= appState.ui.editor.selectionStart) ??
-      appState.outlineItems[0];
+    const position = appState.editor.selectionStart;
+    const heading = appState.outlineItems.findLast((item) => item.from <= position) ?? appState.outlineItems[0];
     setCurrentOutline(heading.id);
     return;
   }
-  const root = mode === "rich" ? appState.element("rich-editor") : appState.ui.preview;
-  const viewport = mode === "rich" ? root.querySelector<HTMLElement>("[data-editor-scroller]") : appState.ui.preview;
+  const root = mode === "rich" ? element("rich-editor") : element("preview");
+  const viewport = mode === "rich" ? root.querySelector<HTMLElement>("[data-editor-scroller]") : element("preview");
   if (!viewport) return;
   if (
-    outlineState.outlineHeadingCache?.root !== root ||
-    outlineState.outlineHeadingCache.revision !== documentSession.revision
+    outlineHeadingCache?.root !== root ||
+    outlineHeadingCache.revision !== documentSession.revision ||
+    !outlineHeadingCache.headings[0]?.isConnected
   ) {
-    outlineState.outlineHeadingCache = {
+    outlineHeadingCache = {
       root,
       revision: documentSession.revision,
+      index: 0,
       headings: [...root.querySelectorAll<HTMLElement>("h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]")].filter(
         (node) => appState.outlineById.has(node.id),
       ),
     };
   }
-  const { headings } = outlineState.outlineHeadingCache;
+  const cache = outlineHeadingCache;
+  const { headings, index } = cache;
   if (!headings.length) return;
   const bounds = viewport.getBoundingClientRect();
   const top = bounds.top + Math.min(100, bounds.height / 3);
-  let low = 0;
-  let high = headings.length;
+  // Most scroll frames stay in one section. Read live bounds so images, wrapping and zoom need no offset cache.
+  let low: number, high: number;
+  if (index > 0 && headings[index].getBoundingClientRect().top > top) {
+    low = 0;
+    high = index;
+  } else if (index + 1 < headings.length && headings[index + 1].getBoundingClientRect().top <= top) {
+    low = index + 2;
+    high = headings.length;
+  } else {
+    setCurrentOutline(headings[index].id);
+    return;
+  }
   while (low < high) {
     const middle = (low + high) >> 1;
     if (headings[middle].getBoundingClientRect().top <= top) low = middle + 1;
     else high = middle;
   }
-  setCurrentOutline(headings[Math.max(0, low - 1)].id);
+  cache.index = Math.max(0, low - 1);
+  setCurrentOutline(headings[cache.index].id);
 }
 
-export function scheduleOutlineLocation(): void {
-  if (outlineState.outlineScrollFrame === null)
-    outlineState.outlineScrollFrame = window.requestAnimationFrame(updateOutlineLocation);
+function scheduleOutlineLocation(): void {
+  if (outlineScrollFrame === null) outlineScrollFrame = window.requestAnimationFrame(updateOutlineLocation);
 }
 
-export function navigateOutlineKeys(event: KeyboardEvent): void {
+function navigateOutlineKeys(event: KeyboardEvent): void {
   if (!(event.target instanceof Element)) return;
 
   if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;

@@ -73,7 +73,6 @@ export interface Collaboration {
   localModified: boolean;
   queue: { data: ArrayBuffer | string; snapshot: boolean }[];
   processing: boolean;
-  selection: RelativeSelection;
   recoveryRecord: LocalDraft | null;
   cursorSignature: string | null;
   initialized: boolean;

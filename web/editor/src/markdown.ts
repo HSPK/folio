@@ -46,6 +46,8 @@ function headingsIn(block: ProseNode) {
   let found = blockHeadings.get(block);
   if (found) return found;
   if (block.type.name === "heading") found = [{ node: block, offset: 0, text: proseHeadingText(block) }];
+  else if (block.type.name === "literal_block" && block.attrs.level)
+    found = [{ node: block, offset: 0, text: block.attrs.label }];
   else if (block.isTextblock || block.isLeaf) found = noHeadings;
   else {
     const nested: { node: ProseNode; offset: number; text: string }[] = [];
@@ -354,7 +356,12 @@ export function sourcePositionMap(tree: Root, source: string, document: ProseNod
       sourceCharacters.push({ char: "\n", source: from });
     } else markdownChildren(node).forEach(visit);
   };
-  visit(tree);
+  tree.children.forEach((block, index) => {
+    if (document.childCount === tree.children.length && document.child(index).type.name === "literal_block") {
+      sourceCharacters.push({ char: "\uFFFC", source: block.position!.start.offset! });
+      sourceCharacters.push({ char: "\uFFFB", source: block.position!.end.offset! });
+    } else visit(block);
+  });
   const editorCharacters: { char: string; position: number }[] = [];
   document.descendants((node, position) => {
     if (node.isText && typeof node.text === "string")
@@ -367,7 +374,7 @@ export function sourcePositionMap(tree: Root, source: string, document: ProseNod
       }
       editorCharacters.push({ char: "\uFFF9", position: position + 1 + node.content.size });
       return false;
-    } else if (["image", "image_block", "hr", "wiki_link"].includes(node.type.name)) {
+    } else if (["image", "image_block", "hr", "wiki_link", "literal_block"].includes(node.type.name)) {
       editorCharacters.push({ char: "\uFFFC", position });
       editorCharacters.push({ char: "\uFFFB", position: position + node.nodeSize });
     } else if (node.type.name === "hardbreak") editorCharacters.push({ char: "\n", position });

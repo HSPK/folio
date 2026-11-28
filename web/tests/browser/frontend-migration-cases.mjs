@@ -1,8 +1,55 @@
 import { test, expect, openSettingsDialog, selectSettingsSection, primaryModifier } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
+test("command filtering retains matching rows and handles empty keyboard selection", async ({ page }) => {
+  await page.keyboard.press("Control+k");
+  const query = page.locator("#command-query");
+  const options = page.locator("#command-list [role=option]");
+  const read = page.getByRole("option", { name: "View: Read", exact: true });
+  const original = await read.elementHandle();
+  await query.fill("view:");
+  await expect(options).toHaveCount(4);
+  expect(await read.evaluate((node, before) => node === before, original)).toBe(true);
+  await query.press("ArrowUp");
+  await expect(read).toHaveAttribute("aria-selected", "true");
+  await query.press("ArrowDown");
+  await expect(options.first()).toHaveAttribute("aria-selected", "true");
+  await query.fill("no matching command or note");
+  await expect(options).toHaveCount(0);
+  await expect(page.locator("#command-empty")).toBeVisible();
+  await query.press("ArrowDown");
+  await query.press("Enter");
+  await expect(page.locator("#command-dialog")).toBeVisible();
+  await query.fill("view:");
+  await expect(options.first()).toHaveAttribute("aria-selected", "true");
+  await read.hover();
+  await expect(read).toHaveAttribute("aria-selected", "true");
+  await query.press("Enter");
+  await expect(page.locator("#command-dialog")).toBeHidden();
+  await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "preview");
+  await page.keyboard.press("Control+k");
+  await expect(query).toHaveValue("");
+  await expect(options.first()).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#command-dialog")).toBeHidden();
+});
+
+test("native scrollbar visuals stay hidden while settings still scroll", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 280 });
+  await openSettingsDialog(page, { section: "editor" });
+  const content = page.locator(".settings-content");
+  for (const selector of [".settings-content", ".settings-tabs", "#editor"]) {
+    expect(await page.locator(selector).evaluate(node => getComputedStyle(node).scrollbarWidth)).toBe("none");
+  }
+  await expect.poll(() => content.evaluate(node => node.scrollHeight - node.clientHeight)).toBeGreaterThan(0);
+  await content.hover();
+  await page.mouse.wheel(0, 250);
+  await expect.poll(() => content.evaluate(node => node.scrollTop)).toBeGreaterThan(0);
+  await page.locator("#settings-cancel").click();
+});
+
 test("startup shows one centered heading before the app loads", async ({ page }) => {
-  await page.route("**/app.mjs", route => route.abort());
+  await page.route(/\/app\.mjs(?:\?|$)/, route => route.abort());
   await page.reload();
   const status = page.getByRole("status");
   await expect(status).toHaveText("Opening Folio");
@@ -11,6 +58,62 @@ test("startup shows one centered heading before the app loads", async ({ page })
     const box = await status.getByRole("heading").boundingBox();
     expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThan(1);
     expect(Math.abs(box.y + box.height / 2 - viewport.height / 2)).toBeLessThan(1);
+  }
+});
+
+test("startup mounts with already-loaded stylesheets and survives cached reloads", async ({ page }) => {
+  const { origin, pathname } = new URL(page.url());
+  await page.route(url => url.origin === origin && url.pathname === pathname, async route => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      body: (await response.text()).replaceAll('rel="preload" as="style"', 'rel="stylesheet"'),
+    });
+  });
+  await page.reload();
+  await expect(page.locator("#folio-boot")).toHaveCount(0);
+  await expect(page.locator(".ProseMirror[contenteditable=true]")).toBeVisible();
+  await page.unrouteAll({ behavior: "wait" });
+  for (let index = 0; index < 3; index++) {
+    await page.reload();
+    await expect(page.locator("#folio-boot")).toHaveCount(0);
+    await expect(page.locator(".ProseMirror[contenteditable=true]")).toBeVisible();
+  }
+});
+
+test("shared buttons preserve icon labels, literal text and empty resize handles", async ({ page }) => {
+  await page.evaluate(async () => {
+    const { createButton } = await import(document.querySelector('link[href^="/editor.bundle.mjs"]').href);
+    const host = document.createElement("div");
+    host.id = "shared-button-test";
+    host.style.cssText = "position:fixed;top:8px;left:8px;z-index:10000";
+    const open = createButton({ label: "<b>Open</b>" });
+    const detail = document.createElement("small");
+    detail.textContent = " Project / note.md";
+    open.append(detail);
+    const icon = createButton({
+      label: "Copy note",
+      icon: "copy",
+      onClick: event => { event.currentTarget.dataset.clicked = "true"; },
+    });
+    const handle = createButton({ label: "Resize image", text: "" });
+    host.append(open, icon, handle);
+    document.body.append(host);
+  });
+  const host = page.locator("#shared-button-test");
+  try {
+    const open = host.getByRole("button", { name: "<b>Open</b> Project / note.md", exact: true });
+    await expect(open).toBeVisible();
+    await expect(open.locator("b")).toHaveCount(0);
+    const copy = host.getByRole("button", { name: "Copy note", exact: true });
+    await expect(copy.locator("svg")).toHaveCount(1);
+    await copy.click();
+    await expect(copy).toHaveAttribute("data-clicked", "true");
+    const handle = host.getByRole("button", { name: "Resize image", exact: true });
+    await expect(handle).toBeEmpty();
+    await expect(handle).toHaveAttribute("type", "button");
+  } finally {
+    await host.evaluate(node => node.remove());
   }
 });
 
@@ -33,7 +136,7 @@ test("Solid workspace fills the viewport and keeps editor nodes stable across ch
   await page.screenshot({ path: test.info().outputPath("solid-workspace-desktop.png"), animations: "disabled" });
 });
 
-test("Kobalte layers preserve dialog fields and restore the nearest popup trigger on Escape", async ({ page }) => {
+test("native layers preserve dialog fields and restore the nearest popup trigger on Escape", async ({ page }) => {
   const field = await page.locator("#settings-latin-font").elementHandle();
   await openSettingsDialog(page);
   await selectSettingsSection(page, "appearance");
@@ -43,14 +146,35 @@ test("Kobalte layers preserve dialog fields and restore the nearest popup trigge
   expect(await page.locator("#settings-latin-font").evaluate((node, previous) => node === previous, field)).toBe(true);
   await page.keyboard.press("Escape");
   await expect(page.locator("#settings-dialog")).toBeHidden();
-  await expect(page.locator("#more-menu > summary")).toBeFocused();
-  await page.locator("#more-menu > summary").click();
-  await page.locator("#view-rich").focus();
+  await expect(page.locator("#more-menu > button")).toBeFocused();
+  await page.locator("#more-menu > button").click();
+  await expect(page.locator("#view-rich")).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(page.locator("#view-editor")).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(page.locator("#more-menu")).not.toHaveAttribute("open", "");
-  await expect(page.locator("#more-menu > summary")).toBeFocused();
+  await expect(page.locator("#more-actions-panel")).toBeHidden();
+  await expect(page.locator("#more-menu > button")).toBeFocused();
+});
+
+test("native menus stay inside the resized viewport and close with their sidebar", async ({ page }) => {
+  await page.locator("#new-menu > button").click();
+  await expect(page.locator("#new-menu-panel")).toBeVisible();
+  await page.keyboard.press(`${primaryModifier}+Shift+l`);
+  await expect(page.locator("#new-menu-panel")).toBeHidden();
+  await expect(page.locator("#sidebar-toggle")).toBeFocused();
+  await page.locator("#more-menu > button").click();
+  await page.setViewportSize({ width: 320, height: 480 });
+  const menu = page.locator("#more-actions-panel");
+  await expect
+    .poll(async () => {
+      const box = await menu.boundingBox();
+      return box && box.x >= 11 && box.y >= 11 && box.x + box.width <= 309 && box.y + box.height <= 469;
+    })
+    .toBe(true);
+  await expect(page.locator("#settings-open")).toBeInViewport();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(page.locator("#more-menu > button")).toBeFocused();
 });
 
 test("long Solid search lists virtualize rows and preserve keyboard selection on narrow screens", async ({ browser }) => {

@@ -21,10 +21,10 @@ test("wiki links render and autocomplete without changing code literals or alias
   expect(saved).toContain("[[/Second.md");
   expect(saved).toContain("`[[Literal]]`");
   await chooseView(page, "preview");
-  await expect(page.locator('#preview a').filter({ hasText: "Other note" })).toHaveAttribute("href", /\/\?document=[a-f0-9-]+/);
+  await expect(page.locator('#preview a').filter({ hasText: "Other note" })).toHaveAttribute("href", /^\/n\/[A-Za-z0-9_-]{8}$/);
   await chooseView(page, "rich");
   await page.locator(".folio-wiki-link").first().click({ modifiers: [primaryModifier] });
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
+  await expect(page.locator("#document-title")).toHaveText("Second");
 });
 
 test("public link passwords gate anonymous editing and the owner can manage all links", async ({ browser }) => {
@@ -32,30 +32,42 @@ test("public link passwords gate anonymous editing and the owner can manage all 
   const guest = await browser.newContext();
   try {
     const [owner] = library.pages;
-    await owner.locator("#more-menu > summary").click();
+    await owner.locator("#more-menu > button").click();
     await owner.locator("#share-page").click();
     await owner.locator("#sharing-level").selectOption("publicRead");
     await owner.locator("#sharing-password").fill("a private share password");
     await owner.locator("#sharing-save").click();
-    await expect(owner.locator("#sharing-public-url")).toHaveValue(/share=[a-f0-9]{64}/);
+    await expect(owner.locator("#sharing-public-url")).toHaveValue(/\/s\/[A-Za-z0-9_-]{8}$/);
     const url = await owner.locator("#sharing-public-url").inputValue();
     const page = await guest.newPage();
+    await page.setViewportSize({ width: 390, height: 844 });
+    const noteRequests = [];
+    page.on("request", r => { if (new URL(r.url()).pathname === "/api/public/document") noteRequests.push(r.method()); });
     await page.goto(url);
     await expect(page.locator("#public-password-dialog")).toBeVisible();
     await expect(page.locator("#document-panes")).toBeHidden();
     await page.locator("#public-password").fill("incorrect password");
     await page.locator("#public-password-submit").click();
     await expect(page.locator("#public-password-error")).toContainText("incorrect");
+    expect(noteRequests).toEqual([]);
+    await expect(page.locator("#sidebar")).toHaveCSS("display", "none");
     await page.locator("#public-password").fill("a private share password");
     await page.locator("#public-password-submit").click();
     await expect(page.locator("#public-password-dialog")).toBeHidden();
     await expect(page.locator(".ProseMirror")).toContainText("Alpha");
     await expect(page.locator("#dirty-indicator")).toHaveText("Read only");
-    await page.reload();
+    const projects = await (await owner.request.get(new URL("/api/projects", url).href)).json();
+    const long = new URL(`/share?share=${projects.find(p => p.id === "default").publicLinks["Shared.md"].token}`, url).href;
+    const legacy = new URL("/s/" + Buffer.from(new URL(long).searchParams.get("share").slice(0,32), "hex").toString("base64url"), url).href;
+    await page.goto(legacy);
+    await expect(page.locator(".ProseMirror")).toContainText("Alpha");
+    await expect(page).toHaveURL(url);
+    await page.goto(long);
     await expect(page.locator("#public-password-dialog")).toBeHidden();
     await expect(page.locator(".ProseMirror")).toContainText("Alpha");
+    await expect(page).toHaveURL(url);
     await owner.locator("#sharing-cancel").click();
-    await owner.locator("#more-menu > summary").click();
+    await owner.locator("#more-menu > button").click();
     await owner.locator("#shares-open").click();
     await expect(owner.locator("#shares-list")).toContainText("Shared.md");
     await expect(owner.locator("#shares-list")).toContainText("Password protected");
@@ -63,5 +75,7 @@ test("public link passwords gate anonymous editing and the owner can manage all 
     await confirmDialog(owner);
     await expect(owner.locator("#shares-list")).not.toContainText("Shared.md");
     await expect(page.locator("#collaboration-message")).toContainText("revoked");
+    await page.goto(long);
+    await expect(page.locator("#connection-message")).toContainText("revoked");
   } finally { await guest.close(); await library.close(); }
 });

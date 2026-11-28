@@ -53,6 +53,6 @@ test("browser titles prefer metadata and keep the unsaved marker without exposin
   const note = { path: "Guides/physical-name.md", title: "Document title" };
   assert.equal(browserDocumentTitle(note), "Document title — Folio");
   assert.equal(browserDocumentTitle(note, true), "Document title * — Folio");
-  assert.equal(browserDocumentTitle({ ...note, title: null }), "physical-name.md — Folio");
-  assert.equal(browserDocumentTitle({ ...note, title: "  " }), "physical-name.md — Folio");
+  assert.equal(browserDocumentTitle({ ...note, title: null }), "physical-name — Folio");
+  assert.equal(browserDocumentTitle({ path: "Guides\\Release.v2.MARKDOWN", title: "  " }), "Release.v2 — Folio");
 });

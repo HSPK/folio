@@ -19,19 +19,23 @@ pub(in crate::server) async fn scope(
     uri: axum::http::Uri,
     headers: axum::http::HeaderMap,
     user: Option<AuthenticatedUser>,
+    peer: Option<std::net::IpAddr>,
 ) -> Result<Arc<AppState>, ApiError> {
     if super::public::endpoint(uri.path()) {
-        return super::public::scope(state, uri, headers).await;
+        return super::public::scope(state, uri, headers, peer).await;
     }
     let scoped = matches!(
         uri.path(),
         "/api/session"
             | "/api/tree"
+            | "/api/panel-file"
+            | "/api/file-properties"
             | "/api/document"
             | "/api/entry"
             | "/api/directory"
             | "/api/preview"
             | "/assets"
+            | "/assets/pdf"
             | "/api/images"
             | "/api/history"
             | "/api/backlinks"
@@ -46,7 +50,7 @@ pub(in crate::server) async fn scope(
             | "/api/resource"
             | "/api/resources/resolve"
     );
-    if !scoped || state.projects.is_none() {
+    if !scoped || state.shared.projects.is_none() {
         return Ok(state);
     }
     let user = user.ok_or_else(|| ApiError::forbidden("Log in to access projects."))?;
@@ -76,17 +80,23 @@ pub(in crate::server) async fn scope(
         _ => None,
     };
     let historical_resource = matches!(uri.path(), "/api/history" | "/api/history/content");
+    let note_lookup = uri.path() == "/api/resource";
     tokio::task::spawn_blocking(move || {
         let mut scoped = (*state).clone();
         let registry = state
+            .shared
             .projects
             .as_ref()
             .ok_or_else(|| ApiError::internal("Projects are unavailable."))?;
         let id = if let Some(resource) = resource_id {
-            let project = registry
-                .storage()?
-                .resource(&resource, historical_resource)?
-                .project;
+            let store = registry.storage()?;
+            let resource =
+                if note_lookup && crate::server::state_store::page_codes::valid(&resource) {
+                    store.note_for_code(&resource)?
+                } else {
+                    resource
+                };
+            let project = store.resource(&resource, historical_resource)?.project;
             if selected
                 .as_ref()
                 .is_some_and(|selected| selected != &project)
@@ -241,6 +251,7 @@ pub(in crate::server) async fn manage(
 
 fn registry(state: &AppState) -> Result<&Registry, ApiError> {
     state
+        .shared
         .projects
         .as_deref()
         .ok_or_else(|| ApiError::forbidden("Projects require user accounts."))

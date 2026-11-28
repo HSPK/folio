@@ -16,6 +16,7 @@ use zeroize::Zeroize;
 
 fn admin(state: &AppState, headers: &HeaderMap) -> Result<(Arc<AuthService>, String), ApiError> {
     let auth = state
+        .shared
         .user_auth
         .clone()
         .ok_or_else(|| ApiError::forbidden("User accounts are not enabled."))?;
@@ -67,10 +68,10 @@ pub(super) async fn register(
     Extension(work): Extension<Arc<Work>>,
     body: Result<Json<Registration>, JsonRejection>,
 ) -> Result<Response, ApiError> {
-    let auth = state
-        .user_auth
-        .clone()
-        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "User accounts are not enabled."))?;
+    let auth =
+        state.shared.user_auth.clone().ok_or_else(|| {
+            ApiError::new(StatusCode::NOT_FOUND, "User accounts are not enabled.")
+        })?;
     let Json(mut registration) = body.map_err(json_error)?;
     let result = blocking(state.clone(), work, move |_, _| {
         let result = auth.register_invited(

@@ -34,7 +34,6 @@ export function createEditorAnalysis({
     return state.parts.bodyStart + sessionSourceOffset(state, view, position);
   }
   let outlineTimer: ReturnType<typeof setTimeout> | null = null;
-  const publishOutline = (state: EditorSession) => analysis.publishOutline(state);
   const analysis = {
     headingsFor,
     sourcePosition,
@@ -45,7 +44,7 @@ export function createEditorAnalysis({
       outlineTimer = setTimeout(
         () => {
           outlineTimer = null;
-          publishOutline(state);
+          analysis.publishOutline(state);
         },
         120 + Math.min(1500, state.bodySource.length / 4096),
       );

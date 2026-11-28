@@ -28,16 +28,20 @@ test("sidebar and page width controls resize and persist across reloads", async 
   const sidebar = page.locator("#sidebar");
   const resizer = page.locator("#sidebar-resizer");
   const initialSidebar = await sidebar.boundingBox();
+  const documentArea = page.locator(".document-area");
+  const initialArea = await documentArea.boundingBox();
   const handle = await resizer.boundingBox();
   await page.mouse.move(handle.x + handle.width / 2, handle.y + 120);
   await page.mouse.down();
   expect((await sidebar.boundingBox()).width).toBeCloseTo(initialSidebar.width, 0);
+  await page.mouse.move(handle.x + handle.width / 2 + 36, handle.y + 120);
+  await expect.poll(async () => (await documentArea.boundingBox()).width).toBeCloseTo(initialArea.width - 36, 0);
   await page.mouse.move(handle.x + handle.width / 2 + 72, handle.y + 120, { steps: 5 });
   await page.mouse.up();
   await expect.poll(async () => (await sidebar.boundingBox()).width).toBeCloseTo(initialSidebar.width + 72, 0);
 
   const initialPageWidth = (await page.locator(".folio-live-page").boundingBox()).width;
-  await page.locator("#more-menu > summary").click();
+  await page.locator("#more-menu > button").click();
   await page.locator("#compact-layout-menu > summary").click();
   await page.getByRole("button", { name: /Wide/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-page-width", "wide");
@@ -48,6 +52,12 @@ test("sidebar and page width controls resize and persist across reloads", async 
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-page-width", "wide");
   await expect.poll(async () => (await sidebar.boundingBox()).width).toBeCloseTo(resizedWidth, 0);
+  await resizer.press("ArrowRight");
+  await expect(resizer).toHaveAttribute("aria-valuenow", String(Math.round(resizedWidth) + 10));
+  await resizer.press("ArrowLeft");
+  await expect(resizer).toHaveAttribute("aria-valuenow", String(Math.round(resizedWidth)));
+  await resizer.press("Home");
+  await expect.poll(async () => (await sidebar.boundingBox()).width).toBeCloseTo(initialSidebar.width, 0);
 });
 
 test("global command panel filters and runs document commands", async ({ page }) => {
@@ -157,7 +167,7 @@ test("recursive index hide rules apply immediately and survive refresh without h
     for (const name of entries.slice(0, 3)) await expect(page.locator(`button[data-path="${name}"]`)).toHaveCount(0);
     await expect(page.locator('button[data-path="Glob-docs/topic/keep.md"]')).toHaveCount(1);
     await page.reload();
-    await expect(page.locator("#document-title")).toHaveText("README.md");
+    await expect(page.locator("#document-title")).toHaveText("README");
     await expect(page.locator('button[data-path="Glob-docs/topic/keep.md"]')).toHaveCount(1);
     for (const name of entries.slice(0, 3)) await expect(page.locator(`button[data-path="${name}"]`)).toHaveCount(0);
     await openSettingsDialog(page);
@@ -198,7 +208,7 @@ test("writing surface has compact chrome in light, dark and hidden-sidebar frame
   await expect(page.locator(".ProseMirror strong")).toHaveText("formatting as you edit");
   await expect(page.locator(".ProseMirror")).not.toContainText("**");
   await page.screenshot({ path: path.join(buildRoot, "design-live-editing.png") });
-  await page.locator("#more-menu > summary").focus();
+  await page.locator("#more-menu > button").focus();
   await page.locator("#sidebar-hide").click();
   await page.screenshot({ path: path.join(buildRoot, "design-light-hidden.png") });
   await page.emulateMedia({ colorScheme: "dark" });
@@ -218,7 +228,7 @@ test("writing surface has compact chrome in light, dark and hidden-sidebar frame
   await expect(page.locator("#sidebar")).toBeHidden();
 });
 
-test("body scrollbars overlay content without changing the writing width or source", async ({ page }) => {
+test("body scrolling hides legacy bars without changing the writing width or source", async ({ page }) => {
   const short = "# Scroll test\n\nA short document.\n";
   const long = "# Scroll test\n\n" + "A longer paragraph for native scrolling and overlay sizing.\n\n".repeat(90);
   await openFixture(page, "Scrolling.md", short);
@@ -235,25 +245,15 @@ test("body scrollbars overlay content without changing the writing width or sour
   await chooseView(page, "rich");
   await expect.poll(() => viewport.evaluate((element) => element.scrollHeight > element.clientHeight)).toBeTruthy();
   expect(await geometry()).toEqual(before);
-  const scrollbar = page.locator("#rich-editor > .os-scrollbar-vertical");
-  const handle = scrollbar.locator(".os-scrollbar-handle");
+  const scrollbar = viewport.locator("..").locator(":scope > .os-scrollbar-vertical");
+  await viewport.evaluate(element => { element.scrollTop = 0; });
   await viewport.hover();
   await page.mouse.wheel(0, 400);
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-  await expect.poll(() => scrollbar.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeGreaterThan(.5);
-  expect(await handle.evaluate((element) => Number.parseFloat(getComputedStyle(element).width))).toBeLessThanOrEqual(6);
+  await expect(scrollbar).toHaveCSS("display", "none");
+  await expect(viewport).toHaveCSS("scrollbar-width", "none");
+  await expect(page.locator("#outline-rail > span")).toHaveCount(1);
   expect(await geometry()).toEqual(before);
-  await expect.poll(() => scrollbar.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(0);
-  const bounds = await viewport.boundingBox();
-  await page.mouse.move(bounds.x + bounds.width - 5, bounds.y + 100);
-  await expect.poll(() => scrollbar.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeGreaterThan(.5);
-  const thumb = await handle.boundingBox();
-  const oldPosition = await viewport.evaluate((element) => element.scrollTop);
-  await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2 + 80, { steps: 6 });
-  await page.mouse.up();
-  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(oldPosition);
   await expect(page.locator("#editor")).toHaveValue(long);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   expect(await fs.readFile(path.join(root, "Scrolling.md"), "utf8")).toBe(long);
@@ -263,7 +263,8 @@ test("body scrollbars overlay content without changing the writing width or sour
   await chooseView(page, "rich");
   await expect.poll(() => viewport.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBeTruthy();
   expect(await geometry()).toEqual(before);
-  await expect(page.locator("#rich-editor > .os-scrollbar-vertical")).toHaveCount(1);
+  await viewport.hover();
+  await expect(scrollbar).toHaveCount(1);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   expect(await fs.readFile(path.join(root, "Scrolling.md"), "utf8")).toBe(short);
 });
@@ -303,7 +304,7 @@ test("keyed library refreshes retain unaffected rows across title and structural
   const refresh = async () => {
     const response = page.waitForResponse((item) => item.url().includes("/api/tree"));
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await (await response).finished();
+    await response;
     await expect(page.locator("#file-nav")).toHaveAttribute("aria-busy", "false");
   };
   const original = await page.locator('[data-path="README.md"]').elementHandle();
@@ -374,6 +375,7 @@ test("file and outline scrolling never introduces a sidebar gutter", async ({ pa
       fs.writeFile(path.join(folder, `Note ${String(index).padStart(2, "0")}.md`), "# Note\n"),
     ));
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.locator('details.directory[data-path="Many notes"] > summary').click();
     await expect(page.locator("#file-list").getByRole("button", { name: "Many notes/Note 79.md", exact: true })).toBeAttached();
     await expect.poll(() => fileViewport.evaluate((element) => element.scrollHeight > element.clientHeight)).toBeTruthy();
     expect(await dimensions()).toEqual(before);
@@ -466,7 +468,10 @@ test("source scrollbars do not change textarea width or consume a gutter", async
   expect(await preview.evaluate((element) => element.offsetWidth - element.clientWidth)).toBe(0);
   await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
   const bar = page.locator(".preview-pane > .os-scrollbar-vertical");
-  await expect.poll(() => bar.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(1);
+  await expect(bar).toBeHidden();
+  await preview.hover();
+  await page.mouse.wheel(0, 300);
+  await expect.poll(() => preview.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
 });
 
 test("horizontal code scrolling overlays rather than increasing the code block height", async ({ page }) => {
@@ -493,7 +498,7 @@ test("native appearance updates override the OS theme without replacing unsaved 
   await page.route("**/api/appearance", (route) => route.fulfill({ json: preferences }));
   await page.emulateMedia({ colorScheme: "dark" });
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  const brightness = () => page.locator(".document-area").evaluate((element) => {
+  const brightness = () => page.locator("body").evaluate((element) => {
     const channels = getComputedStyle(element).backgroundColor.match(/[\d.]+/g).slice(0, 3).map(Number);
     return channels.reduce((sum, value) => sum + value, 0) / 3;
   });

@@ -222,6 +222,7 @@ fn history_reads_use_committed_snapshots_and_keep_scope_expiry_and_content_check
     project
         .record(
             &crate::server::files::Document {
+                code: None,
                 id: None,
                 project: None,
                 references: Vec::new(),

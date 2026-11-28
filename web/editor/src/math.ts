@@ -3,7 +3,7 @@ import remarkMath from "remark-math";
 import { $ctx, $inputRule, $nodeSchema, $remark } from "@milkdown/utils";
 import { InputRule } from "@milkdown/prose/inputrules";
 import { TextSelection } from "@milkdown/prose/state";
-import { createCachedKatexRenderer } from "./katex-renderer.ts";
+import type { createCachedKatexRenderer } from "./katex-renderer.ts";
 import { remarkDisplayMath } from "./math-syntax.ts";
 import type { Ctx } from "@milkdown/ctx";
 import type { Node as ProseNode } from "@milkdown/prose/model";
@@ -28,6 +28,39 @@ export const katexOptionsCtx = $ctx<KatexOptions, "katexOptions">(
 type SelectionRoot = (Document | ShadowRoot) & { getSelection?: () => Selection | null };
 type ActivateMath = (dom: HTMLElement, view: EditorView, getPos: GetPosition) => void;
 type CacheableMath = (view: EditorView, value: string) => boolean;
+
+type MathRenderer = ReturnType<typeof createCachedKatexRenderer>;
+let rendererFactory: typeof createCachedKatexRenderer | undefined;
+let loading: Promise<typeof createCachedKatexRenderer> | undefined;
+function deferredRenderer(): MathRenderer {
+  let render: MathRenderer | undefined;
+  const pending = new WeakMap<HTMLElement, object>();
+  return (value, element, options, cacheable) => {
+    if (rendererFactory) {
+      pending.delete(element);
+      (render ??= rendererFactory())(value, element, options, cacheable);
+      return;
+    }
+    const ticket = {};
+    pending.set(element, ticket);
+    element.textContent = value;
+    loading ??= import("./katex-renderer.ts").then(
+      (module) => (rendererFactory = module.createCachedKatexRenderer),
+      (error) => {
+        loading = undefined;
+        throw error;
+      },
+    );
+    void loading.then(
+      (factory) => {
+        if (pending.get(element) === ticket) (render ??= factory())(value, element, options, cacheable);
+      },
+      () => {
+        /* The source stays readable if the renderer is offline. */
+      },
+    );
+  };
+}
 
 function setDomTextSelection(source: HTMLElement, anchor: number, head: number, root: SelectionRoot) {
   const point = (offset: number): [Node, number] => {
@@ -125,13 +158,14 @@ function mathNodeView(
         renderNow(pendingValue);
       });
     };
-    const begin = (atEnd = true) => {
+    const begin = () => {
       activate(dom, editorView, getPos);
       const position = getPos();
       if (typeof position === "number") {
-        const offset = atEnd ? node.content.size : 0;
         editorView.dispatch(
-          editorView.state.tr.setSelection(TextSelection.create(editorView.state.doc, position + 1 + offset)),
+          editorView.state.tr.setSelection(
+            TextSelection.create(editorView.state.doc, position + 1 + node.content.size),
+          ),
         );
         editorView.focus();
       }
@@ -180,7 +214,7 @@ export function createMathNodeViews(ctx: Ctx) {
   let selectionDocument: Document | null = null;
   let selectionFrame = 0;
   let repeatedValues: Set<string> | null = null;
-  const render = createCachedKatexRenderer();
+  const render = deferredRenderer();
   const cacheable = (editorView: EditorView, value: string) => {
     repeatedValues ??= repeatedMathValues(editorView.state.doc);
     return repeatedValues.has(value);
@@ -239,7 +273,7 @@ export function createMathNodeViews(ctx: Ctx) {
 }
 
 export const mathInlineSchema = $nodeSchema("math_inline", (ctx) => {
-  const render = createCachedKatexRenderer();
+  const render = deferredRenderer();
   return {
     content: "text*",
     group: "inline",
@@ -280,7 +314,7 @@ export const mathInlineSchema = $nodeSchema("math_inline", (ctx) => {
 });
 
 export const mathBlockSchema = $nodeSchema("math_block", (ctx) => {
-  const render = createCachedKatexRenderer();
+  const render = deferredRenderer();
   return {
     content: "text*",
     group: "block",

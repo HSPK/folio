@@ -54,7 +54,7 @@ test("formatted editing preserves YAML independently of body editing, selection,
     window.loaded = true;
   `;
   const server = createServer(async (request, response) => {
-    response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-folio-editor-test'; style-src-attr 'unsafe-inline'; img-src 'self'");
+    response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-folio-editor-test'; style-src-attr 'unsafe-inline'; img-src 'self'; font-src 'self'");
     try {
       if (request.url === "/") {
         response.setHeader("Content-Type", "text/html");
@@ -65,7 +65,10 @@ test("formatted editing preserves YAML independently of body editing, selection,
       } else if (request.url === "/test.mjs") {
         response.setHeader("Content-Type", "text/javascript");
         response.end(harness);
-      } else if (["/editor.bundle.mjs", "/editor-helpers.mjs", "/editor.bundle.css", "/styles.css"].includes(request.url)) {
+      } else if (/^\/math-fonts\/[\w-]+\.woff2$/.test(request.url)) {
+        response.setHeader("Content-Type", "font/woff2");
+        response.end(await readFile(path.join(webRoot, "public", request.url.slice(1))));
+      } else if (["/editor.bundle.mjs", "/code-syntax.mjs", "/formula.mjs", "/editor-helpers.mjs", "/editor.bundle.css", "/styles.css"].includes(request.url)) {
         response.setHeader("Content-Type", request.url.endsWith(".css") ? "text/css" : "text/javascript");
         response.end(await readFile(path.join(webRoot, "public", request.url.slice(1))));
       } else response.writeHead(404).end();
@@ -154,7 +157,7 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.deepEqual(await evaluate(`extractOutline(${JSON.stringify(source)})`), await evaluate("outlines.at(-1)"));
     assert.equal(await evaluate("document.querySelector('.ProseMirror a').getAttribute('href')"), "/next.md#hello");
     assert.equal(await evaluate("document.querySelector('.ProseMirror img[src]').getAttribute('src')"), "/images/a.png");
-    assert.equal(await evaluate("document.querySelectorAll('.folio-code-gutter span').length"), 3);
+    assert.equal(await evaluate("document.querySelector('.folio-code-gutter').innerText"), "1\n2\n3");
     assert.ok(await evaluate("document.querySelectorAll('.folio-code-keyword').length") > 0);
     const layout = await evaluate(`(() => {
       const root = document.querySelector('#root').getBoundingClientRect();
@@ -346,6 +349,18 @@ test("formatted editing preserves YAML independently of body editing, selection,
     assert.equal(await evaluate("fallbacks.length"), fallbackCount);
     assert.ok(await evaluate("document.querySelectorAll('.ProseMirror [data-type=html]').length") >= 1);
     assert.equal(await evaluate("Boolean(window.executed || document.querySelector('#executed'))"), false);
+    const nested = "*outer _inner_ <sup>n</sup> tail*";
+    const paper = `# Title\n\n${nested}\n\n\nAfter.\n`;
+    await evaluate(`editor.load(${JSON.stringify(paper)}, "nested.md")`);
+    assert.equal(await evaluate("editor.isReady()"), true);
+    assert.equal(await evaluate("document.querySelector('.folio-literal-block')?.textContent"), nested);
+    assert.equal(await evaluate("document.querySelector('.folio-literal-block sup')"), null);
+    await evaluate("editor.select(7); document.execCommand('insertText', false, 'X')");
+    assert.equal(await evaluate("editor.getSource()"), paper.replace("Title", "TitleX"));
+    const remote = paper.replace("inner", "remote");
+    assert.equal(await evaluate(`editor.replaceSource(${JSON.stringify(remote)})`), true);
+    assert.equal(await evaluate("document.querySelector('.folio-literal-block')?.textContent"), nested.replace("inner", "remote"));
+    assert.equal(await evaluate("editor.getSource()"), remote);
     await evaluate("editor.load('[Unsafe](javascript:alert(1))\\n\\n![Remote](https://example.com/tracker.png)', 'unsafe.md')");
     assert.equal(await evaluate("document.querySelector('.ProseMirror a').hasAttribute('href')"), false);
     assert.equal(await evaluate("document.querySelectorAll('.ProseMirror img[src]').length"), 0);

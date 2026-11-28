@@ -1,4 +1,4 @@
-import { test, expect, fs, path, chooseView, metadataField, confirmDialog, primaryModifier, openMoreAction, userDocumentUrl } from "./fixture.mjs";
+import { browserPageUrl, test, expect, fs, path, chooseView, metadataField, confirmDialog, primaryModifier, openMoreAction, userDocumentUrl } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 
 async function append(page, text) {
@@ -124,6 +124,8 @@ test("a failed recovery save keeps its text and encrypted copy available for an 
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe(original);
     await expect.poll(async () => (await draftRows(page)).length).toBeGreaterThan(0);
     await page.unroute("**/api/document", reject);
+    await expect(page.locator("#connection-label")).toHaveAttribute("data-state", "ready");
+    await expect(page.locator("#editor")).toHaveValue(recovered);
     await page.locator("#draft-recovery-apply").click();
     await confirmDialog(page);
     await expect(page.locator("#draft-recovery-dialog")).toBeHidden();
@@ -136,7 +138,7 @@ test("navigating away while recovery reads the disk cancels the old copy without
   let release;
   try {
     const next = await userDocumentUrl(page.context(), library.url, "Other.md");
-    const old = new URL(page.url()).searchParams.get("document");
+    const old = (await browserPageUrl(page)).searchParams.get("document");
     let started;
     const requested = new Promise(resolve => { started = resolve; });
     const held = new Promise(resolve => { release = resolve; });
@@ -157,7 +159,7 @@ test("navigating away while recovery reads the disk cancels the old copy without
       history.pushState(null, "", url);
       window.dispatchEvent(new PopStateEvent("popstate"));
     }, next);
-    await expect(page.locator("#document-title")).toHaveText("Other.md");
+    await expect(page.locator("#document-title")).toHaveText("Other");
     await expect(page.locator("#draft-recovery-dialog")).toBeHidden();
     release();
     await completed;
@@ -276,15 +278,15 @@ test("favorites and recent notes follow the account without restoring legacy doc
   const other = await browser.newContext();
   try {
     const [alice] = library.pages;
-    await alice.locator("#more-menu > summary").click();
+    await alice.locator("#more-menu > button").click();
     await alice.locator("#workspace-favorite").click();
     await expect(alice.locator("#workspace-favorite")).toHaveText("Remove from favorites");
     const legacy = await alice.request.post(new URL("/api/workspace", library.url).href, {
-      data: { action: "pin", project: "default", id: new URL(alice.url()).searchParams.get("document"), value: true },
+      data: { action: "pin", project: "default", id: (await browserPageUrl(alice)).searchParams.get("document"), value: true },
     });
     expect(legacy.ok()).toBe(true);
     await alice.locator('[data-path="Other.md"]').click();
-    await expect(alice.locator("#document-title")).toHaveText("Other.md");
+    await expect(alice.locator("#document-title")).toHaveText("Other");
     await alice.locator('[data-path="Shared.md"]').click();
     await expect(alice.locator("#document-title")).toHaveText("Shared");
     await expect(alice.locator("#document-tabs, #workspace-pin")).toHaveCount(0);
@@ -296,14 +298,14 @@ test("favorites and recent notes follow the account without restoring legacy doc
     await page.goto(library.url);
     await expect(page.locator("#document-title")).toHaveText("Shared");
     await expect(page.locator("#document-tabs, #workspace-pin")).toHaveCount(0);
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await page.locator("#workspace-open").click();
     await expect(page.locator("#workspace-list")).toContainText("Shared");
     await expect(page.locator("#workspace-kind option")).toHaveCount(2);
     await page.locator("#workspace-kind").selectOption("recent");
     await expect(page.locator("#workspace-list")).toContainText("Other.md");
     await page.locator(".workspace-item-name").filter({ hasText: "Other.md" }).click();
-    await expect(page.locator("#document-title")).toHaveText("Other.md");
+    await expect(page.locator("#document-title")).toHaveText("Other");
     await expect(page.locator("#document-tabs")).toHaveCount(0);
   } finally { await other.close(); await library.close(); }
 });
@@ -312,7 +314,7 @@ test("a timed-out workspace refresh releases coalescing so cached data stays usa
   let release;
   try {
     const [page] = library.pages;
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await page.locator("#workspace-favorite").click();
     await expect(page.locator("#workspace-favorite")).toHaveText("Remove from favorites");
     await page.clock.install();
@@ -327,15 +329,16 @@ test("a timed-out workspace refresh releases coalescing so cached data stays usa
       await held;
       await route.fulfill({ status: 503, json: { error: "Obsolete delayed workspace refresh." } });
     });
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await page.locator("#workspace-open").click();
     await requested;
     await expect(page.locator("#workspace-list")).toContainText("Shared");
     await page.clock.fastForward(15001);
-    await expect(page.locator("#document-message")).toContainText("timed out");
+    await expect(page.locator("#connection-label")).toHaveAttribute("data-state", "error");
+    await expect(page.locator("#connection-label")).toHaveText("Disconnected");
     await page.locator("#workspace-close").click();
     const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/workspace" && response.ok());
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await page.locator("#workspace-open").click();
     await (await refreshed).finished();
     await expect(page.locator("#workspace-list")).toContainText("Shared");
@@ -351,7 +354,7 @@ test("retrying a conflicted recovery refreshes its baseline and clears the obsol
     await page.locator("#draft-recovery-apply").click();
     await confirmDialog(page);
     await expect(page.locator("#draft-recovery-error")).toContainText("recovery copy kept");
-    await expect(page.locator("#conflict-message")).toContainText("Recovery conflict fixture");
+    await expect(page.locator("#conflict-message")).toContainText("Your edits are still here");
     await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "conflict");
     await page.unroute("**/api/document", conflict);
     await page.locator("#draft-recovery-apply").click();

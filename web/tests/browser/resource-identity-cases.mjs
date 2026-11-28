@@ -1,4 +1,4 @@
-import { test, expect, chooseView, userDocumentUrl, openFixture, fs, path, root } from "./fixture.mjs";
+import { browserPageUrl, test, expect, chooseView, userDocumentUrl, openFixture, fs, path, root } from "./fixture.mjs";
 import { collaborativeLibrary } from "./collaboration-cases.mjs";
 import { pasteImage } from "./project-cases.mjs";
 
@@ -6,7 +6,7 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{1
 
 test("library rows retain UUID identity when a different file appears at the current path", async ({ page }) => {
   await openFixture(page, "Reused-location.md", "# Original identity\n");
-  const original = new URL(page.url()).searchParams.get("document");
+  const original = (await browserPageUrl(page)).searchParams.get("document");
   const authorization = await page.evaluate(() => `Bearer ${sessionStorage.getItem("folio.connection.token")}`);
   const moved = await page.request.patch(new URL("/api/entry", page.url()).href, {
     headers: { Authorization: authorization },
@@ -23,7 +23,7 @@ test("library rows retain UUID identity when a different file appears at the cur
   await expect(page.locator(".ProseMirror")).toContainText("Original identity");
   await replacement.click();
   await expect(page.locator(".ProseMirror")).toContainText("A different resource");
-  expect(new URL(page.url()).searchParams.get("document")).not.toBe(original);
+  expect((await browserPageUrl(page)).searchParams.get("document")).not.toBe(original);
 });
 
 test("an upload crossing a document move retains the image without inserting a stale relative path", async ({ browser }) => {
@@ -32,7 +32,7 @@ test("an upload crossing a document move retains the image without inserting a s
   const paused = new Promise(resolve => { release = resolve; });
   try {
     const [page] = library.pages;
-    const id = new URL(page.url()).searchParams.get("document");
+    const id = (await browserPageUrl(page)).searchParams.get("document");
     const source = await fs.readFile(path.join(library.notes, "Shared.md"), "utf8");
     await page.route("**/api/images?document=*", async route => { await paused; await route.continue(); });
     const requested = page.waitForRequest(request => request.url().includes("/api/images?"));
@@ -69,12 +69,12 @@ test("hydrating resource URL attributes does not rewrite portable Markdown or su
 });
 
 test("document UUID navigation, save and local asset URLs contain no mutable path queries", async ({ page }) => {
-  const id = new URL(page.url()).searchParams.get("document");
+  const id = (await browserPageUrl(page)).searchParams.get("document");
   expect(id).toMatch(uuid);
   await expect(page.locator(".folio-inline-image img")).toHaveAttribute("src", /\/assets\?id=[a-f0-9-]+&document=[a-f0-9-]+/);
   const link = page.locator(".ProseMirror a").filter({hasText:"Second"});
   const destination = await link.getAttribute("href");
-  expect(new URL(destination, page.url()).searchParams.get("document")).toMatch(uuid);
+  expect((await browserPageUrl(page, new URL(destination, page.url()).href)).searchParams.get("document")).toMatch(uuid);
   const paths = [];
   page.on("request", request => {
     const url = new URL(request.url());
@@ -83,51 +83,66 @@ test("document UUID navigation, save and local asset URLs contain no mutable pat
     }
   });
   await link.click({modifiers:["Control"]});
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
-  const second = new URL(page.url()).searchParams.get("document");
+  await expect(page.locator("#document-title")).toHaveText("Second");
+  const second = (await browserPageUrl(page)).searchParams.get("document");
   expect(second).toMatch(uuid);
   expect(second).not.toBe(id);
+  const secondUrl = page.url();
+  expect(new URL(secondUrl).pathname).toMatch(/^\/n\/[A-Za-z0-9_-]{8}$/);
+  await page.goBack();
+  await expect(page.locator(".ProseMirror")).toContainText("A local notebook.");
+  await page.goForward();
+  await expect(page).toHaveURL(secondUrl);
+  await expect(page.locator("#document-title")).toHaveText("Second");
   await chooseView(page, "editor");
   await page.locator("#editor").fill("# UUID saved\n");
   await page.keyboard.press("Control+s");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   await page.reload();
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
-  expect(new URL(page.url()).searchParams.get("document")).toBe(second);
+  await expect(page.locator("#document-title")).toHaveText("Second");
+  expect((await browserPageUrl(page)).searchParams.get("document")).toBe(second);
   await expect(page.locator(".ProseMirror")).toContainText("UUID saved");
   expect(paths).toEqual([]);
 });
 
 test("UUID bookmarks and public links stay valid after an owner renames the document", async ({ browser }) => {
-  const library = await collaborativeLibrary(browser, { participants: 1, sharing: "private", source: true });
+  const library = await collaborativeLibrary(browser, { participants: 1, sharing: "private", source: true, content: "# Alpha\n" });
   const guest = await browser.newContext();
   try {
     const [owner] = library.pages;
     const bookmark = await userDocumentUrl(owner.context(), library.url, "Shared.md");
     const id = new URL(bookmark).searchParams.get("document");
-    await owner.locator("#more-menu > summary").click();
+    const privateUrl = owner.url();
+    expect(new URL(privateUrl).pathname).toMatch(/^\/n\/[A-Za-z0-9_-]{8}$/);
+    await owner.locator("#more-menu > button").click();
     await owner.locator("#share-page").click();
     await owner.locator("#sharing-level").selectOption("publicRead");
     await owner.locator("#sharing-save").click();
-    await expect(owner.locator("#sharing-public-url")).toHaveValue(/share=[a-f0-9]{64}/);
+    await expect(owner.locator("#sharing-public-url")).toHaveValue(/\/s\/[A-Za-z0-9_-]{8}$/);
     const publicUrl = await owner.locator("#sharing-public-url").inputValue();
     await owner.locator("#sharing-cancel").click();
+    await fs.mkdir(path.join(library.notes, "Internal"));
     const moved = await owner.request.patch(new URL("/api/entry", library.url).href, {
-      data: {id, destination:"Renamed.md", updateLinks:false},
+      data: {id, destination:"Internal/Renamed.md", updateLinks:false},
     });
     expect(moved.ok(), await moved.text()).toBe(true);
     await owner.goto(bookmark);
-    await expect(owner.locator("#document-title")).toHaveText("Shared");
-    await expect(owner.locator('[data-path="Renamed.md"]')).toBeVisible();
-    expect(new URL(owner.url()).searchParams.get("document")).toBe(id);
+    await expect(owner.locator("#document-title")).toHaveText("Renamed");
+    expect((await browserPageUrl(owner)).searchParams.get("document")).toBe(id);
     const page = await guest.newPage();
     await page.goto(publicUrl);
     await expect(page.locator(".ProseMirror")).toContainText("Alpha");
     await expect(page.locator("#dirty-indicator")).toHaveText("Read only");
-    expect(new URL(page.url()).searchParams.has("document")).toBe(false);
+    await page.locator("#more-menu > button").click();
+    await expect(page.locator("#document-title")).toHaveText("Renamed");
+    await expect(page.locator("#more-menu > button")).not.toHaveAttribute("title", /Internal/);
+    expect((await browserPageUrl(page)).searchParams.has("document")).toBe(false);
     await library.restart();
-    await owner.goto(bookmark);
-    await expect(owner.locator("#document-title")).toHaveText("Shared");
-    expect(new URL(owner.url()).searchParams.get("document")).toBe(id);
+    await owner.goto(privateUrl);
+    await expect(owner.locator("#document-title")).toHaveText("Renamed");
+    expect((await browserPageUrl(owner)).searchParams.get("document")).toBe(id);
+    await expect(owner).toHaveURL(privateUrl);
+    await page.goto(publicUrl);
+    await expect(page.locator(".ProseMirror")).toContainText("Alpha");
   } finally { await guest.close(); await library.close(); }
 });

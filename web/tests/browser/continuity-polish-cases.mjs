@@ -190,7 +190,7 @@ test("compact toolbar prioritizes the title and navigation exposes search and wo
     const [page] = library.pages;
     await page.setViewportSize({ width: 1440, height: 960 });
     await expect(page.locator("#sidebar-search-open")).toBeVisible();
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await page.locator("#workspace-open").click();
     await expect(page.locator("#workspace-dialog")).toBeVisible();
     await expect(page.locator("#workspace-close svg")).toBeVisible();
@@ -200,7 +200,7 @@ test("compact toolbar prioritizes the title and navigation exposes search and wo
     await expect(page.locator("#collaboration-people")).toBeHidden();
     await expect(page.locator("#layout-menu")).toHaveCount(0);
     await expect(page.locator("#collaboration-join")).toHaveText("2 online");
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await expect.poll(async () => (await page.locator("#document-title").boundingBox()).width).toBeGreaterThan(170);
     await capture(page, "toolbar-narrow", browserName);
     await page.locator("#compact-layout-menu > summary").click();

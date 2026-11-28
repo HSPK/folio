@@ -24,15 +24,11 @@ use super::{
     security,
 };
 
-#[path = "collaboration/format.rs"]
+mod disk;
 mod format;
-#[path = "collaboration/lease.rs"]
 mod lease;
-#[path = "collaboration/participation.rs"]
 pub(super) mod participation;
-#[path = "collaboration/recovery.rs"]
 mod recovery;
-#[path = "collaboration/room.rs"]
 mod room;
 pub(super) use recovery::archive_pending;
 pub(super) use recovery::has_pending;
@@ -91,7 +87,7 @@ enum Outgoing {
         me: Peer,
         room: String,
         users: Vec<Peer>,
-        saved: files::Document,
+        saved: Arc<files::Document>,
         blocked: bool,
         writable: bool,
     },
@@ -102,7 +98,7 @@ enum Outgoing {
         sequence: u32,
     },
     Saved {
-        document: files::Document,
+        document: Arc<files::Document>,
     },
     Error {
         message: String,
@@ -153,21 +149,21 @@ impl Hub {
             let saved = state.root.document(path)?;
             if saved.version != current.saved.version || saved.id != current.saved.id {
                 if Arc::strong_count(room) == 1 && current.peers.is_empty() && !current.dirty {
-                    current.saved = saved.clone();
+                    current.saved = Arc::new(saved);
                     current.doc = room::document();
                     {
                         use yrs::{Text, Transact};
                         current.doc.get_or_insert_text("markdown").insert(
                             &mut current.doc.transact_mut(),
                             0,
-                            &room::normalize(&saved.content),
+                            &room::normalize(&current.saved.content),
                         );
                     }
                     current.id = random_id()?;
                     current.checkpoint()?;
                 } else {
                     return Err(ApiError::conflict(
-                        "This note changed on disk outside collaboration. Close the shared session before reopening; copy unsaved text first.",
+                        "This note changed elsewhere. Copy your edits before reloading.",
                     ));
                 }
             }
@@ -230,30 +226,48 @@ impl Hub {
         path: &str,
         operation: impl FnOnce(bool) -> Result<T, ApiError>,
     ) -> Result<T, ApiError> {
+        self.replace_rooms(path, false, |active| operation(active.contains(path)))
+    }
+
+    pub(super) fn replace_rooms<T>(
+        &self,
+        path: &str,
+        descendants: bool,
+        operation: impl FnOnce(&std::collections::BTreeSet<String>) -> Result<T, ApiError>,
+    ) -> Result<T, ApiError> {
         let mut rooms = self
             .rooms
             .lock()
             .map_err(|_| ApiError::internal("Collaboration is unavailable."))?;
-        let room = rooms.get(path).cloned();
-        let mut current = room
-            .as_ref()
-            .map(|room| {
+        let prefix = format!("{path}/");
+        let active = rooms
+            .keys()
+            .filter(|name| *name == path || descendants && name.starts_with(&prefix))
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut current = active
+            .iter()
+            .map(|name| {
+                let room = &rooms[name];
                 room.lock()
                     .map_err(|_| ApiError::internal("The room is unavailable."))
             })
-            .transpose()?;
-        if current.as_ref().is_some_and(|room| room.dirty) {
+            .collect::<Result<Vec<_>, _>>()?;
+        if current.iter().any(|room| room.dirty) {
             return Err(ApiError::conflict(
                 "Wait until all shared changes are saved before restoring or deleting this document.",
             ));
         }
-        let result = operation(current.is_some())?;
-        if let Some(room) = &mut current {
+        let result = operation(&active)?;
+        for room in &mut current {
             room.stopped = true;
             room.lease = None;
             let _ = room.events.send(Event::Reset("The owner restored or removed this document. Reopen it to continue; unsynced local text is kept.".into()));
         }
-        rooms.remove(path);
+        drop(current);
+        for name in active {
+            rooms.remove(&name);
+        }
         Ok(result)
     }
 }
@@ -279,12 +293,12 @@ pub(super) async fn join(
                 .unwrap_or(format!("Guest {}", &random_id()?[..6])),
             None,
         )
-    } else if state.user_auth.is_some() {
+    } else if state.shared.user_auth.is_some() {
         let user = security::authenticated_user(&headers, &state)
             .ok_or_else(|| ApiError::forbidden("Log in before joining a collaborative note."))?;
         (
             user.username,
-            security::cookie_value(&headers, &state.user_cookie_name).map(str::to_owned),
+            security::cookie_value(&headers, &state.shared.user_cookie_name).map(str::to_owned),
         )
     } else {
         ("Local user".into(), None)
@@ -303,6 +317,7 @@ pub(super) async fn join(
             state.collaboration.participation.lock().map_err(|_| ApiError::internal("Document presence is unavailable."))?
                 .authorize_join(&path, &principal, body.participant.as_deref())?;
         }
+
         if let Some(expected) = body.room_id.as_deref() {
             state.collaboration.verify_resume(state, &path, expected)?;
         }
@@ -374,7 +389,7 @@ fn session_valid(state: &AppState, ticket: &Ticket) -> bool {
             return ticket.credential.is_none() && access.public_valid();
         }
     }
-    match (&state.user_auth, &ticket.credential) {
+    match (&state.shared.user_auth, &ticket.credential) {
         (Some(auth), Some(token)) => auth.authenticate(token).is_some(),
         (None, None) => true,
         _ => false,
@@ -457,7 +472,7 @@ async fn run_socket(
     {
         return Err("This collaboration ticket belongs to a different account.".into());
     }
-    let (welcome, snapshot, mut events) = {
+    let (welcome, snapshot, mut events, mut presence) = {
         let state = state.clone();
         let ticket = ticket.clone();
         let id = id.to_owned();
@@ -505,6 +520,7 @@ async fn run_socket(
                 },
                 room.snapshot(),
                 events,
+                room.presence_changed.subscribe(),
             ))
         })
         .await
@@ -576,7 +592,6 @@ async fn run_socket(
                 authorize_socket(state, ticket, &path)?;
                 match event {
                     Ok(Event::Update(update)) => socket.send(packet(&update)).await.map_err(|error| error.to_string())?,
-                    Ok(Event::Presence(users)) => json(socket, &Outgoing::Presence { users }).await?,
                     Ok(Event::Saved(document)) => json(socket, &Outgoing::Saved { document }).await?,
                     Ok(Event::Error(message)) => json(socket, &Outgoing::Error { message }).await?,
                     Ok(Event::Reset(message)) => { json(socket, &Outgoing::Reset { message }).await?; break; }
@@ -584,11 +599,20 @@ async fn run_socket(
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
+            changed = presence.changed() => {
+                if changed.is_err() { break; }
+                let (path, users) = {
+                    let room = ticket.room.lock().map_err(|_| "The room is unavailable.")?;
+                    (room.path.clone(), room.presence())
+                };
+                authorize_socket(state, ticket, &path)?;
+                json(socket, &Outgoing::Presence { users }).await?;
+            }
             _ = heartbeat.tick() => {
                 let path = ticket.room.lock().map_err(|_| "The room is unavailable.")?.path.clone();
                 authorize_socket(state, ticket, &path)?;
                 if last_seen.elapsed() > Duration::from_secs(30) { return Err("The collaboration connection timed out.".into()); }
-                if state.health.stopping.load(std::sync::atomic::Ordering::Acquire) { break; }
+                if state.shared.health.stopping.load(std::sync::atomic::Ordering::Acquire) { break; }
                 socket.send(Message::Ping(Vec::new().into())).await.map_err(|error| error.to_string())?;
                 if let Err(error) = room::save(state.clone(), ticket.room.clone(), true).await {
                     eprintln!("Collaborative save: {}", error.message);
@@ -597,4 +621,38 @@ async fn run_socket(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod recycle_room_tests {
+    use super::*;
+
+    #[test]
+    fn dirty_descendant_blocks_the_whole_move_and_clean_rooms_reset_only_in_scope() {
+        let hub = Hub::default();
+        let add = |path: &str, dirty: bool| {
+            let saved = files::document_from_bytes(path, b"disk").unwrap();
+            let mut room = Room::new(saved).unwrap();
+            room.dirty = dirty;
+            let room = Arc::new(Mutex::new(room));
+            hub.rooms.lock().unwrap().insert(path.into(), room.clone());
+            room
+        };
+        let first = add("folder/one.md", false);
+        let nested = add("folder/sub/two.md", true);
+        let sibling = add("folder-old/one.md", true);
+        let blocked = hub.replace_rooms("folder", true, |_| -> Result<(), ApiError> {
+            panic!("a dirty descendant must block the mutation")
+        });
+        assert_eq!(blocked.unwrap_err().status.as_u16(), 409);
+        assert!(!first.lock().unwrap().stopped);
+        nested.lock().unwrap().dirty = false;
+        hub.replace_rooms("folder", true, |rooms| {
+            assert_eq!(rooms.len(), 2);
+            Ok(())
+        })
+        .unwrap();
+        assert!(first.lock().unwrap().stopped && nested.lock().unwrap().stopped);
+        assert!(!sibling.lock().unwrap().stopped);
+    }
 }

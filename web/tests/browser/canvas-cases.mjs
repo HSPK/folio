@@ -6,7 +6,7 @@ for (const theme of ["light", "dark"]) {
   test(`canvas keeps writing frameless and chrome in floating panels in ${theme}`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: theme });
     await openFixture(page, `Canvas-${theme}.md`, source);
-    for (const selector of ["#sidebar", "#more-menu > summary"]) {
+    for (const selector of ["#sidebar", "#more-menu > button"]) {
       const panel = page.locator(selector);
       await expect(panel).toBeVisible();
       const appearance = await panel.evaluate(node => {
@@ -25,11 +25,11 @@ for (const theme of ["light", "dark"]) {
     }
     await expect(page.locator(".document-area > header")).toHaveCount(0);
     await expect(page.locator("#sidebar-toggle")).toBeHidden();
-    const more = page.locator("#more-menu > summary");
+    const more = page.locator("#more-menu > button");
     await expect(more).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await more.hover();
     await expect(more).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-    const trigger = await page.locator("#more-menu > summary").boundingBox();
+    const trigger = await page.locator("#more-menu > button").boundingBox();
     expect(trigger.height).toBe(trigger.width);
     expect(page.viewportSize().width - trigger.x - trigger.width).toBeLessThan(24);
     expect(trigger.y).toBeLessThan(24);
@@ -64,9 +64,31 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
+test("Live and Read keep the same paragraph and heading spacing at either density", async ({ page }) => {
+  await openFixture(page, "Document-spacing.md", source);
+  let previous;
+  for (const density of ["comfortable", "compact"]) {
+    await page.locator("html").evaluate((node, value) => { node.dataset.density = value; }, density);
+    const spacing = async root => root.evaluate(node => {
+      const p = getComputedStyle(node.querySelector("p"));
+      return [parseFloat(p.marginBottom), parseFloat(getComputedStyle(node.querySelector("h2")).marginTop), p.lineHeight];
+    });
+    await chooseView(page, "rich");
+    const live = await spacing(page.locator(".ProseMirror"));
+    await chooseView(page, "preview");
+    expect(await spacing(page.locator("#preview"))).toEqual(live);
+    if (previous) {
+      expect(live[0]).toBeLessThan(previous[0]);
+      expect(live[1]).toBeLessThan(previous[1]);
+      expect(live[2]).toBe(previous[2]);
+    }
+    previous = live;
+  }
+});
+
 test("action menus fit visible options and follow the canvas theme", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
-  await page.locator("#new-menu > summary").click();
+  await page.locator("#new-menu > button").click();
   const newMenu = page.locator("#new-menu-panel");
   const width = async panel => (await panel.boundingBox()).width;
   const compact = await width(newMenu);
@@ -77,7 +99,7 @@ test("action menus fit visible options and follow the canvas theme", async ({ pa
   await option.evaluate(node => { node.hidden = true; });
   expect(await width(newMenu)).toBeLessThanOrEqual(compact);
   await page.keyboard.press("Escape");
-  await page.locator("#more-menu > summary").click();
+  await page.locator("#more-menu > button").click();
   const more = page.locator("#more-actions-panel");
   const before = await width(more);
   await page.locator("#document-name").evaluate(node => { node.textContent = "long title ".repeat(100); });
@@ -90,7 +112,7 @@ test("action menus fit visible options and follow the canvas theme", async ({ pa
   await page.keyboard.press("Escape");
   await expect(more).toBeHidden();
   await page.setViewportSize({ width: 320, height: 480 });
-  await page.locator("#more-menu > summary").click();
+  await page.locator("#more-menu > button").click();
   await expect(page.locator("#settings-open")).toBeInViewport();
   expect(await more.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
 });
@@ -112,18 +134,18 @@ test("canvas panels fade on both entry and exit without delaying sidebar state o
   await page.locator("#sidebar-toggle").click();
   await expect(page.locator("#sidebar")).toBeVisible();
   await expect(page.locator("#sidebar")).toHaveCSS("opacity", "1");
-  await page.locator("#more-menu > summary").click();
+  await page.locator("#more-menu > button").click();
   const menuPanel = page.locator("#more-actions-panel");
   const originalPanel = await menuPanel.elementHandle();
   await expect(menuPanel).toHaveCSS("opacity", "1");
   const menuExit = await menuPanel.evaluate(node => {
-    document.getElementById("more-menu").open = false;
+    node.hidePopover();
     getComputedStyle(node).opacity;
     return { inert: node.inert, fades: node.getAnimations().some(animation => animation.animationName === "folio-more-out") };
   });
   expect(menuExit).toEqual({ inert: true, fades: true });
   await expect(menuPanel).toBeHidden();
-  await page.locator("#more-menu > summary").click();
+  await page.locator("#more-menu > button").click();
   expect(await menuPanel.evaluate((node, previous) => node === previous, originalPanel)).toBe(true);
   expect(await menuPanel.evaluate(node => node.inert)).toBe(false);
   await page.keyboard.press("Escape");
@@ -147,7 +169,7 @@ for (const preference of ["system", "application"]) {
   test(`canvas motion respects the ${preference} reduced-motion preference`, async ({ page }) => {
     if (preference === "system") await page.emulateMedia({ reducedMotion: "reduce" });
     else await page.locator("html").evaluate(node => { node.dataset.reducedMotion = "true"; });
-    for (const selector of ["#sidebar", "#more-menu > summary", "#outline-panel"]) {
+    for (const selector of ["#sidebar", "#more-menu > button", "#outline-panel"]) {
       const durations = await page.locator(selector).evaluate(node => getComputedStyle(node).transitionDuration);
       expect(durations.split(",").every(value => parseFloat(value) === 0)).toBe(true);
     }

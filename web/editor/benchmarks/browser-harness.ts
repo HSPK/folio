@@ -62,7 +62,18 @@ export async function startEditorBenchmark() {
       } else if (url === "/benchmark.mjs") {
         response.setHeader("Content-Type", "text/javascript");
         response.end(harness);
-      } else if (["/editor.bundle.mjs", "/editor.bundle.css", "/editor-helpers.mjs"].includes(url)) {
+      } else if (/^\/math-fonts\/[\w-]+\.woff2$/.test(url)) {
+        response.setHeader("Content-Type", "font/woff2");
+        response.end(await readFile(path.join(publicRoot, url.slice(1))));
+      } else if (
+        [
+          "/editor.bundle.mjs",
+          "/editor.bundle.css",
+          "/editor-helpers.mjs",
+          "/formula.mjs",
+          "/code-syntax.mjs",
+        ].includes(url)
+      ) {
         response.setHeader("Content-Type", url.endsWith(".css") ? "text/css" : "text/javascript");
         response.end(await readFile(path.join(publicRoot, url.slice(1))));
       } else {

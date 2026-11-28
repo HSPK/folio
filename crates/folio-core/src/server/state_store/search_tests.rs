@@ -30,6 +30,7 @@ impl Drop for Fixture {
 
 fn document(path: &str, content: &str, version: char) -> files::Document {
     files::Document {
+        code: None,
         id: None,
         project: None,
         references: Vec::new(),

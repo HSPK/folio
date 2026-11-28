@@ -1,97 +1,88 @@
-import { requiredQuery } from "../../types/elements";
+import { element, requiredQuery } from "../../types/elements";
 
-import { createIcon } from "@folio/editor-runtime";
-import { appState } from "../core/bootstrap";
+import { createButton, createIcon } from "@folio/editor-runtime";
 import { notice } from "../core/dom";
 import { listen, onApplicationDispose } from "../lifecycle";
 
-class StatusState {
-  statusNotices!: HTMLDivElement;
-  statusToggle!: HTMLButtonElement;
-  statusCount!: HTMLSpanElement;
-  statusMessageList!: HTMLDivElement;
-  statusOrigins!: Map<HTMLElement, (HTMLElement & { open?: boolean }) | null>;
-  statusCards!: Map<HTMLElement, { card: HTMLDivElement; dismiss: HTMLButtonElement }>;
-  statusDismissed!: WeakMap<HTMLElement, string>;
-  statusSuspensions!: WeakMap<HTMLElement, { token: string; text: string | null; className: string }>;
-  statusExpanded!: boolean | null;
-  statusModal!: HTMLDialogElement | null;
-  statusOverlayContext!: HTMLElement | null;
-  statusPositionFrame!: number | null;
-  statusReturnFocus!: HTMLElement | null;
-  statusResize!: ResizeObserver;
-  statusObserver!: MutationObserver;
-}
-export const statusState = new StatusState();
+let statusNotices: HTMLDivElement;
+let statusToggle: HTMLButtonElement;
+let statusCount: HTMLSpanElement;
+let statusMessageList: HTMLDivElement;
+let statusOrigins: Map<HTMLElement, (HTMLElement & { open?: boolean }) | null>;
+let statusCards: Map<HTMLElement, { card: HTMLDivElement; dismiss: HTMLButtonElement }>;
+let statusDismissed: WeakMap<HTMLElement, string>;
+let statusSuspensions: WeakMap<HTMLElement, { token: string; text: string | null; className: string }>;
+let statusExpanded: boolean | null;
+let statusModal: HTMLDialogElement | null;
+let statusOverlayContext: HTMLElement | null;
+let statusPositionFrame: number | null;
+let statusReturnFocus: HTMLElement | null;
+let statusResize: ResizeObserver;
+
 export function initializeNavigationStatus(): void {
-  statusState.statusNotices = document.createElement("div");
-  statusState.statusNotices.className = "status-notices";
-  statusState.statusNotices.id = "status-notices";
-  statusState.statusNotices.setAttribute("popover", "manual");
-  statusState.statusNotices.setAttribute("aria-label", "Status messages");
-  statusState.statusNotices.setAttribute("role", "status");
-  statusState.statusNotices.dataset.preserveNodeTools = "";
-  statusState.statusToggle = document.createElement("button");
-  statusState.statusToggle.type = "button";
-  statusState.statusToggle.className = "status-toggle";
-  statusState.statusToggle.setAttribute("aria-label", "Toggle status messages");
-  statusState.statusToggle.setAttribute("aria-controls", "status-message-list");
-  statusState.statusCount = document.createElement("span");
-  statusState.statusToggle.append(statusState.statusCount, createIcon("chevron-down"));
-  statusState.statusMessageList = document.createElement("div");
-  statusState.statusMessageList.id = "status-message-list";
-  statusState.statusMessageList.className = "status-message-list";
-  statusState.statusNotices.append(statusState.statusToggle, statusState.statusMessageList);
-  document.body.append(statusState.statusNotices);
-  const notices = statusState.statusNotices;
+  statusNotices = document.createElement("div");
+  statusNotices.className = "status-notices";
+  statusNotices.id = "status-notices";
+  statusNotices.setAttribute("popover", "manual");
+  statusNotices.setAttribute("aria-label", "Status messages");
+  statusNotices.setAttribute("role", "status");
+  statusNotices.dataset.preserveNodeTools = "";
+  statusToggle = createButton({ label: "Toggle status messages", text: "" });
+  statusToggle.className = "status-toggle";
+  statusToggle.setAttribute("aria-controls", "status-message-list");
+  statusCount = document.createElement("span");
+  statusToggle.append(statusCount, createIcon("chevron-down"));
+  statusMessageList = document.createElement("div");
+  statusMessageList.id = "status-message-list";
+  statusMessageList.className = "status-message-list";
+  statusNotices.append(statusToggle, statusMessageList);
+  document.body.append(statusNotices);
+  const notices = statusNotices;
   onApplicationDispose(() => {
-    if (statusState.statusPositionFrame) cancelAnimationFrame(statusState.statusPositionFrame);
+    if (statusPositionFrame) cancelAnimationFrame(statusPositionFrame);
     notices.remove();
   });
   const alerts = requiredQuery(document, ".document-alerts", HTMLElement);
   const alertsHome = document.createComment("folio-alerts");
   alerts.before(alertsHome);
   onApplicationDispose(() => alertsHome.replaceWith(alerts));
-  statusState.statusOrigins = new Map();
-  statusState.statusCards = new Map();
-  statusState.statusDismissed = new WeakMap();
-  statusState.statusSuspensions = new WeakMap();
-  statusState.statusExpanded = null;
-  statusState.statusModal = null;
-  statusState.statusOverlayContext = null;
-  statusState.statusPositionFrame = 0;
-  statusState.statusReturnFocus = null;
+  statusOrigins = new Map();
+  statusCards = new Map();
+  statusDismissed = new WeakMap();
+  statusSuspensions = new WeakMap();
+  statusExpanded = null;
+  statusModal = null;
+  statusOverlayContext = null;
+  statusPositionFrame = 0;
+  statusReturnFocus = null;
   for (const node of new Set(
     [
       ...document.querySelectorAll<HTMLElement>(".document-alerts > *"),
       ...document.querySelectorAll<HTMLDialogElement>("dialog .notice"),
-      appState.ui.authError,
+      element("auth-error"),
       ...document.querySelectorAll<HTMLElement>("[data-status-source]"),
-      appState.ui.dirty,
-      appState.ui.connectionLabel,
-      appState.ui.documentMessage,
-      appState.ui.treeMessage,
-      appState.ui.treeLimit,
-      appState.ui.previewStatus,
+      element("dirty-indicator"),
+      element("connection-label"),
+      element("document-message"),
+      element("tree-message"),
+      element("tree-limit"),
+      element("preview-status"),
     ].filter((node) => !node.hasAttribute("data-inline-status")),
   )) {
     const home = document.createComment("folio-status");
     node.before(home);
     onApplicationDispose(() => home.replaceWith(node));
     node.classList.remove("visually-hidden");
-    statusState.statusOrigins.set(node, node.closest<HTMLElement>("dialog, #auth-screen"));
+    statusOrigins.set(node, node.closest<HTMLElement>("dialog, #auth-screen"));
     const card = document.createElement("div");
     card.className = "status-card";
     card.hidden = true;
-    const dismiss = document.createElement("button");
-    dismiss.type = "button";
+    const dismiss = createButton({ label: "Dismiss message", icon: "x" });
     dismiss.className = "status-dismiss";
-    dismiss.setAttribute("aria-label", "Dismiss message");
-    dismiss.append(createIcon("x"));
     listen(dismiss, "click", () => {
       if (node.classList.contains("is-error")) return;
-      const restore = statusState.statusReturnFocus;
-      statusState.statusDismissed.set(node, `${node.className}|${node.textContent}`);
+      const restore = statusReturnFocus;
+      statusDismissed.set(node, `${node.className}|${node.textContent}`);
       updateStatusMessages();
       if (
         restore?.isConnected &&
@@ -102,23 +93,23 @@ export function initializeNavigationStatus(): void {
       }
     });
     card.append(node, dismiss);
-    statusState.statusMessageList.append(card);
-    statusState.statusCards.set(node, { card, dismiss });
+    statusMessageList.append(card);
+    statusCards.set(node, { card, dismiss });
   }
   alerts.remove();
-  statusState.statusResize = new ResizeObserver(scheduleStatusPosition);
-  const statusResize = statusState.statusResize;
-  onApplicationDispose(() => statusResize.disconnect());
-  statusState.statusResize.observe(statusState.statusNotices);
-  listen(statusState.statusToggle, "click", () => {
-    statusState.statusExpanded = !(statusState.statusExpanded ?? !statusState.statusOverlayContext);
+  statusResize = new ResizeObserver(scheduleStatusPosition);
+  const resize = statusResize;
+  onApplicationDispose(() => resize.disconnect());
+  statusResize.observe(statusNotices);
+  listen(statusToggle, "click", () => {
+    statusExpanded = !(statusExpanded ?? !statusOverlayContext);
     updateStatusMessages();
   });
-  listen(statusState.statusNotices, "keydown", (event) => {
-    if (event.key !== "Escape" || !(statusState.statusExpanded ?? !statusState.statusOverlayContext)) return;
+  listen(statusNotices, "keydown", (event) => {
+    if (event.key !== "Escape" || !(statusExpanded ?? !statusOverlayContext)) return;
     event.preventDefault();
     event.stopPropagation();
-    statusState.statusExpanded = false;
+    statusExpanded = false;
     updateStatusMessages();
   });
   listen(document, "focusin", (event) => {
@@ -127,9 +118,9 @@ export function initializeNavigationStatus(): void {
     if (
       event.target instanceof HTMLElement &&
       !event.target.matches("body, html, dialog") &&
-      !statusState.statusNotices.contains(event.target)
+      !statusNotices.contains(event.target)
     )
-      statusState.statusReturnFocus = event.target;
+      statusReturnFocus = event.target;
   });
   listen(document, "click", scheduleStatusPosition);
   listen(
@@ -138,20 +129,18 @@ export function initializeNavigationStatus(): void {
     (event) => {
       if (!(event.target instanceof Element)) return;
 
-      if (event.target.matches?.(".popup") && statusState.statusNotices.matches(":popover-open"))
-        updateStatusMessages();
+      if (event.target.matches?.(".popup-panel") && statusNotices.matches(":popover-open")) updateStatusMessages();
     },
     true,
   );
   listen(document, "folio-node-panel-layout", () => {
-    if (statusState.statusNotices.matches(":popover-open")) updateStatusMessages();
+    if (statusNotices.matches(":popover-open")) updateStatusMessages();
   });
   listen(window, "resize", scheduleStatusPosition);
   if (window.visualViewport) listen(window.visualViewport, "resize", scheduleStatusPosition);
-  statusState.statusObserver = new MutationObserver(updateStatusMessages);
-  const statusObserver = statusState.statusObserver;
+  const statusObserver = new MutationObserver(updateStatusMessages);
   onApplicationDispose(() => statusObserver.disconnect());
-  statusState.statusObserver.observe(statusState.statusMessageList, {
+  statusObserver.observe(statusMessageList, {
     childList: true,
     subtree: true,
     characterData: true,
@@ -159,38 +148,38 @@ export function initializeNavigationStatus(): void {
     attributeFilter: ["hidden", "class", "data-status-suspended"],
   });
   for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog")) {
-    statusState.statusObserver.observe(dialog, { attributes: true, attributeFilter: ["open"] });
+    statusObserver.observe(dialog, { attributes: true, attributeFilter: ["open"] });
     listen(dialog, "close", () => {
-      for (const [node, origin] of statusState.statusOrigins) if (origin === dialog) notice(node, "");
+      for (const [node, origin] of statusOrigins) if (origin === dialog) notice(node, "");
     });
   }
 }
 export function suspendStatusNotice(node: HTMLElement, token: string): void {
-  statusState.statusSuspensions.set(node, { token, text: node.textContent, className: node.className });
+  statusSuspensions.set(node, { token, text: node.textContent, className: node.className });
   node.setAttribute("data-status-suspended", token);
 }
 
 export function resumeStatusNotice(node: HTMLElement, token: string): void {
-  if (statusState.statusSuspensions.get(node)?.token !== token) return;
-  statusState.statusSuspensions.delete(node);
+  if (statusSuspensions.get(node)?.token !== token) return;
+  statusSuspensions.delete(node);
   node.removeAttribute("data-status-suspended");
 }
 
-export function setStatusHidden(node: HTMLElement, hidden: boolean): void {
+function setStatusHidden(node: HTMLElement, hidden: boolean): void {
   if (node.hidden !== hidden) node.hidden = hidden;
 }
 
-export function statusAvoidTarget() {
+function statusAvoidTarget() {
   return (
-    [...document.querySelectorAll<HTMLElement>("[data-notice-avoid]:not([hidden]), .popup[open] .popup-panel")].find(
+    [...document.querySelectorAll<HTMLElement>("[data-notice-avoid]:not([hidden]), .popup-panel:popover-open")].find(
       (node) => node.getClientRects().length,
     ) ?? null
   );
 }
 
-export function positionStatusMessages(): void {
-  statusState.statusPositionFrame = 0;
-  if (!statusState.statusNotices.matches(":popover-open")) return;
+function positionStatusMessages(): void {
+  statusPositionFrame = 0;
+  if (!statusNotices.matches(":popover-open")) return;
   const viewportTop = window.visualViewport?.offsetTop ?? 0;
   const viewportBottom = Math.min(innerHeight, viewportTop + (window.visualViewport?.height ?? innerHeight));
   let right = innerWidth > 650 ? 22 : 14;
@@ -213,11 +202,11 @@ export function positionStatusMessages(): void {
       maxHeight = Math.min(maxHeight, actionTop - Math.max(viewportTop + 12, bounds.top + 68) - 16);
     }
   } else {
-    const avoid = statusAvoidTarget() ?? (!appState.ui.authScreen.hidden ? appState.ui.authSubmit : null);
+    const avoid = statusAvoidTarget() ?? (!element("auth-screen").hidden ? element("auth-submit") : null);
     if (avoid?.getClientRects().length) {
       const bounds = avoid.getBoundingClientRect();
       const noticeBottom = innerHeight - bottom;
-      const noticeTop = noticeBottom - Math.min(maxHeight, statusState.statusNotices.offsetHeight);
+      const noticeTop = noticeBottom - Math.min(maxHeight, statusNotices.offsetHeight);
       if (bounds.right > innerWidth - right - width && bounds.top < noticeBottom && bounds.bottom > noticeTop) {
         if (avoid.classList.contains("popup-panel")) {
           width = Math.min(width, Math.max(100, bounds.left - 28));
@@ -229,7 +218,7 @@ export function positionStatusMessages(): void {
       }
     }
   }
-  if (modal && statusState.statusNotices.dataset.summaryOnly === "true") {
+  if (modal && statusNotices.dataset.summaryOnly === "true") {
     const bounds = modal.getBoundingClientRect();
     if (viewportBottom - bounds.bottom >= 40) {
       right = Math.max(14, innerWidth - bounds.right + 12);
@@ -244,13 +233,12 @@ export function positionStatusMessages(): void {
     ["bottom", `${bottom}px`],
     ["maxHeight", `${Math.max(48, maxHeight)}px`],
   ];
-  for (const [name, value] of positions)
-    if (statusState.statusNotices.style[name] !== value) statusState.statusNotices.style[name] = value;
+  for (const [name, value] of positions) if (statusNotices.style[name] !== value) statusNotices.style[name] = value;
 }
 
-export function scheduleStatusPosition(): void {
-  if (!statusState.statusPositionFrame && statusState.statusNotices.matches(":popover-open")) {
-    statusState.statusPositionFrame = requestAnimationFrame(positionStatusMessages);
+function scheduleStatusPosition(): void {
+  if (!statusPositionFrame && statusNotices.matches(":popover-open")) {
+    statusPositionFrame = requestAnimationFrame(positionStatusMessages);
   }
 }
 
@@ -260,7 +248,7 @@ let savingTimer: number | null = null;
 
 /** Routine saves finish quietly; the save status only surfaces when a save is taking unusually long. */
 function quietSave(node: HTMLElement) {
-  if (node !== appState.ui.dirty || node.dataset.state !== "saving") return false;
+  if (node !== element("dirty-indicator") || node.dataset.state !== "saving") return false;
   savingSince ||= performance.now();
   if (performance.now() - savingSince >= slowSaveMs) return false;
   savingTimer ??= window.setTimeout(() => {
@@ -270,36 +258,36 @@ function quietSave(node: HTMLElement) {
   return true;
 }
 
-export function updateStatusMessages(): void {
-  if (appState.ui.dirty.dataset.state !== "saving") savingSince = 0;
+function updateStatusMessages(): void {
+  if (element("dirty-indicator").dataset.state !== "saving") savingSince = 0;
   // With nothing to show and nothing showing, skip the document-wide lookups below: this runs on
   // every keystroke, and they walk the whole page, including a long note.
-  if (!statusState.statusNotices.matches(":popover-open")) {
+  if (!statusNotices.matches(":popover-open")) {
     let pending = false;
-    for (const [node, { card }] of statusState.statusCards) {
+    for (const [node, { card }] of statusCards) {
       if (node.hidden || !node.textContent) {
-        statusState.statusDismissed.delete(node);
+        statusDismissed.delete(node);
         setStatusHidden(card, true);
       } else if (!quietSave(node)) pending = true;
     }
     if (!pending) return;
   }
   const modal = document.querySelector<HTMLDialogElement>("dialog:modal");
-  const context = modal ?? statusAvoidTarget() ?? (!appState.ui.authScreen.hidden ? appState.ui.authScreen : null);
-  if (statusState.statusOverlayContext !== context || statusState.statusModal !== modal) {
-    statusState.statusOverlayContext = context;
-    statusState.statusModal = modal;
-    statusState.statusExpanded = null;
-    statusState.statusResize.disconnect();
-    statusState.statusResize.observe(statusState.statusNotices);
-    if (context) statusState.statusResize.observe(context);
+  const context = modal ?? statusAvoidTarget() ?? (!element("auth-screen").hidden ? element("auth-screen") : null);
+  if (statusOverlayContext !== context || statusModal !== modal) {
+    statusOverlayContext = context;
+    statusModal = modal;
+    statusExpanded = null;
+    statusResize.disconnect();
+    statusResize.observe(statusNotices);
+    if (context) statusResize.observe(context);
     // A dialog may still be settling into place; place the messages again once it has.
     window.setTimeout(scheduleStatusPosition, 250);
   }
   const messages = [];
-  for (const [node, { card, dismiss }] of statusState.statusCards) {
+  for (const [node, { card, dismiss }] of statusCards) {
     if (node.hidden || !node.textContent) {
-      statusState.statusDismissed.delete(node);
+      statusDismissed.delete(node);
       setStatusHidden(card, true);
       continue;
     }
@@ -308,21 +296,21 @@ export function updateStatusMessages(): void {
       continue;
     }
     if (node.hasAttribute("data-status-suspended")) {
-      const suspended = statusState.statusSuspensions.get(node);
+      const suspended = statusSuspensions.get(node);
       if (suspended?.text === node.textContent && suspended.className === node.className) {
         setStatusHidden(card, true);
         continue;
       }
-      statusState.statusSuspensions.delete(node);
+      statusSuspensions.delete(node);
       node.removeAttribute("data-status-suspended");
     }
     const error = node.classList.contains("is-error");
-    const origin = statusState.statusOrigins.get(node);
+    const origin = statusOrigins.get(node);
     if (modal && !error && !node.classList.contains("is-warning") && origin !== modal) {
       setStatusHidden(card, true);
       continue;
     }
-    const dismissed = !error && statusState.statusDismissed.get(node) === `${node.className}|${node.textContent}`;
+    const dismissed = !error && statusDismissed.get(node) === `${node.className}|${node.textContent}`;
     if (dismissed) {
       setStatusHidden(card, true);
       continue;
@@ -335,28 +323,28 @@ export function updateStatusMessages(): void {
   // Messages are always shown in full; there is no collapsed summary to expand.
   const expanded = true;
   const summaryOnly = messages.length > 0 && others === messages.length && !expanded;
-  if (statusState.statusNotices.dataset.summaryOnly !== String(summaryOnly)) {
-    statusState.statusNotices.dataset.summaryOnly = String(summaryOnly);
+  if (statusNotices.dataset.summaryOnly !== String(summaryOnly)) {
+    statusNotices.dataset.summaryOnly = String(summaryOnly);
   }
   const label = `${others} ${messages.length > others ? "other " : ""}message${others === 1 ? "" : "s"}`;
-  if (statusState.statusCount.textContent !== label) statusState.statusCount.textContent = label;
-  statusState.statusToggle.setAttribute("aria-expanded", String(expanded));
-  setStatusHidden(statusState.statusToggle, true);
+  if (statusCount.textContent !== label) statusCount.textContent = label;
+  statusToggle.setAttribute("aria-expanded", String(expanded));
+  setStatusHidden(statusToggle, true);
   for (const { card, error } of messages) setStatusHidden(card, !error && !expanded);
-  setStatusHidden(statusState.statusMessageList, !messages.some((message) => message.error || expanded));
+  setStatusHidden(statusMessageList, !messages.some((message) => message.error || expanded));
   const parent = modal ?? document.body;
-  if (statusState.statusNotices.parentElement !== parent) {
-    if (statusState.statusNotices.matches(":popover-open")) statusState.statusNotices.hidePopover();
-    parent.append(statusState.statusNotices);
+  if (statusNotices.parentElement !== parent) {
+    if (statusNotices.matches(":popover-open")) statusNotices.hidePopover();
+    parent.append(statusNotices);
   }
   const urgent = messages.some(({ node, error }) => {
-    const origin = statusState.statusOrigins.get(node);
-    return error && (origin?.open || (origin === appState.ui.authScreen && !origin.hidden));
+    const origin = statusOrigins.get(node);
+    return error && (origin?.open || (origin === element("auth-screen") && !origin.hidden));
   });
   const role = urgent ? "alert" : "status";
-  if (statusState.statusNotices.getAttribute("role") !== role) statusState.statusNotices.setAttribute("role", role);
-  const open = statusState.statusNotices.matches(":popover-open");
-  if (messages.length && !open) statusState.statusNotices.showPopover();
-  else if (!messages.length && open) statusState.statusNotices.hidePopover();
+  if (statusNotices.getAttribute("role") !== role) statusNotices.setAttribute("role", role);
+  const open = statusNotices.matches(":popover-open");
+  if (messages.length && !open) statusNotices.showPopover();
+  else if (!messages.length && open) statusNotices.hidePopover();
   scheduleStatusPosition();
 }

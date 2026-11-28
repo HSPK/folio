@@ -19,6 +19,11 @@ import {
 
 - `createInlineEditor` provides the Milkdown Live Markdown editor.
 - `createSourceEditor` provides the large-document CodeMirror Source adapter.
+- `mountCodeSource(host, { path, content, readOnly, onChange, onSave })` mounts a standalone file editor
+  synchronously. It returns `getValue()`, `focus()`, and `destroy()`. Source text uses LF line breaks
+  like the Markdown textarea. Edits call `onChange()` without serializing the document; read it with
+  `getValue()` when saving. Ctrl/Cmd+S calls `onSave()` only for a writable file. Highlighting loads
+  separately from the existing `code-syntax.mjs` asset; unknown extensions remain plain text.
 - `extractOutline` returns Unicode heading labels, levels, offsets, and stable IDs.
 - `applyAppearance` applies local theme and font settings without rebuilding an editor.
 - `attachScrollbars` provides the shared overlay scrollbar adapter.
@@ -33,6 +38,9 @@ Use the Source adapter's `applyEdit(text)` for an undoable user-requested replac
 including recovered drafts. It records one edit in native or virtual Source history.
 Use `reset(text)` when opening a different document; assigning `value` remains a
 projection update rather than an undoable user action.
+`mirrorLive` carries Live body history groups into that same document's Markdown
+history. At collaboration handoff, `adoptSoloHistory` accepts a matching pristine
+room seed; subsequent peer changes rebase the solo history, never enter it.
 
 The Live adapter's `clear()` unloads the current document while retaining reusable
 tools. Call the idempotent, terminal `destroy()` when removing its host: it releases
@@ -49,6 +57,12 @@ updates. Live anchors, outline navigation, and Rust Read-mode anchors must agree
 Live initialization skips a second semantic parse only when serialization exactly
 matches the original Markdown body. Any difference, including whitespace, still
 uses the existing round-trip fingerprint comparison; no source is rewritten on load.
+If a paragraph, heading, list or table cannot round-trip (for example, nested
+emphasis that cannot be represented with flat marks), Live can show that block
+as literal Markdown. The whole replacement document must pass the same proof.
+Edit a preserved block in Source; other blocks remain editable in Live. When
+block boundaries cannot be matched or the proof still fails, the host falls
+back to Source without retaining the rejected ProseMirror view.
 
 `createInlineEditor` accepts an optional `transformUrl(url, documentPath)` callback.
 Hosts can use it to scope rendered attachment and note links to a project without
@@ -59,6 +73,13 @@ link attributes are ignored by the editor's DOM observer, not serialized as edit
 to Markdown link destinations. Image upload, clipboard handling and
 project permissions remain host responsibilities; Live selection reads the
 current DOM caret so native navigation immediately followed by paste stays exact.
+
+`captureImageInsertion` reserves a local, mapped paste location in either editor.
+Live displays the files as canvas widgets, outside the Markdown document. The
+host uploads the original files, then calls the bookmark's `insert` with durable
+relative URLs, or `cancel`. Editing continues during upload; replacing the target
+invalidates the bookmark instead of overwriting newer text. Shared hosts can
+connect `watchRemoteImageEdits` to `beforeRemote` while the upload is pending.
 
 The Live adapter accepts `wikiDocuments()` for `[[...]]` completion, `onTag(tag)`
 for tag navigation, and `onNotice(message)` to route metadata warnings to the

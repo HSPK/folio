@@ -1,15 +1,11 @@
 #folio-root { height: 100%; min-height: 0; }
 #status-notices { max-width: calc(100vw - 28px); }
-.menu-panel-host { display: contents; }
-/* Let Kobalte finish fading out before native details hides its contents. */
-.popup::details-content { content-visibility: visible; }
-.menu-panel-host > .popup-panel { display: none; }
-.menu-panel-host > div { z-index: 30; }
-.menu-panel-host .popup-panel { inset: auto; }
-.menu-panel-host .popup-panel {
-  max-width: min(calc(100vw - 24px), var(--kb-popper-content-available-width, 100vw));
-  max-height: min(680px, var(--kb-popper-content-available-height, calc(100dvh - 88px)));
+.popup-panel[popover] {
+  position: fixed; inset: auto; z-index: 30; margin: 0;
+  max-width: calc(100vw - 24px); max-height: min(680px, calc(100dvh - 88px));
+  transition: display var(--motion-panel-duration) allow-discrete, overlay var(--motion-panel-duration) allow-discrete;
 }
+.popup-panel[popover]:not(:popover-open) { display: none; }
 .startup-screen {
   display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center;
   width: min(100% - 40px, 520px); min-height: 100dvh; margin-inline: auto;
@@ -21,7 +17,6 @@
   max-height: min(58dvh, 560px);
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
 }
 .search-layout > section { overflow: hidden; }
 .workspace-results li { min-width: 0; }

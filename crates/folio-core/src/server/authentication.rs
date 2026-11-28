@@ -58,7 +58,7 @@ pub(super) async fn status(
     Extension(work): Extension<Arc<Work>>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let Some(auth) = state.user_auth.clone() else {
+    let Some(auth) = state.shared.user_auth.clone() else {
         return Ok(Json(AuthStatus {
             mode: "launchToken",
             setup_required: false,
@@ -91,7 +91,7 @@ pub(super) async fn status(
     };
     let token = user
         .as_ref()
-        .and_then(|_| cookie_value(&headers, &state.user_cookie_name));
+        .and_then(|_| cookie_value(&headers, &state.shared.user_cookie_name));
     let mut response = Json(AuthStatus {
         mode: "users",
         setup_required,
@@ -112,7 +112,7 @@ pub(super) async fn setup(
     Extension(work): Extension<Arc<Work>>,
     body: Result<Json<Credentials>, JsonRejection>,
 ) -> Result<Response, ApiError> {
-    let auth = state.user_auth.clone().ok_or_else(|| {
+    let auth = state.shared.user_auth.clone().ok_or_else(|| {
         ApiError::new(
             StatusCode::NOT_FOUND,
             "Password authentication is not enabled.",
@@ -144,7 +144,7 @@ pub(super) async fn login(
     Extension(work): Extension<Arc<Work>>,
     body: Result<Json<Credentials>, JsonRejection>,
 ) -> Result<Response, ApiError> {
-    let auth = state.user_auth.clone().ok_or_else(|| {
+    let auth = state.shared.user_auth.clone().ok_or_else(|| {
         ApiError::new(
             StatusCode::NOT_FOUND,
             "Password authentication is not enabled.",
@@ -181,8 +181,8 @@ pub(super) async fn logout(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     if let (Some(auth), Some(token)) = (
-        state.user_auth.clone(),
-        cookie_value(&headers, &state.user_cookie_name).map(str::to_owned),
+        state.shared.user_auth.clone(),
+        cookie_value(&headers, &state.shared.user_cookie_name).map(str::to_owned),
     ) {
         blocking(state.clone(), work, move |_, _| {
             auth.logout(&token).map_err(ApiError::internal)
@@ -192,7 +192,7 @@ pub(super) async fn logout(
     let mut response = Json(serde_json::json!({"ok": true})).into_response();
     let cookie = format!(
         "{}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
-        state.user_cookie_name
+        state.shared.user_cookie_name
     );
     if let Ok(cookie) = HeaderValue::from_str(&cookie) {
         response.headers_mut().insert(header::SET_COOKIE, cookie);
@@ -208,6 +208,7 @@ pub(super) async fn authenticated_response(
     let scoped = state.clone();
     let username = user.username.clone();
     let permit = state
+        .shared
         .workers
         .clone()
         .acquire_owned()
@@ -238,7 +239,7 @@ fn set_login_cookie(
 ) -> Result<(), ApiError> {
     let cookie = format!(
         "{}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_COOKIE_MAX_AGE_SECONDS}",
-        state.user_cookie_name
+        state.shared.user_cookie_name
     );
     let cookie = HeaderValue::from_str(&cookie)
         .map_err(|_| ApiError::internal("Could not establish the login session."))?;

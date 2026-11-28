@@ -5,12 +5,14 @@ const MAX_NATIVE_SOURCE_LINES = 4000;
 
 export function shouldVirtualizeSource(source: string, byteThreshold: number) {
   if (source.length >= byteThreshold) return true;
+  // Even below the size cap, native caret layout across thousands of substantial lines stalls peer edits.
+  const lineLimit = source.length >= 64 * 1024 ? 1024 : MAX_NATIVE_SOURCE_LINES;
   let from = 0;
-  if (source.length >= MAX_NATIVE_SOURCE_LINES) {
-    for (let line = 0; line < MAX_NATIVE_SOURCE_LINES; line += 1) {
+  if (source.length >= lineLimit) {
+    for (let line = 0; line < lineLimit; line += 1) {
       const next = source.indexOf("\n", from);
       if (next < 0) break;
-      if (line === MAX_NATIVE_SOURCE_LINES - 1) return true;
+      if (line === lineLimit - 1) return true;
       from = next + 1;
     }
   }
@@ -76,6 +78,7 @@ export function splitFrontMatter(source: string): FrontMatterParts {
     body: source.slice(bomLength),
     bodyStart: bomLength,
   };
+  if (!source.startsWith("---", bomLength)) return none;
   const opening = sourceLine(source, bomLength);
   if (!/^---[ \t]*$/.test(opening.text) || !opening.ending) return none;
   let position = opening.end;
@@ -126,13 +129,17 @@ export function headingSlug(text: string) {
   let separator = false;
   // Match the Rust renderer: 160 Unicode scalar values, per-character lowercase,
   // collapsed whitespace/hyphens, and punctuation removed rather than separated.
-  for (const character of [...text].slice(0, 160).flatMap((value) => [...value.toLowerCase()])) {
-    if (/[\p{Alphabetic}\p{N}_]/u.test(character)) {
-      if (separator && output) output += "-";
-      separator = false;
-      output += character;
-    } else if (/[\p{White_Space}-]/u.test(character)) {
-      separator = true;
+  let count = 0;
+  for (const value of text) {
+    if (count++ === 160) break;
+    for (const character of value.toLowerCase()) {
+      if (/[\p{Alphabetic}\p{N}_]/u.test(character)) {
+        if (separator && output) output += "-";
+        separator = false;
+        output += character;
+      } else if (/[\p{White_Space}-]/u.test(character)) {
+        separator = true;
+      }
     }
   }
   return output || "section";

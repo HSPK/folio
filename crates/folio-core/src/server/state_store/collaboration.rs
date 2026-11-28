@@ -67,44 +67,49 @@ impl ProjectStore {
     }
 
     pub(in crate::server) fn load_room(&self, path: &str) -> Result<Option<StoredRoom>, ApiError> {
-        self.store.with(|connection| {
-            let stored: Option<(String, Vec<u8>, Vec<u8>, String, String, String)> = connection.query_row(
+        self.store.with_read(|reader| {
+            // The checkpoint and its following updates must come from one SQLite snapshot.
+            let connection = reader.unchecked_transaction().map_err(db_error)?;
+            let stored = connection.query_row(
                 "SELECT room_id,state,saved,version,actor,resource_id FROM rooms WHERE project=?1 AND path=?2",
-                params![self.project, path], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?,row.get(5)?)))
+                params![self.project, path], |row| Ok((StoredRoom {
+                    id: row.get(0)?, state: row.get(1)?, saved: String::new(),
+                    version: row.get(3)?, actor: row.get(4)?, resource: row.get(5)?, updates: Vec::new(),
+                }, row.get::<_, Vec<u8>>(2)?)))
                 .optional().map_err(db_error)?;
-            let Some((id, state, saved, version, actor, resource)) = stored else { return Ok(None); };
-            let bytes: usize = connection.query_row("SELECT COALESCE(SUM(length(data)),0) FROM room_updates WHERE project=?1 AND path=?2",
-                params![self.project, path], |row| row.get(0)).map_err(db_error)?;
+            let Some((mut room, saved)) = stored else { return Ok(None); };
+            let (bytes, count): (usize, usize) = connection.query_row(
+                "SELECT COALESCE(SUM(length(data)),0),COUNT(*) FROM room_updates WHERE project=?1 AND path=?2",
+                params![self.project, path], |row| Ok((row.get(0)?, row.get(1)?))).map_err(db_error)?;
             if bytes > super::MAX_STORED_BYTES { return Err(ApiError::too_large("The collaboration recovery log exceeds the supported size.")); }
-            let count: usize = connection.query_row("SELECT COUNT(*) FROM room_updates WHERE project=?1 AND path=?2",
-                params![self.project,path], |row| row.get(0)).map_err(db_error)?;
             if count > 4096 { return Err(ApiError::too_large("The collaboration recovery log contains too many updates.")); }
             let mut query = connection.prepare("SELECT data,actor FROM room_updates WHERE project=?1 AND path=?2 ORDER BY id").map_err(db_error)?;
-            let updates = query.query_map(params![self.project, path], |row| Ok((row.get(0)?, row.get(1)?)))
+            room.updates = query.query_map(params![self.project, path], |row| Ok((row.get(0)?, row.get(1)?)))
                 .map_err(db_error)?.collect::<Result<Vec<_>, _>>().map_err(db_error)?;
-            Ok(Some(StoredRoom { id, resource, state: decompress(&state)?,
-                saved: String::from_utf8(decompress(&saved)?).map_err(|_| ApiError::internal("The recovered Markdown is invalid."))?,
-                version, updates, actor }))
+            room.state = decompress(&room.state)?;
+            room.saved = String::from_utf8(decompress(&saved)?).map_err(|_| ApiError::internal("The recovered Markdown is invalid."))?;
+            Ok(Some(room))
         })
     }
 
     pub(in crate::server) fn checkpoint_room(
         &self,
-        path: &str,
-        resource: &str,
         id: &str,
         state: &[u8],
-        saved: &str,
-        version: &str,
+        document: &crate::server::files::Document,
         actor: &str,
     ) -> Result<(), ApiError> {
+        let path = &document.path;
+        let resource = document.id.as_deref().ok_or_else(|| {
+            ApiError::internal("The collaborative document has no resource identity.")
+        })?;
         let state = compress(state)?;
-        let saved = compress(saved.as_bytes())?;
+        let saved = compress(document.raw_content().as_bytes())?;
         self.store.with(|connection| {
             let transaction = connection.transaction().map_err(db_error)?;
             transaction.execute("INSERT INTO rooms(project,path,room_id,state,saved,version,actor,resource_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
                 ON CONFLICT(project,path) DO UPDATE SET room_id=excluded.room_id,state=excluded.state,saved=excluded.saved,version=excluded.version,actor=excluded.actor,resource_id=excluded.resource_id",
-                params![self.project, path, id, state, saved, version, actor,resource]).map_err(db_error)?;
+                params![self.project, path, id, state, saved, document.version, actor,resource]).map_err(db_error)?;
             transaction.execute("DELETE FROM room_updates WHERE project=?1 AND path=?2", params![self.project, path]).map_err(db_error)?;
             transaction.commit().map_err(db_error)
         })

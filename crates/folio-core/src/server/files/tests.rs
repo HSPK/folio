@@ -130,7 +130,7 @@ fn tree_limits_report_truncation_and_sort_results() {
     fs::write(path.join("a.md"), "a").unwrap();
     fs::write(path.join("nested").join("b.md"), "b").unwrap();
     {
-        let root = Root::open(&path).unwrap();
+        let root = Root::open(path).unwrap();
         let tree = root
             .tree_with_limits(TreeLimits {
                 files: 1,

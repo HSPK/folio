@@ -7,7 +7,48 @@ const source = 'Intro **kept**.\n\n```rust\nfn main() {\n    kept();\n}\n```\n\n
 const blockMenu = page => page.getByRole("menu", { name: "Block actions", exact: true });
 const grip = page => page.locator(".folio-block-grip");
 
-for (const width of [1440, 390]) {
+for (const width of [1440, 651]) {
+  test(`desktop block controls activate only on click and stay with the clicked block at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await imageFixture(page, `Blocks-click-base-${width}.md`);
+    await openFixture(page, `Blocks-click-${width}.md`, source);
+    const controls = page.locator(".folio-block-controls");
+    const blocks = [
+      [".ProseMirror > p", "paragraph"], [".folio-code-block", "code_block"],
+      [".folio-block-image", "image_block"], [".ProseMirror blockquote", "blockquote"], [".folio-table-wrapper", "table"],
+    ];
+    for (const [selector, type] of blocks) {
+      const block = page.locator(selector).first();
+      await block.hover();
+      await expect(grip(page)).toBeHidden();
+      await block.click();
+      await expect(grip(page)).toBeVisible();
+      await expect(grip(page)).toHaveAttribute("data-block-type", type);
+      await expect(page.getByRole("button", { name: "Add below", exact: true })).toBeVisible();
+      const other = page.locator(selector === ".ProseMirror > p" ? ".folio-code-block" : ".ProseMirror > p").first();
+      await other.hover();
+      await expect(grip(page)).toBeVisible();
+      await expect(grip(page)).toHaveAttribute("data-block-type", type);
+      await page.mouse.move(5, 5);
+      await expect(grip(page)).toBeVisible();
+      await grip(page).click();
+      const menu = page.getByRole("menu", { name: type === "table" ? "Table actions" : "Block actions", exact: true });
+      await expect(menu).toBeVisible();
+      await menu.press("Escape");
+      await expect(grip(page)).toBeVisible();
+      await page.mouse.click(5, 5);
+      await expect(grip(page)).toBeHidden();
+      await expect(controls).toHaveAttribute("inert", "");
+    }
+    await page.locator(".ProseMirror > p").first().click();
+    await expect(grip(page)).toHaveAttribute("data-block-type", "paragraph");
+    await page.locator(".folio-code-block").click();
+    await expect(grip(page)).toHaveAttribute("data-block-type", "code_block");
+    await expect(page.locator("#editor")).toHaveValue(source);
+  });
+}
+
+for (const width of [1440, 651]) {
   test(`shared block grips stay left, vertical and layout-neutral at ${width}px`, async ({ page, browserName }) => {
     await page.setViewportSize({ width, height: 844 });
     await imageFixture(page, `Blocks-base-${width}.md`);
@@ -19,34 +60,38 @@ for (const width of [1440, 390]) {
       const block = page.locator(selector).first();
       await block.scrollIntoViewIfNeeded();
       const before = await block.boundingBox();
-      await block.hover();
+      const contentLeft = label === "Table" ? (await block.locator(".folio-table-scroll").boundingBox()).x : before.x;
+      await block.click();
       await expect(grip(page)).toBeVisible();
       const handle = await grip(page).boundingBox();
-      const add = await page.getByRole("button", { name: "Add block below", exact: true }).boundingBox();
+      const add = await page.getByRole("button", { name: "Add below", exact: true }).boundingBox();
       const viewport = await page.locator(".folio-live-scroll").boundingBox();
       expect(add.x).toBeGreaterThanOrEqual(viewport.x);
       expect(add.x + add.width).toBeLessThanOrEqual(handle.x);
       expect(handle.x).toBeGreaterThanOrEqual(viewport.x);
-      expect(handle.x + handle.width).toBeLessThanOrEqual(before.x);
+      expect(handle.x + handle.width).toBeLessThanOrEqual(contentLeft);
       expect(handle.height).toBeGreaterThan(handle.width);
       expect(await grip(page).locator("svg").evaluate(node => getComputedStyle(node).transform)).toBe("none");
-      expect(await grip(page).evaluate(node => {
+      await expect.poll(() => grip(page).evaluate(node => {
         const canvas = document.createElement("canvas");
         canvas.width = canvas.height = 1;
         const context = canvas.getContext("2d");
         context.fillStyle = getComputedStyle(node).backgroundColor;
         context.fillRect(0, 0, 1, 1);
-        return context.getImageData(0, 0, 1, 1).data[3];
-      })).toBe(255);
+        return context.getImageData(0, 0, 1, 1).data[3] === 255 ? "opaque" : getComputedStyle(node).backgroundColor;
+      })).toBe("opaque");
+      const selection = label === "Table" ? await block.locator(".folio-table-selection").boundingBox() : null;
       const menu = await openBlock(page, block, label);
       expect(await block.boundingBox()).toEqual(before);
       await expect(menu.getByRole("searchbox")).toHaveCount(0);
       if (label === "Table") {
         await expect(menu.locator(".folio-table-export > summary")).toBeVisible();
-        await expect(block.locator(".folio-table-row-grip")).toHaveCSS("opacity", "0");
-        await expect(block.locator(".folio-table-selection")).toBeHidden();
+        await expect(block.locator(".folio-table-row-grip")).toHaveCSS("opacity", "1");
+        const row = await block.locator(".folio-table-row-grip").boundingBox();
+        expect(handle.x + handle.width).toBeLessThanOrEqual(row.x);
+        expect(await block.locator(".folio-table-selection").boundingBox()).toEqual(selection);
       } else {
-        await expect(menu.locator(".folio-block-menu-heading")).toHaveText(label);
+        await expect(menu.locator(".folio-block-menu-heading")).toHaveCount(0);
         await expect(menu.getByRole("menuitem")).toHaveCount(2);
         await expect(menu.getByText(/Copy .*as/)).toHaveCount(0);
       }
@@ -60,11 +105,52 @@ for (const width of [1440, 390]) {
       expect(await block.boundingBox()).toEqual(before);
       await expect(page.locator("#editor")).toHaveValue(source);
     }
-    await page.mouse.move(5, 5);
+    await page.mouse.click(5, 5);
     await expect(grip(page)).toBeHidden();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
+
+test("phone editors hide block controls and reclaim their gutter without disabling editing", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await imageFixture(page, "Blocks-phone-base.md");
+  await openFixture(page, "Blocks-phone.md", source);
+  for (const width of [390, 650]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const selector of [
+      ".ProseMirror > p", ".folio-code-block", ".folio-block-image", ".ProseMirror blockquote", ".folio-table-wrapper",
+    ]) {
+      const block = page.locator(selector).first();
+      await block.scrollIntoViewIfNeeded();
+      await block.hover();
+      await expect(page.locator(".folio-block-add")).toBeHidden();
+      await expect(grip(page)).toBeHidden();
+      await block.click();
+      await expect(page.locator(".folio-block-add")).toBeHidden();
+      await expect(grip(page)).toBeHidden();
+    }
+    const viewport = await page.locator(".folio-live-scroll").boundingBox();
+    const content = await page.locator(".folio-live-page").boundingBox();
+    expect(content.x - viewport.x).toBeCloseTo(22, 0);
+    expect(viewport.x + viewport.width - content.x - content.width).toBeCloseTo(22, 0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  const paragraph = page.locator(".ProseMirror > p").first();
+  await paragraph.click();
+  await page.keyboard.press("End");
+  await page.keyboard.insertText(" Phone");
+  await expect(paragraph).toHaveText("Intro kept. Phone");
+  await page.keyboard.press("Enter");
+  await page.keyboard.insertText("/");
+  await expect(page.locator("#folio-slash-menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 651, height: 844 });
+  const menu = await openBlock(page, paragraph, "Text");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(grip(page)).toBeHidden();
+  await expect(menu).toBeHidden();
+});
 
 for (const [selector, label] of [
   [".folio-code-block", "Code block"], [".folio-block-image", "Image block"], [".folio-table-wrapper", "Table"],
@@ -119,7 +205,7 @@ test("block plus can insert below an open menu without selecting or replacing it
   await openFixture(page, "Block-menu-plus.md", "Before.\n\n```rust\nkept();\n```\n\nAfter.\n");
   const code = page.locator(".folio-code-block");
   const menu = await openBlock(page, code, "Code block");
-  await page.getByRole("button", { name: "Add block below", exact: true }).click();
+  await page.getByRole("button", { name: "Add below", exact: true }).click();
   await expect(menu).toBeHidden();
   await expect(page.locator(".ProseMirror")).toBeFocused();
   await page.keyboard.insertText("Added.");
@@ -135,7 +221,7 @@ test("block menus duplicate, delete and undo whole code, image and quote blocks 
   ]) {
     const blocks = page.locator(selector);
     let menu = await openBlock(page, blocks.first(), label);
-    await menu.getByRole("menuitem", { name: "Duplicate block", exact: true }).click();
+    await menu.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
     await expect(blocks).toHaveCount(2);
     if (label === "Code block") {
       for (const block of await blocks.all()) await expect(block).toHaveAttribute("data-language", "rust");
@@ -148,7 +234,7 @@ test("block menus duplicate, delete and undo whole code, image and quote blocks 
       }
     } else await expect(blocks.locator("strong")).toHaveText(["formatting", "formatting"]);
     menu = await openBlock(page, blocks.first(), label);
-    await menu.getByRole("menuitem", { name: "Delete block", exact: true }).click();
+    await menu.getByRole("menuitem", { name: "Delete", exact: true }).click();
     await expect(blocks).toHaveCount(1);
     await page.keyboard.press(`${primaryModifier}+z`);
     await expect(blocks).toHaveCount(2);
@@ -157,10 +243,10 @@ test("block menus duplicate, delete and undo whole code, image and quote blocks 
     await expect(page.locator("#editor")).toHaveValue(source);
   }
   await (await openBlock(page, page.locator(".folio-code-block"), "Code block"))
-    .getByRole("menuitem", { name: "Delete block", exact: true }).click();
+    .getByRole("menuitem", { name: "Delete", exact: true }).click();
   for (const [selector, label] of [[".folio-block-image", "Image block"], [".ProseMirror blockquote", "Quote"]]) {
     await (await openBlock(page, page.locator(selector), label))
-      .getByRole("menuitem", { name: "Duplicate block", exact: true }).click();
+      .getByRole("menuitem", { name: "Duplicate", exact: true }).click();
   }
   await page.keyboard.press(`${primaryModifier}+s`);
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
@@ -188,7 +274,7 @@ test("nested code block menus do not duplicate the enclosing quote or break imag
     + '![One](images/figure.png) ![Two](images/pixel.png)\n\nTail.\n';
   await openFixture(page, "Nested-blocks.md", text);
   const code = page.locator(".ProseMirror blockquote .folio-code-block");
-  await (await openBlock(page, code, "Code block")).getByRole("menuitem", { name: "Duplicate block", exact: true }).click();
+  await (await openBlock(page, code, "Code block")).getByRole("menuitem", { name: "Duplicate", exact: true }).click();
   await expect(page.locator(".ProseMirror blockquote")).toHaveCount(1);
   await expect(code).toHaveCount(2);
   await expect(code.locator("code")).toHaveText(["first\nsecond", "first\nsecond"]);
@@ -203,7 +289,7 @@ test("nested code block menus do not duplicate the enclosing quote or break imag
   const menu = await openBlock(page, row, "Text");
   expect(await row.locator(".folio-inline-image").evaluateAll(nodes =>
     nodes.map(node => ({ left: node.offsetLeft, top: node.offsetTop, width: node.offsetWidth, height: node.offsetHeight })))).toEqual(before);
-  await menu.getByRole("menuitem", { name: "Duplicate block", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
   await expect(row).toHaveCount(2);
   await expect(page.locator(".folio-image-row .folio-inline-image")).toHaveCount(4);
   await page.keyboard.press(`${primaryModifier}+z`);
@@ -220,9 +306,9 @@ test("block menus support keyboard navigation, pending pointer carets and safe v
     dom.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }));
   });
   const menu = blockMenu(page);
-  const duplicate = menu.getByRole("menuitem", { name: "Duplicate block", exact: true });
-  const remove = menu.getByRole("menuitem", { name: "Delete block", exact: true });
-  await expect(menu.locator(".folio-block-menu-heading")).toHaveText("Code block");
+  const duplicate = menu.getByRole("menuitem", { name: "Duplicate", exact: true });
+  const remove = menu.getByRole("menuitem", { name: "Delete", exact: true });
+  await expect(menu.locator(".folio-block-menu-heading")).toHaveCount(0);
   await expect(duplicate).toBeFocused();
   await duplicate.press("ArrowUp");
   await expect(remove).toBeFocused();
@@ -239,11 +325,11 @@ test("block menus support keyboard navigation, pending pointer carets and safe v
   await chooseView(page, "rich");
   await openBlock(page, page.locator(".folio-code-block"), "Code block");
   await page.locator('[data-path="Second.md"]').click();
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
+  await expect(page.locator("#document-title")).toHaveText("Second");
   await expect(menu).toBeHidden();
   await expect(grip(page)).toBeHidden();
   await openBlock(page, page.locator(".ProseMirror > p"), "Text");
-  await menu.getByRole("menuitem", { name: "Duplicate block", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
   await expect(page.locator(".ProseMirror > p")).toHaveText(["Another note.", "Another note."]);
 });
 

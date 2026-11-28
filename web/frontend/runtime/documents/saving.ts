@@ -3,20 +3,23 @@ import { MAX_MARKDOWN_BYTES, markdownByteLength, type DocumentPayload, type Save
 import { createDocumentSaver, type SaveProblem } from "../../services/document-saving";
 import { createDocumentTransitions, type LeavePolicy } from "../../services/document-transitions";
 import { documentSession, type SaveAcceptance } from "../../state/document";
-import { clearTimer, requireValue } from "../../types/elements";
+import { element, clearTimer, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { connectionFailure, refreshControls } from "../accounts/authentication";
-import { collaborationState, saveCollaboration } from "../collaboration/collaboration";
+import { collaboration, saveCollaboration } from "../collaboration/collaboration";
 import { api } from "../core/api";
 import { appState, dirty, rootChanged } from "../core/bootstrap";
 import { documentNotice, notice, previewStatus } from "../core/dom";
 import { applicationSignal, listen, onApplicationDispose } from "../lifecycle";
 import { updateFileTitle } from "../navigation/library";
+import { activePanelPath } from "../../state/library";
+import { leaveFilePanel } from "../navigation/panels";
 import { settingsState } from "../preferences/settings";
 import { projectWritable } from "../projects/permissions";
 import { finishLocalDraft } from "./drafts";
 import { confirmDocumentLeave } from "./leave";
 import { loadInlineEditor } from "./live";
+import { awaitCreatedResource } from "../navigation/creation";
 import { invalidatePreview, renderPreview } from "./preview";
 
 export const SAVE_TIMEOUT_MS = 15000;
@@ -30,7 +33,7 @@ export function initializeDocumentsSaving(): void {
   const persistence = createDocumentSaver({
     signal: owner,
     session: documentSession,
-    text: () => appState.ui.editor.value,
+    text: () => appState.editor.value,
     read: (id) =>
       api(`/api/document?id=${encodeURIComponent(id)}&render=source`, {
         decode: decodedDocument,
@@ -78,7 +81,7 @@ export function initializeDocumentsSaving(): void {
       pending: Boolean(documentSession.saving),
       conflict: documentSession.conflict,
     }),
-    inFlight: () => documentSession.saving?.completion ?? collaborationState.collaboration?.saveCompletion ?? null,
+    inFlight: () => documentSession.saving?.completion ?? collaboration?.saveCompletion ?? null,
     save: () => saveDocument(),
     confirm: (request) => confirmDocumentLeave(request, owner),
     timeoutMs: SAVE_TIMEOUT_MS,
@@ -89,7 +92,7 @@ export function initializeDocumentsSaving(): void {
       documentNotice(reason === "busy" ? "Save in progress" : "Note changed while confirming", "warning"),
   });
   transitions = flow;
-  listen(appState.ui.editor, "input", cancelLeaveForEditing);
+  listen(appState.editor, "input", cancelLeaveForEditing);
   onApplicationDispose(() => {
     flow.cancel();
     if (transitions === flow) transitions = null;
@@ -104,18 +107,15 @@ export function rememberUnconfirmedSave(checkpoint: SaveCheckpoint): void {
 export function notifyDocumentSave(): void {
   transitions?.notifySaved();
 }
-export function cancelLeaveForEditing(): void {
-  if (!collaborationState.collaboration?.applying) transitions?.edited();
+function cancelLeaveForEditing(): void {
+  if (!collaboration?.applying) transitions?.edited();
 }
-export function documentSaveBusy() {
-  return Boolean(
-    documentSession.saving ||
-    collaborationState.collaboration?.saving ||
-    collaborationState.collaboration?.pending.size,
-  );
+function documentSaveBusy() {
+  return Boolean(documentSession.saving || collaboration?.saving || collaboration?.pending.size);
 }
 export async function prepareDocumentLeave(action: string, policy: LeavePolicy = "save", signal?: AbortSignal) {
   try {
+    if (activePanelPath() && !(await leaveFilePanel(signal))) return false;
     return await requireValue(transitions, "Document transition coordinator").request(action, policy, signal);
   } catch (cause) {
     const error = errorContext(cause);
@@ -131,7 +131,7 @@ export function cancelAutoSave(): void {
   clearTimer(autoSaveTimer);
   autoSaveTimer = null;
 }
-export function scheduleAutoSave(delay = settingsState.webPreferences.autoSaveDelayMs): void {
+export function scheduleAutoSave(): void {
   cancelAutoSave();
   if (!documentSession.current || documentSession.conflict || rootChanged() || appState.connectionState !== "ready")
     return;
@@ -150,13 +150,13 @@ export function scheduleAutoSave(delay = settingsState.webPreferences.autoSaveDe
     )
       return;
     void saveDocument(true);
-  }, delay);
+  }, settingsState.webPreferences.autoSaveDelayMs);
 }
 
 function projectSavedDocument(checkpoint: SaveCheckpoint, payload: DocumentPayload, result: SaveAcceptance): void {
   updateFileTitle(checkpoint.snapshot.path, payload.title ?? null);
-  if (appState.ui.editor.value !== result.text) {
-    appState.ui.editor.value = result.text;
+  if (appState.editor.value !== result.text) {
+    appState.editor.value = result.text;
     loadInlineEditor();
   }
   documentNotice(payload.warning ?? "", payload.warning ? "warning" : "");
@@ -175,7 +175,7 @@ function projectSaveProblem(problem: SaveProblem): void {
     return;
   }
   if (problem.kind === "conflict") {
-    notice(appState.ui.conflictMessage, problem.error.message, "warning");
+    notice(element("conflict-message"), "This note changed elsewhere. Your edits are still here.", "warning");
     documentNotice("");
   } else if (problem.kind === "verification") {
     documentNotice(`Save check failed: ${problem.error.message}`, "error");
@@ -188,12 +188,22 @@ function projectSaveProblem(problem: SaveProblem): void {
 }
 
 export async function saveDocument(automatic = false) {
+  if (documentSession.current?.id.startsWith("local-new:")) {
+    if (automatic || appState.connectionState !== "ready") return;
+    const id = documentSession.id;
+    try {
+      await awaitCreatedResource(documentSession.current.id);
+    } catch {
+      return;
+    }
+    if (id !== documentSession.id || documentSession.current?.id.startsWith("local-new:")) return;
+  }
   if (!projectWritable()) {
     if (!automatic) documentNotice("Read-only", "warning");
     return;
   }
   cancelAutoSave();
-  if (collaborationState.collaboration) return saveCollaboration();
+  if (collaboration) return saveCollaboration();
   if (documentSession.saving) return requireValue(saver, "Document persistence").save({ queue: !automatic });
   if (!documentSession.current || appState.creating || appState.movingEntry) return;
   if (documentSession.loading) {
@@ -201,7 +211,6 @@ export async function saveDocument(automatic = false) {
     return;
   }
   if (documentSession.conflict) {
-    if (!automatic) documentNotice("Resolve disk conflict first", "warning");
     return;
   }
   if (rootChanged() || appState.connectionState !== "ready") {
@@ -209,7 +218,7 @@ export async function saveDocument(automatic = false) {
     return;
   }
   if (!dirty()) return true;
-  const snapshot = documentSession.checkpoint(appState.ui.editor.value);
+  const snapshot = documentSession.checkpoint(appState.editor.value);
   if (markdownByteLength(snapshot.snapshot.content) > MAX_MARKDOWN_BYTES) {
     refreshControls();
     if (!automatic) documentNotice("Over 4 MiB, not saved", "error");

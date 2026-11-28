@@ -1,76 +1,73 @@
+import { createButton } from "@folio/editor-runtime";
+import { element } from "../../types/elements";
 import { authenticationSession } from "../../state/authentication";
 import { decodedAccountAction, decodedAccounts } from "../../api/contracts";
 import type { AccountsListing, Action } from "../../types/domain";
 import { errorContext } from "../../types/errors";
 import { api } from "../core/api";
-import { appState } from "../core/bootstrap";
 import { ApiError, notice, setText } from "../core/dom";
 import { confirmAction, showDialog } from "../dialogs/dialogs";
 import { confirmDiscard } from "../documents/navigation";
 import { listen } from "../lifecycle";
 import { showAuthentication } from "./authentication";
-class AccountState {
-  accountBusy!: boolean;
-  passwordTarget!: string | null;
-  accountsUi!: ReturnType<typeof createAccountsUi>;
-}
-export const accountState = new AccountState();
+let accountBusy: boolean;
+let passwordTarget: string | null;
+
 export function initializeAccountsAccounts(): void {
-  accountState.accountBusy = false;
-  accountState.passwordTarget = null;
-  accountState.accountsUi = createAccountsUi();
+  accountBusy = false;
+  passwordTarget = null;
+
   listen(
-    accountState.accountsUi.create,
+    element("invite-create"),
     "click",
-    () => void accountAction({ action: "invite", hours: Number(accountState.accountsUi.lifetime.value) }),
+    () => void accountAction({ action: "invite", hours: Number(element("invite-lifetime").value) }),
   );
-  listen(accountState.accountsUi.copy, "click", async () => {
+  listen(element("invite-copy"), "click", async () => {
     try {
-      await copyPlainText(accountState.accountsUi.code.value);
-      setText(accountState.accountsUi.copy, "Copied");
+      await copyPlainText(element("invite-code").value);
+      setText(element("invite-copy"), "Copied");
     } catch {
-      accountState.accountsUi.code.focus();
-      accountState.accountsUi.code.select();
-      notice(accountState.accountsUi.error, "Clipboard unavailable, copy manually", "warning");
+      element("invite-code").focus();
+      element("invite-code").select();
+      notice(element("accounts-error"), "Clipboard unavailable, copy manually", "warning");
     }
   });
-  listen(appState.ui.settingsDialog, "close", () => {
-    accountState.accountsUi.code.value = "";
-    accountState.accountsUi.created.hidden = true;
+  listen(element("settings-dialog"), "close", () => {
+    element("invite-code").value = "";
+    element("invite-created").hidden = true;
   });
-  listen(appState.element("account-password-cancel"), "click", () => accountState.accountsUi.dialog.close());
-  listen(accountState.accountsUi.dialog, "close", () => {
-    accountState.accountsUi.password.value = "";
-    accountState.passwordTarget = null;
+  listen(element("account-password-cancel"), "click", () => element("account-password-dialog").close());
+  listen(element("account-password-dialog"), "close", () => {
+    element("account-password").value = "";
+    passwordTarget = null;
   });
-  listen(appState.element("account-password-form"), "submit", async (event) => {
+  listen(element("account-password-form"), "submit", async (event) => {
     event.preventDefault();
-    if (!accountState.passwordTarget) return;
+    if (!passwordTarget) return;
     const saved = await accountAction({
       action: "password",
-      username: accountState.passwordTarget,
-      password: accountState.accountsUi.password.value,
+      username: passwordTarget,
+      password: element("account-password").value,
     });
-    accountState.accountsUi.password.value = "";
-    if (saved) accountState.accountsUi.dialog.close();
+    element("account-password").value = "";
+    if (saved) element("account-password-dialog").close();
   });
-  listen(appState.element("auth-use-invitation"), "click", () => showAuthentication(false, "", true));
-  listen(appState.element("auth-back-login"), "click", () => {
-    appState.element("auth-invitation").value = "";
-    appState.ui.authPassword.value = "";
-    appState.ui.authConfirm.value = "";
+  listen(element("auth-use-invitation"), "click", () => showAuthentication(false, "", true));
+  listen(element("auth-back-login"), "click", () => {
+    element("auth-invitation").value = "";
+    element("auth-password").value = "";
+    element("auth-confirm").value = "";
     showAuthentication(false);
   });
 }
-export function accountButton(label: string, action: () => void) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.textContent = label;
-  button.disabled = accountState.accountBusy;
+function accountButton(label: string, action: () => void) {
+  const button = createButton({ label: label });
+
+  button.disabled = accountBusy;
   button.addEventListener("click", action);
   return button;
 }
-export function renderAccounts(value: AccountsListing): void {
+function renderAccounts(value: AccountsListing): void {
   if (!Array.isArray(value?.users) || !Array.isArray(value?.invitations)) throw new ApiError("Incomplete account data");
   const users = document.createDocumentFragment();
   for (const user of value.users) {
@@ -102,12 +99,12 @@ export function renderAccounts(value: AccountsListing): void {
       name,
       role,
       accountButton("Reset password", () => {
-        accountState.passwordTarget = user.username;
-        accountState.accountsUi.password.value = "";
-        setText(appState.element("account-password-title"), `Reset password: ${user.username}`);
-        notice(accountState.accountsUi.passwordError, "");
-        showDialog(accountState.accountsUi.dialog, { restoreParent: true });
-        accountState.accountsUi.password.focus();
+        passwordTarget = user.username;
+        element("account-password").value = "";
+        setText(element("account-password-title"), `Reset password: ${user.username}`);
+        notice(element("account-password-error"), "");
+        showDialog(element("account-password-dialog"), { restoreParent: true });
+        element("account-password").focus();
       }),
       accountButton("Delete", async () => {
         if (await confirmAction(`Delete account ${user.username}? Note files are kept`, { label: "Delete account" })) {
@@ -117,7 +114,7 @@ export function renderAccounts(value: AccountsListing): void {
     );
     users.append(row);
   }
-  accountState.accountsUi.list.replaceChildren(users);
+  element("accounts-list").replaceChildren(users);
   const invitations = document.createDocumentFragment();
   for (const invite of value.invitations) {
     const row = document.createElement("div");
@@ -136,22 +133,22 @@ export function renderAccounts(value: AccountsListing): void {
     );
     invitations.append(row);
   }
-  accountState.accountsUi.invitations.replaceChildren(invitations);
-  if (!value.invitations.length) accountState.accountsUi.invitations.textContent = "No invitations";
+  element("invitations-list").replaceChildren(invitations);
+  if (!value.invitations.length) element("invitations-list").textContent = "No invitations";
 }
-export function accountControls(): void {
-  accountState.accountsUi.create.disabled = accountState.accountBusy;
+function accountControls(): void {
+  element("invite-create").disabled = accountBusy;
   for (const control of document.querySelectorAll<HTMLButtonElement>(
     "#accounts-list button, #accounts-list select, #invitations-list button, #account-password-form button",
   )) {
-    control.disabled = accountState.accountBusy;
+    control.disabled = accountBusy;
   }
 }
 export async function loadAccounts(): Promise<void> {
-  if (authenticationSession.user?.role !== "admin" || accountState.accountBusy) return;
-  accountState.accountBusy = true;
+  if (authenticationSession.user?.role !== "admin" || accountBusy) return;
+  accountBusy = true;
   accountControls();
-  notice(accountState.accountsUi.error, "");
+  notice(element("accounts-error"), "");
   try {
     renderAccounts(
       await api("/api/admin/accounts", {
@@ -160,19 +157,19 @@ export async function loadAccounts(): Promise<void> {
     );
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    notice(accountState.accountsUi.error, error.message, "error");
+    notice(element("accounts-error"), error.message, "error");
   } finally {
-    accountState.accountBusy = false;
+    accountBusy = false;
     accountControls();
   }
 }
-export async function accountAction(body: Action) {
-  if (authenticationSession.user?.role !== "admin" || accountState.accountBusy) return false;
+async function accountAction(body: Action) {
+  if (authenticationSession.user?.role !== "admin" || accountBusy) return false;
   const self = body.username === authenticationSession.user.username;
   if (self && !(await confirmDiscard("update your account and log in again"))) return false;
-  accountState.accountBusy = true;
+  accountBusy = true;
   accountControls();
-  notice(accountState.accountsUi.error, "");
+  notice(element("accounts-error"), "");
   try {
     const response = await api("/api/admin/accounts", {
       decode: decodedAccountAction,
@@ -186,35 +183,21 @@ export async function accountAction(body: Action) {
     if (!response.accounts) throw new ApiError("Incomplete account update");
     renderAccounts(response.accounts);
     if (response.code) {
-      accountState.accountsUi.code.value = response.code;
-      accountState.accountsUi.created.hidden = false;
-      setText(accountState.accountsUi.copy, "Copy invitation");
+      element("invite-code").value = response.code;
+      element("invite-created").hidden = false;
+      setText(element("invite-copy"), "Copy invitation");
     }
     return true;
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    notice(accountState.accountsUi.error, error.message, "error");
-    if (accountState.accountsUi.dialog.open) notice(accountState.accountsUi.passwordError, error.message, "error");
+    notice(element("accounts-error"), error.message, "error");
+    if (element("account-password-dialog").open) notice(element("account-password-error"), error.message, "error");
     return false;
   } finally {
     if (body.password) body.password = "";
-    accountState.accountBusy = false;
+    accountBusy = false;
     accountControls();
   }
 }
-function createAccountsUi() {
-  return {
-    list: appState.element("accounts-list"),
-    invitations: appState.element("invitations-list"),
-    error: appState.element("accounts-error"),
-    create: appState.element("invite-create"),
-    lifetime: appState.element("invite-lifetime"),
-    created: appState.element("invite-created"),
-    code: appState.element("invite-code"),
-    copy: appState.element("invite-copy"),
-    dialog: appState.element("account-password-dialog"),
-    password: appState.element("account-password"),
-    passwordError: appState.element("account-password-error"),
-  };
-}
+
 import { copyPlainText } from "../../../shared/clipboard";

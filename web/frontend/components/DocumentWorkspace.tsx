@@ -1,6 +1,17 @@
 import { For, Show } from "solid-js";
 import { shell, viewLabels } from "../state/shell";
-import { AppMenu, AppMenuContent, AppMenuTrigger } from "./primitives";
+import { activePanelPath } from "../state/library";
+import { documentSession } from "../state/document";
+import { readNoteRoute } from "@folio/model";
+import { logout, setSidebar, toggleFocusMode } from "../runtime/accounts/authentication";
+import { appState } from "../runtime/core/bootstrap";
+import { openCommandPanel } from "../runtime/core/commands";
+import { setPageWidth } from "../runtime/core/layout";
+import { navigateTo } from "../runtime/documents/navigation";
+import { createTreeEntry } from "../runtime/navigation/creation";
+import { copyText, setView } from "../runtime/navigation/files";
+import { element } from "../types/elements";
+import { AppMenu, IconButton } from "./primitives";
 
 const views = [
   ["rich", "edit"],
@@ -17,21 +28,48 @@ export function DocumentWorkspace() {
     return shell.title.slice(0, end);
   };
   return (
-    <main class="document-area" aria-labelledby="document-title">
-      <button
+    <main
+      class="document-area"
+      data-file-open={activePanelPath() ? "" : undefined}
+      aria-labelledby={activePanelPath() ? "panel-title" : "document-title"}
+    >
+      <IconButton
         id="sidebar-toggle"
-        class="icon-button"
-        type="button"
         title="Show sidebar (Ctrl+Shift+L)"
-        aria-label="Show sidebar"
+        label="Show sidebar"
+        icon="sidebar"
         aria-controls="sidebar"
         aria-expanded={shell.sidebarOpen}
-      >
-        <svg data-icon="sidebar" aria-hidden="true"></svg>
-      </button>
+        onClick={() => setSidebar(true, true)}
+      />
+      <section id="workspace-file-panel" hidden={!activePanelPath()} aria-labelledby="panel-title">
+        <div class="file-panel-surface">
+          <header class="panel-header">
+            <div class="panel-heading">
+              <small id="panel-kind"></small>
+              <h2 id="panel-title"></h2>
+            </div>
+            <div id="panel-tools"></div>
+            <IconButton
+              id="panel-more"
+              label="File actions"
+              icon="more-horizontal"
+              title="More actions"
+              aria-haspopup="menu"
+              aria-controls="file-context-menu"
+            />
+            <IconButton id="panel-close" title="Close file" label="Close file panel" icon="x" />
+          </header>
+          <div id="panel-body" tabIndex={-1}></div>
+        </div>
+        <div id="panel-sheets" role="tablist" aria-label="Worksheets"></div>
+        <p id="panel-status" role="status"></p>
+      </section>
       <nav class="document-actions" aria-label="Document menu">
         <AppMenu id="more-menu" class="popup">
-          <AppMenuTrigger
+          <button
+            type="button"
+            popovertarget="more-actions-panel"
             class="icon-button more-menu-trigger"
             title={`${shell.title} · More actions`}
             aria-label={shell.modified ? "More actions · Unsaved changes" : "More actions"}
@@ -39,8 +77,8 @@ export function DocumentWorkspace() {
           >
             <svg data-icon="more-horizontal" aria-hidden="true"></svg>
             <span id="document-modified" role="img" aria-label="Unsaved changes" hidden={!shell.modified}></span>
-          </AppMenuTrigger>
-          <AppMenuContent id="more-actions-panel" class="popup-panel">
+          </button>
+          <div id="more-actions-panel" class="popup-panel" popover="auto" inert>
             <div class="more-menu-scroll">
               <h1 id="document-title" title={shell.title}>
                 <span id="document-name">
@@ -54,7 +92,13 @@ export function DocumentWorkspace() {
               <div class="view-options" id="document-view-options" role="group" aria-label="Document view">
                 <For each={views}>
                   {([view, icon]) => (
-                    <button id={`view-${view}`} type="button" data-view={view} aria-pressed={shell.view === view}>
+                    <button
+                      id={`view-${view}`}
+                      type="button"
+                      data-view={view}
+                      aria-pressed={shell.view === view}
+                      onClick={() => setView(view, true)}
+                    >
                       <svg data-icon={icon} aria-hidden="true"></svg>
                       {viewLabels[view]}
                     </button>
@@ -80,7 +124,7 @@ export function DocumentWorkspace() {
                 <button id="share-page" type="button" data-menu-icon="link" hidden>
                   Share page
                 </button>
-                <button id="copy-text" type="button" data-menu-icon="copy" disabled>
+                <button id="copy-text" type="button" data-menu-icon="copy" onClick={() => copyText()} disabled>
                   Copy Markdown
                 </button>
                 <button id="workspace-favorite" type="button" data-menu-icon="star" hidden>
@@ -105,6 +149,7 @@ export function DocumentWorkspace() {
                   type="button"
                   data-menu-icon="command"
                   aria-label="Open command panel"
+                  onClick={openCommandPanel}
                   hidden
                 >
                   Commands <kbd>Ctrl/Cmd+K</kbd>
@@ -137,9 +182,46 @@ export function DocumentWorkspace() {
                   <button id="document-trash" type="button" data-menu-icon="file-minus" hidden>
                     Move note to recycle bin
                   </button>
-                  <button id="reload-document" type="button" data-menu-icon="refresh" disabled>
+                  <button
+                    id="reload-document"
+                    type="button"
+                    data-menu-icon="refresh"
+                    disabled
+                    onClick={() => {
+                      if (documentSession.current)
+                        void navigateTo(documentSession.current.id, readNoteRoute(appState.committedUrl).hash, {
+                          mode: "replace",
+                          reload: true,
+                        });
+                    }}
+                  >
                     Reload from disk
                   </button>
+                </div>
+              </details>
+              <details id="reader-options" class="menu-disclosure" hidden>
+                <summary data-menu-icon="settings">
+                  Reading settings <svg data-icon="chevron-down" aria-hidden="true"></svg>
+                </summary>
+                <div class="reader-options">
+                  <label>
+                    Theme{" "}
+                    <select id="reader-theme">
+                      <option value="system">System</option>
+                      <option value="light">Light</option>
+                      <option value="dark">Dark</option>
+                    </select>
+                  </label>
+                  <label>
+                    Text size{" "}
+                    <select id="reader-size">
+                      <option value="15">Small</option>
+                      <option value="17" selected>
+                        Standard
+                      </option>
+                      <option value="20">Large</option>
+                    </select>
+                  </label>
                 </div>
               </details>
               <details id="compact-layout-menu" class="menu-disclosure">
@@ -148,13 +230,28 @@ export function DocumentWorkspace() {
                   <svg data-icon="chevron-down" aria-hidden="true"></svg>
                 </summary>
                 <div class="menu-disclosure-panel" role="group" aria-label="Page width">
-                  <button type="button" data-page-width="focused" aria-pressed="false">
+                  <button
+                    type="button"
+                    data-page-width="focused"
+                    aria-pressed="false"
+                    onClick={() => setPageWidth("focused", true)}
+                  >
                     Focused
                   </button>
-                  <button type="button" data-page-width="balanced" aria-pressed="true">
+                  <button
+                    type="button"
+                    data-page-width="balanced"
+                    aria-pressed="true"
+                    onClick={() => setPageWidth("balanced", true)}
+                  >
                     Balanced
                   </button>
-                  <button type="button" data-page-width="wide" aria-pressed="false">
+                  <button
+                    type="button"
+                    data-page-width="wide"
+                    aria-pressed="false"
+                    onClick={() => setPageWidth("wide", true)}
+                  >
                     Wide
                   </button>
                 </div>
@@ -164,13 +261,19 @@ export function DocumentWorkspace() {
               <button id="settings-open" type="button" data-menu-icon="settings" aria-label="Open settings">
                 Settings
               </button>
-              <button id="focus-mode" type="button" data-menu-icon="maximize" aria-pressed="false">
+              <button
+                id="focus-mode"
+                type="button"
+                data-menu-icon="maximize"
+                aria-pressed="false"
+                onClick={toggleFocusMode}
+              >
                 Distraction free
               </button>
               <button id="about-open" type="button" data-menu-icon="circle-help">
                 About Folio
               </button>
-              <button id="logout" type="button" data-menu-icon="log-out" hidden>
+              <button id="logout" type="button" data-menu-icon="log-out" onClick={logout} hidden>
                 Log out
               </button>
             </div>
@@ -182,14 +285,13 @@ export function DocumentWorkspace() {
                 <small>{shell.statisticsDetail.split(" · ").slice(0, 2).join(" · ")}</small>
               </p>
             </div>
-          </AppMenuContent>
+          </div>
         </AppMenu>
       </nav>
       <div class="document-alerts">
         <div id="collaboration-message" class="notice" role="status" hidden></div>
         <div id="connection-message" class="notice" role="alert" hidden></div>
         <div id="appearance-message" class="notice is-warning" role="status" hidden></div>
-        <div id="conflict-message" class="notice is-warning" role="alert" hidden></div>
         <div id="root-warning" class="notice is-warning" role="alert" hidden></div>
         <div id="loading-message" class="notice" role="status" hidden></div>
         <div id="size-warning" class="notice is-error" role="alert" hidden></div>
@@ -198,9 +300,18 @@ export function DocumentWorkspace() {
         <div id="table-message" class="notice" role="status" hidden></div>
         <p id="metadata-message" class="notice" role="status" data-status-source hidden></p>
       </div>
+      <div class="document-conflict">
+        <div id="conflict-message" role="status" hidden></div>
+        <button id="conflict-copy" type="button" onClick={() => copyText(true)}>
+          Copy my edits
+        </button>
+        <button id="conflict-latest" type="button" onClick={() => element("reload-document").click()}>
+          Use latest
+        </button>
+      </div>
       <section id="empty-document" class="empty-document" hidden={shell.hasDocument}>
         <svg data-icon="file" aria-hidden="true"></svg>
-        <button id="empty-new-note" type="button" disabled>
+        <button id="empty-new-note" type="button" onClick={() => createTreeEntry("file")} disabled>
           New note
         </button>
       </section>

@@ -35,6 +35,44 @@ fn decode(stored: &StoredRoom) -> Result<yrs::Doc, ApiError> {
     Ok(restored)
 }
 
+impl super::Hub {
+    /// Take the text under the same lock as accepted updates. Never join, flush or
+    /// normalize a clean document just to copy it (disk may have changed independently).
+    pub(in crate::server) fn pending_source(
+        &self,
+        disk: &files::Document,
+        store: Option<&ProjectStore>,
+    ) -> Result<Option<String>, ApiError> {
+        let room = self
+            .rooms
+            .lock()
+            .map_err(|_| ApiError::internal("Collaboration is unavailable."))?
+            .get(&disk.path)
+            .cloned();
+        if let Some(room) = room {
+            let room = room
+                .lock()
+                .map_err(|_| ApiError::internal("The room is unavailable."))?;
+            return Ok((!room.stopped && room.dirty && room.saved.id == disk.id)
+                .then(|| super::format::serialize(&room.saved.raw_content(), &room.text())));
+        }
+        // A restarted service may have acknowledged edits that no tab has reopened yet.
+        if let Some(store) = store {
+            if let Some(stored) = store.load_room(&disk.path)? {
+                if disk.id.as_deref() == Some(&stored.resource) {
+                    let doc = decode(&stored)?;
+                    let text = doc
+                        .get_or_insert_text("markdown")
+                        .get_string(&doc.transact());
+                    return Ok((text != normalize(&stored.saved))
+                        .then(|| super::format::serialize(&stored.saved, &text)));
+                }
+            }
+        }
+        Ok(None)
+    }
+}
+
 pub(in crate::server) fn archive_pending(store: &ProjectStore, path: &str) -> Result<(), ApiError> {
     let Some(stored) = store.load_room(path)? else {
         return Ok(());
@@ -122,14 +160,9 @@ impl Room {
     pub(super) fn checkpoint(&mut self) -> Result<(), ApiError> {
         if let Some(store) = &self.store {
             store.checkpoint_room(
-                &self.path,
-                self.saved.id.as_deref().ok_or_else(|| {
-                    ApiError::internal("The collaborative document has no resource identity.")
-                })?,
                 &self.id,
                 &self.snapshot(),
-                &self.saved.raw_content(),
-                &self.saved.version,
+                &self.saved,
                 &self.actors.iter().cloned().collect::<Vec<_>>().join(", "),
             )?;
             self.pending_bytes = 0;

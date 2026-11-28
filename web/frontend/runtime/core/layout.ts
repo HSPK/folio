@@ -1,3 +1,4 @@
+import { element } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { appState } from "./bootstrap";
 
@@ -31,7 +32,7 @@ export function storeLayoutPreference(key: string, value: string | number): void
   }
 }
 
-export function visibleSidebarWidth(width: number) {
+function visibleSidebarWidth(width: number) {
   const viewportMaximum = Math.max(appState.SIDEBAR_MIN, window.innerWidth - 320);
   return Math.round(Math.min(appState.SIDEBAR_MAX, viewportMaximum, Math.max(appState.SIDEBAR_MIN, width)));
 }
@@ -39,8 +40,11 @@ export function visibleSidebarWidth(width: number) {
 export function setSidebarWidth(width: number, persist = false): void {
   appState.preferredSidebarWidth = Math.round(Math.min(appState.SIDEBAR_MAX, Math.max(appState.SIDEBAR_MIN, width)));
   const visible = visibleSidebarWidth(appState.preferredSidebarWidth);
-  document.documentElement.style.setProperty("--sidebar-width", `${visible}px`);
-  appState.ui.sidebarResizer.setAttribute("aria-valuenow", String(visible));
+  if (element("app-shell").style.getPropertyValue("--sidebar-width") !== `${visible}px`) {
+    for (const node of [element("app-shell"), element("sidebar"), element("settings-dialog")])
+      node.style.setProperty("--sidebar-width", `${visible}px`);
+    element("sidebar-resizer").setAttribute("aria-valuenow", String(visible));
+  }
   if (persist) storeLayoutPreference(appState.SIDEBAR_WIDTH_KEY, appState.preferredSidebarWidth);
 }
 

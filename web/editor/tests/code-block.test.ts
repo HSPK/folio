@@ -2,7 +2,7 @@ import { required } from "./fixtures.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Node, Schema } from "@milkdown/prose/model";
-import { codeBlockDecorations } from "../src/code-block.ts";
+import { codeBlockDecorations, loadCodeSyntax } from "../src/code-block.ts";
 const schema = new Schema({
   nodes: {
     doc: { content: "block+" },
@@ -30,7 +30,8 @@ const tokens = (doc: Node) =>
       from: decoration.from,
     };
   });
-test("centralized code highlighting preserves aliases, dialects and document offsets", () => {
+test("centralized code highlighting preserves aliases, dialects and document offsets", async () => {
+  await loadCodeSyntax();
   for (const [language, text, keyword] of [
     ["RS", "fn main() { let value = 42; }", "fn"],
     ["c++", "int main() { return 42; }", "return"],

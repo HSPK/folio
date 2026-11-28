@@ -3,11 +3,9 @@ use crate::server::files;
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-#[path = "resources/migration.rs"]
 mod migration;
 pub(super) use migration::migrate;
 #[cfg(test)]
-#[path = "resources/tests.rs"]
 mod tests;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -37,8 +35,10 @@ impl ResourceKind {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(in crate::server) struct Resource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
     pub id: String,
     pub project: String,
     pub path: String,
@@ -85,6 +85,7 @@ fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, String, String
 fn resource(row: (String, String, String, String, bool)) -> Result<Resource, ApiError> {
     validate_id(&row.0).map_err(|_| ApiError::internal("The stored resource ID is invalid."))?;
     Ok(Resource {
+        code: None,
         id: row.0,
         project: row.1,
         path: row.2,
@@ -131,6 +132,7 @@ fn ensure_resource(
         .map_err(db_error)?;
     Ok((
         Resource {
+            code: None,
             id,
             project: project.into(),
             path: path.into(),
@@ -232,13 +234,20 @@ impl ProjectStore {
         &self,
         entries: &[(String, ResourceKind)],
     ) -> Result<Vec<Resource>, ApiError> {
+        if entries.is_empty() {
+            return Ok(Vec::new());
+        }
         self.store.with(|connection| {
             let transaction = connection.transaction().map_err(db_error)?;
             let mut result = Vec::with_capacity(entries.len());
             let mut changed = false;
             for (path, kind) in entries {
-                let (resource, inserted) =
+                let (mut resource, inserted) =
                     ensure_resource(&transaction, &self.project, path, *kind)?;
+                if *kind == ResourceKind::Document {
+                    resource.code =
+                        Some(super::page_codes::assign(&transaction, "n", &resource.id)?);
+                }
                 result.push(resource);
                 changed |= inserted;
             }

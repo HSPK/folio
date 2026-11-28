@@ -5,7 +5,7 @@ for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 
 test(`settings are inside the distinct More menu at ${viewport.width}px`, async ({ page, browserName }) => {
   await page.setViewportSize(viewport);
   const menu = page.locator("#more-menu");
-  const trigger = menu.locator(":scope > summary");
+  const trigger = menu.locator(":scope > button");
   const settings = menu.locator("#settings-open");
   await expect(page.locator(".document-actions > #settings-open")).toHaveCount(0);
   await expect(settings).toHaveText("Settings");
@@ -27,7 +27,7 @@ test(`settings are inside the distinct More menu at ${viewport.width}px`, async 
       await page.keyboard.press("Enter");
       await settings.focus();
       await page.keyboard.press("Escape");
-      await expect(menu).not.toHaveAttribute("open", "");
+      await expect(page.locator("#more-actions-panel")).toBeHidden();
       await expect(trigger).toBeFocused();
       await page.keyboard.press("Enter");
     } else await trigger.click();
@@ -40,7 +40,7 @@ test(`settings are inside the distinct More menu at ${viewport.width}px`, async 
       await page.keyboard.press("Enter");
     } else await settings.click();
     await expect(page.locator("#settings-dialog")).toBeVisible();
-    await expect(menu).not.toHaveAttribute("open", "");
+    await expect(page.locator("#more-actions-panel")).toBeHidden();
     await expect(page.locator("#settings-search")).not.toBeFocused();
     await expect(page.locator("#settings-dialog")).toBeFocused();
     await page.keyboard.press("Escape");
@@ -82,14 +82,14 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     await expect(page.locator('[data-path="Guides/Research.md"]')).toBeAttached();
     await expect(page.locator(".sidebar-footer, #library-menu, #library-name, #file-count, #root-path")).toHaveCount(0);
     await expect(page.locator("#refresh-files")).toHaveCount(0);
-    await expect(page.locator("#new-menu > summary")).toBeVisible();
+    await expect(page.locator("#new-menu > button")).toBeVisible();
     await page.keyboard.press("Escape");
     const capture = async (name) => {
       await page.screenshot({ path: path.join(output, `${name}.png`), animations: "disabled" });
       const measurement = await page.evaluate((name) => ({
         name, viewport: { width: innerWidth, height: innerHeight },
         bodyWidth: document.body.scrollWidth,
-        panels: [...document.querySelectorAll("dialog[open], .popup[open] > .popup-panel")].map((node) => {
+        panels: [...document.querySelectorAll("dialog[open], .popup-panel:popover-open")].map((node) => {
           const rect = node.getBoundingClientRect();
           return { id: node.id || node.parentElement.id, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
         }),
@@ -137,7 +137,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     await page.locator(".folio-metadata > details > summary").click();
     await capture("desktop-metadata");
     await page.locator(".folio-metadata > details > summary").click();
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await capture("desktop-menu");
     await page.keyboard.press("Escape");
     await openSettingsDialog(page);
@@ -167,7 +167,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     await page.locator("#history-close").click();
     await openMore("workspace-favorite");
     await expect(page.locator("#workspace-favorite")).toHaveText("Remove from favorites");
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await capture("desktop-menu-favorite");
     await page.keyboard.press("Escape");
     await expect(page.locator("#document-tabs, #workspace-pin")).toHaveCount(0);
@@ -179,7 +179,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     const filter = await page.locator("#workspace-filter").boundingBox();
     expect(kind.y).toBe(filter.y);
     await page.locator("#workspace-close").click();
-    await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
+    await page.locator("#new-menu > button").click(); await page.locator("#new-from-template").click();
     await page.locator("#new-note-template").selectOption("weekly");
     await capture("desktop-new-note");
     await page.locator("#cancel-new-note").click();
@@ -198,7 +198,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     await page.setViewportSize({ width: 390, height: 680 });
     await expect(page.locator("body")).toHaveAttribute("data-sidebar", "closed");
     await capture("narrow-document");
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await capture("narrow-menu");
     await page.keyboard.press("Escape");
     await openMore("share-page");
@@ -228,7 +228,7 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     await page.locator("#settings-save").click();
     await expect(page.locator("#settings-dialog")).not.toBeVisible();
     await page.setViewportSize({ width: 780, height: 420 });
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await capture("short-menu");
     await page.locator("#more-recovery > summary").click();
     await page.locator(".more-menu-scroll").evaluate(node => { node.scrollTop = node.scrollHeight; });
@@ -281,7 +281,7 @@ test("routine editing confirmations stay quiet while project errors remain visib
     await expect(page.locator("#document-message")).toBeHidden();
     await page.screenshot({ path: test.info().outputPath("quiet-project-settings.png"), animations: "disabled" });
     await page.locator("#projects-close").click();
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await page.locator("#document-tags-open").click();
     await page.locator("#tags-input").fill("research\nquiet");
     await page.locator("#tags-form button[type=submit]").click();
@@ -289,14 +289,14 @@ test("routine editing confirmations stay quiet while project errors remain visib
     await expect(page.locator("#editor")).toHaveValue(/quiet/);
     await expect(page.locator("#document-message")).toBeHidden();
     await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
-    await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
+    await page.locator("#new-menu > button").click(); await page.locator("#new-from-template").click();
     await page.locator("#new-note-title").fill("Quiet note");
     await page.locator("#new-note-form button[type=submit]").click();
     await expect(page.locator("#document-title")).toHaveText("Quiet note");
     await expect(page.locator("#document-message")).toBeHidden();
-    await page.locator("#new-menu > summary").click(); await page.locator("#new-folder").click();
-    await page.locator("#new-folder-path").fill("References");
-    await page.locator("#new-folder-form button[type=submit]").click();
+    await page.locator("#new-menu > button").click(); await page.locator("#new-folder").click();
+    await page.getByRole("textbox", { name: "Folder name" }).fill("References");
+    await page.getByRole("textbox", { name: "Folder name" }).press("Enter");
     await expect(page.locator('#file-list .directory[data-path="References"]')).toBeVisible();
     await expect(page.locator("#document-message")).toBeHidden();
   } finally { await library.close(); }
@@ -412,7 +412,7 @@ test("file hierarchy is compact and rapid clicks do not select navigation text",
       await summary.press("ArrowDown");
       await expect(child).toBeFocused();
       await protocol.dblclick({ delay: 40 });
-      await expect(page.locator("#document-title")).toContainText("Protocol.md");
+      await expect(page.locator("#document-title")).toContainText("Protocol");
       await expect(page.locator(".ProseMirror")).toContainText("A compact note hierarchy.");
       expect(await page.evaluate(() => window.getSelection().toString())).toBe("");
       await page.mouse.move(700, 700);
@@ -424,7 +424,7 @@ test("file hierarchy is compact and rapid clicks do not select navigation text",
     });
     const phone = await mobile.newPage();
     await phone.goto(page.url());
-    await expect(phone.locator("#document-title")).toContainText("Protocol.md");
+    await expect(phone.locator("#document-title")).toContainText("Protocol");
     await phone.locator("#sidebar-toggle").click();
     await expect(phone.locator("#sidebar")).toBeVisible();
     const touchRows = await phone.locator(".file-button, .directory > summary").evaluateAll(nodes =>
@@ -463,7 +463,7 @@ test("hover feedback stays neutral and stable in light and dark themes", async (
       await page.reload();
       await expect(page.locator(".ProseMirror")).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      const more = page.locator("#more-menu > summary");
+      const more = page.locator("#more-menu > button");
       await page.mouse.move(700, 700);
       const toolbarBefore = await sample(more);
       await more.hover();

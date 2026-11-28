@@ -7,17 +7,26 @@
     <meta name="referrer" content="no-referrer">
     <meta name="folio-style-nonce" content="__STYLE_NONCE__">
     <title>Folio</title>
+    <style nonce="__STYLE_NONCE__">
+      body:has(#folio-boot) { margin: 0; background: #f5f4ef; color: #484844; }
+      #folio-boot { min-height: 100dvh; display: grid; place-items: center; }
+      #folio-boot h1 { margin: 0; font: 500 1rem/1.5 system-ui, sans-serif; }
+      @media (prefers-color-scheme: dark) { body:has(#folio-boot) { background: #202020; color: #deded9; } }
+      @media (scripting: none) { #folio-root { display: none; } }
+    </style>
+    <!--FOLIO_START_SESSION-->
     <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48 256x256">
     <link rel="icon" href="/icon.svg" type="image/svg+xml" sizes="any">
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/editor.bundle.css">
     <link rel="modulepreload" href="/model.mjs">
+    <link rel="modulepreload" href="/workspace-model.mjs">
     <link rel="modulepreload" href="/editor.bundle.mjs">
     <script type="module" src="/app.mjs"></script>
   </head>
-  <body data-sidebar="open">
+  <body __FOLIO_LAYOUT__>
     <div id="folio-root">
-      <main class="startup-screen" role="status" aria-live="polite">
+      <main id="folio-boot" role="status" aria-live="polite">
         <h1>Opening Folio</h1>
       </main>
     </div>

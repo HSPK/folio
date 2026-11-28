@@ -1,5 +1,24 @@
 import { test, expect, fs, path, root, buildRoot, initialText, chooseView, reloadDocument, openFixture, metadataField, confirmDialog, primaryModifier } from "./fixture.mjs";
 
+test("opening uses the metadata title instead of the nested markdown path", async ({ page }) => {
+  await fs.mkdir(path.join(root, "Opening titles"), { recursive: true });
+  await fs.writeFile(path.join(root, "Opening titles", "physical.v2.markdown"), "---\ntitle: Reading list\n---\n\n# Body\n");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  const row = page.locator('button[data-path="Opening titles/physical.v2.markdown"]');
+  await expect(row).toHaveText("Reading list");
+  const folder = page.locator('details.directory[data-path="Opening titles"]');
+  await expect(folder).toHaveJSProperty("open", false);
+  await folder.locator(":scope > summary").click();
+  let release;
+  const hold = new Promise(resolve => { release = resolve; });
+  await page.route(/\/api\/document\?/, async route => { await hold; await route.continue(); });
+  try {
+    await row.click();
+    await expect(page.locator("#loading-message")).toHaveText("Opening “Reading list”…");
+  } finally { release(); }
+  await expect(page).toHaveTitle("Reading list — Folio");
+});
+
 test("opens a rendered editable page without changing the Markdown", async ({ page, browserName }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -9,6 +28,8 @@ test("opens a rendered editable page without changing the Markdown", async ({ pa
   await expect(heading).toBeVisible();
   await expect(editor.locator("table")).toBeVisible();
   await expect(editor.locator("pre")).toContainText("fn main()");
+  expect(await page.evaluate(() => performance.getEntriesByType("resource").map(r => new URL(r.name).pathname)
+    .filter(p => p === "/formula.mjs" || p.startsWith("/math-fonts/")))).toEqual([]);
   const task = editor.locator("li").filter({ hasText: /A task/ });
   const checkbox = task.locator('input[type="checkbox"]');
   await expect(task).toContainText("A task");
@@ -74,7 +95,7 @@ test("source changes switch to inline editing and auto-save after one second idl
   const content = "# Changed in source\n\nA **bold** paragraph.\n";
   await page.locator("#editor").fill(content);
   await chooseView(page, "rich");
-  await page.locator("#more-menu > summary").focus();
+  await page.locator("#more-menu > button").focus();
   await expect(page.getByRole("heading", { name: "Changed in source", exact: true })).toBeVisible();
   await expect(page.locator(".ProseMirror")).toContainText("A bold paragraph.");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "dirty");
@@ -92,7 +113,7 @@ test("large Source documents use the virtual editor and save exact Unicode text"
   await chooseView(page, "editor");
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.locator('[data-path="Virtual-source.md"]').click();
-  await expect(page.locator("#document-title")).toHaveText("Virtual-source.md");
+  await expect(page.locator("#document-title")).toHaveText("Virtual-source");
   await expect(page.locator("#editor")).toBeHidden();
   const editor = page.locator(".virtual-source-editor .cm-content");
   await expect(editor).toBeVisible();
@@ -205,20 +226,100 @@ test("Read links retain internal and external navigation behavior", async ({ pag
   }
 });
 
+test("external disk edits follow Live, Source and Read without reopening the note", async ({ page }) => {
+  const name = "Agent sync.md";
+  const file = path.join(root, name);
+  await openFixture(page, name, "First\n\nCaret here\n");
+  const url = page.url();
+  await fs.writeFile(file + ".tmp", "Second\n\nCaret here\n");
+  await fs.rename(file + ".tmp", file);
+  await expect(page.locator(".ProseMirror")).toContainText("Second");
+  await chooseView(page, "editor");
+  const source = page.locator("#editor");
+  await source.focus();
+  await source.evaluate(node => node.setSelectionRange(9, 9));
+  await fs.writeFile(file, "Longer second\n\nCaret here\n");
+  await expect(source).toHaveValue("Longer second\n\nCaret here\n");
+  expect(await source.evaluate(node => node.selectionStart)).toBe(16);
+  await expect(source).toBeFocused();
+  await source.press("Control+End");
+  await page.keyboard.insertText("Local word");
+  await expect.poll(() => fs.readFile(file, "utf8")).toContain("Local word");
+  await fs.writeFile(file, "From agent again\n\nCaret here\nLocal word");
+  await expect(source).toHaveValue("From agent again\n\nCaret here\nLocal word");
+  await source.press(`${primaryModifier}+z`);
+  await expect(source).toHaveValue("From agent again\n\nCaret here\n");
+  await source.press(`${primaryModifier}+s`);
+  await expect.poll(() => fs.readFile(file, "utf8")).toBe("From agent again\n\nCaret here\n");
+  await chooseView(page, "preview");
+  await fs.writeFile(file, "# Reading an external change\n");
+  await expect(page.locator("#preview")).toContainText("Reading an external change");
+  await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
+  expect(page.url()).toBe(url);
+});
+
+test("a delayed disk read cannot overwrite newer local input", async ({ page }) => {
+  await chooseView(page, "editor");
+  let release;
+  const hold = new Promise(resolve => { release = resolve; });
+  let captured;
+  const received = new Promise(resolve => { captured = resolve; });
+  const file = path.join(root, "README.md");
+  await page.route(/\/api\/document\?.*&render=source$/, async route => {
+    const reply = await route.fetch();
+    if ((await reply.json()).content !== "# From agent\n") return route.fulfill({response: reply});
+    captured();
+    await hold;
+    await route.fulfill({response: reply}).catch(() => {});
+  });
+  await fs.writeFile(file, "# From agent\n");
+  await received;
+  await page.locator("#editor").fill("# Local input\n");
+  release();
+  await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "conflict");
+  await expect(page.locator("#editor")).toHaveValue("# Local input\n");
+  expect(await fs.readFile(file, "utf8")).toBe("# From agent\n");
+});
+
+test("switching notes cancels an outstanding disk update", async ({ page }) => {
+  let captured, release;
+  const read = new Promise(resolve => { captured = resolve; });
+  const hold = new Promise(resolve => { release = resolve; });
+  await page.route(/\/api\/document\?.*&render=source$/, async route => {
+    const response = await route.fetch();
+    captured();
+    await hold;
+    await route.fulfill({ response }).catch(() => {});
+  }, {times: 1});
+  await fs.writeFile(path.join(root, "README.md"), "# Old note updated\n");
+  await read;
+  await page.locator("#file-list").getByRole("button", {name: "Second.md", exact: true}).click();
+  await expect(page.locator(".ProseMirror")).toContainText("Another note");
+  release();
+  await expect(page.locator("#document-title")).toHaveText("Second");
+});
+
 test("external changes cause a conflict without losing editor text", async ({ page }) => {
   await chooseView(page, "editor");
   await page.locator("#editor").fill("# My unsaved work\n");
   await fs.writeFile(path.join(root, "README.md"), "# Changed elsewhere\n");
   await page.keyboard.press("Control+s");
   await expect(page.locator("#conflict-message")).toBeVisible();
-  await expect(page.locator("#dirty-indicator")).toBeVisible();
+  await expect(page.locator("#dirty-indicator")).toBeHidden();
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "conflict");
-  await expect(page.locator("#document-title")).toHaveText("README.md *");
+  await expect(page.locator("#document-title")).toHaveText("README *");
   await expect(page.locator("#editor")).toHaveValue("# My unsaved work\n");
   expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe("# Changed elsewhere\n");
-  await reloadDocument(page);
+  await page.getByRole("button", {name: "Copy my edits"}).click();
+  await expect(page.locator("#conflict-copy")).toHaveText("Copied");
+  await page.getByRole("button", { name: "Use latest", exact: true }).click();
+  await expect(page.getByRole("button", {name: "Keep editing"})).toBeFocused();
   await confirmDialog(page, { accept: false });
   await expect(page.locator("#editor")).toHaveValue("# My unsaved work\n");
+  await page.getByRole("button", { name: "Use latest", exact: true }).click();
+  await confirmDialog(page);
+  await expect(page.locator("#editor")).toHaveValue("# Changed elsewhere\n");
+  await expect(page.locator(".document-conflict")).toBeHidden();
 });
 
 test("cancelled navigation after a save failure retains unsaved text", async ({ page }) => {
@@ -228,7 +329,7 @@ test("cancelled navigation after a save failure retains unsaved text", async ({ 
   await page.locator("#editor").fill("# Keep me\n");
   await page.locator("#file-list").getByRole("button", { name: "Second.md", exact: true }).click();
   await confirmDialog(page, { accept: false });
-  await expect(page.locator("#document-title")).toHaveText("README.md *");
+  await expect(page.locator("#document-title")).toHaveText("README *");
   await expect(page.locator("#editor")).toHaveValue("# Keep me\n");
 });
 
@@ -260,7 +361,7 @@ test("a completed save does not erase typing that happened during the request", 
 
 test("raw HTML remains inert and editable without executing", async ({ page }) => {
   await page.locator("#file-list").getByRole("button", { name: "Unsupported.md", exact: true }).click();
-  await expect(page.locator("#document-title")).toHaveText("Unsupported.md");
+  await expect(page.locator("#document-title")).toHaveText("Unsupported");
   await expect(page.locator("#rich-warning")).toBeHidden();
   await expect(page.locator("#document-panes")).toHaveAttribute("data-view", "rich");
   await expect(page.locator('.ProseMirror [data-type="html"]')).toContainText("<div>");
@@ -270,7 +371,7 @@ test("raw HTML remains inert and editable without executing", async ({ page }) =
 });
 
 test("creating a note never overwrites an existing file", async ({ page }) => {
-  await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
+  await page.locator("#new-menu > button").click(); await page.locator("#new-from-template").click();
   await page.locator("#new-note-title").fill("Second");
   await page.locator("#create-note").click();
   await expect(page.locator("#new-note-error")).toBeVisible();
@@ -298,20 +399,31 @@ test("metadata titles and folder actions support rename and drag moves", async (
   await expect(page.locator('button[data-path="Guides/intro.md"]')).toHaveText("Getting started");
 
   await guides.hover();
-  await guides.getByRole("button", { name: "New folder in Handbook" }).click();
-  await page.locator("#new-folder-path").fill("Guides/Child");
-  await page.locator("#create-folder").click();
+  await guides.getByRole("button", { name: "Add in Handbook" }).click();
+  await page.getByRole("menuitem", { name: "New folder" }).click();
+  const folderName = page.getByRole("textbox", { name: "Folder name" });
+  await expect(folderName).toBeFocused();
+  expect(await fs.readdir(path.join(root, "Guides"))).not.toContain("New folder");
+  await folderName.fill("Child");
+  await folderName.press("Enter");
   await expect(page.locator('details.directory[data-path="Guides/Child"] > summary')).toBeVisible();
 
-  await guides.hover();
-  await guides.getByRole("button", { name: "New note in Handbook" }).click();
-  await page.locator("#new-note-title").fill("Draft");
-  await expect(page.locator("#new-note-hint")).toHaveText("File: Guides/Draft.md");
-  await page.locator("#create-note").click();
-  await expect(page.locator("#document-title")).toHaveText("Draft");
-  await expect(page).toHaveTitle("Draft — Folio");
+  await page.locator('button[data-path="Guides/intro.md"]').hover();
+  await page.getByRole("button", { name: "Add in Getting started" }).click();
+  await page.getByRole("menuitem", { name: "New note" }).click();
+  const fileName = page.getByRole("textbox", { name: "File name" });
+  await expect(fileName).toBeFocused();
+  expect(await fs.readdir(path.join(root, "Guides"))).not.toContain("Untitled.md");
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await fileName.fill("intro.md");
+  await fileName.press("Enter");
+  await expect(fileName).toHaveAttribute("aria-invalid", "true");
+  await fileName.fill("Draft");
+  await fileName.press("Enter");
 
   const draft = page.locator('button[data-path="Guides/Draft.md"]');
+  await expect(draft).toBeFocused();
+  await draft.click();
   await draft.click({ button: "right" });
   await page.locator("#file-details").click();
   await expect(page.locator("#details-path")).toHaveText("Guides/Draft.md");
@@ -319,18 +431,27 @@ test("metadata titles and folder actions support rename and drag moves", async (
 
   await draft.click({ button: "right" });
   await page.locator("#file-rename").click();
-  await page.locator("#rename-path").fill("Renamed.md");
-  await page.locator("#confirm-rename").click();
-  await expect(page.locator("#rename-dialog")).toBeHidden();
+  await expect(fileName).toBeFocused();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await fileName.fill("Renamed");
+  await fileName.press("Enter");
   const renamed = page.locator('button[data-path="Guides/Renamed.md"]');
   await expect(renamed).toBeVisible();
-  await expect(page.locator("#document-title")).toHaveText("Draft");
+  await expect(page.locator("#document-title")).toContainText("Renamed");
   expect(await fs.stat(path.join(root, "Guides", "Renamed.md"))).toBeTruthy();
 
   const child = page.locator('details.directory[data-path="Guides/Child"] > summary');
-  await renamed.dragTo(child);
+  const restingFill = await child.evaluate(node => getComputedStyle(node).backgroundColor);
+  await renamed.hover();
+  await page.mouse.down();
+  await child.hover();
+  await child.hover(); // Browsers may need a second movement to dispatch dragover.
+  await expect(child.locator("..")).toHaveAttribute("data-drop-target", "true");
+  await expect(child).not.toHaveCSS("background-color", restingFill);
+  await expect(child).toHaveCSS("box-shadow", "none");
+  await page.mouse.up();
   await expect(page.locator('button[data-path="Guides/Child/Renamed.md"]')).toBeVisible();
-  await expect(page.locator("#document-title")).toHaveText("Draft");
+  await expect(page.locator("#document-title")).toContainText("Renamed");
   expect(await fs.stat(path.join(root, "Guides", "Child", "Renamed.md"))).toBeTruthy();
 
   await page.locator('button[data-path="Guides/intro.md"]').click();
@@ -490,6 +611,10 @@ test("math, empty table cells and list headings open safely in Live mode", async
   await expect(editor.locator('[data-type="math_block"] .katex')).toHaveCount(2);
   await expect(editor.locator('[data-type="math_inline"]')).toHaveCount(2);
   await expect(editor.locator('[data-type="math_inline"] .katex')).toHaveCount(2);
+  await expect.poll(() => page.evaluate(async () => {
+    await document.fonts.ready;
+    return [...document.fonts].filter(f => f.family.startsWith("KaTeX") && f.status === "loaded").length;
+  })).toBeGreaterThan(0);
   const inlineMath = editor.locator('[data-type="math_inline"]').first();
   await inlineMath.locator(".folio-math-output").click();
   const inlineSource = inlineMath.getByLabel("Inline TeX source");

@@ -81,7 +81,7 @@ impl Root {
         bytes: &[u8],
         check: impl Fn() -> Result<(), ApiError>,
     ) -> Result<String, ApiError> {
-        validate_relative(directory)?;
+        super::validate_directory_path(directory)?;
         validate_size(bytes.len() as u64)?;
         let mut parent = self.directory.try_clone()?;
         for component in directory.split('/') {

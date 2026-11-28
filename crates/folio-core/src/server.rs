@@ -1,50 +1,28 @@
 //! Markdown service shared by native applications and the authenticated CLI.
 
-#[path = "server/accounts.rs"]
 mod accounts;
-#[path = "server/attachments.rs"]
 mod attachments;
-#[path = "server/authentication.rs"]
 mod authentication;
-#[path = "server/collaboration.rs"]
 mod collaboration;
-#[path = "server/files.rs"]
 mod files;
-#[path = "server/frontmatter.rs"]
 mod frontmatter;
-#[path = "server/history.rs"]
 mod history;
-#[path = "server/images.rs"]
 mod images;
-#[path = "server/links.rs"]
 mod links;
-#[path = "server/listen.rs"]
 mod listen;
-#[path = "server/markdown.rs"]
 mod markdown;
-#[path = "server/net.rs"]
 mod net;
-#[path = "server/permissions.rs"]
 mod permissions;
-#[path = "server/preferences.rs"]
 mod preferences;
-#[path = "server/previews.rs"]
 mod previews;
-#[path = "server/projects.rs"]
 mod projects;
-#[path = "server/refactor.rs"]
+mod recycle;
 mod refactor;
-#[path = "server/resources.rs"]
 mod resources;
-#[path = "server/routes.rs"]
 mod routes;
-#[path = "server/search.rs"]
 mod search;
-#[path = "server/security.rs"]
 mod security;
-#[path = "server/state_store.rs"]
 mod state_store;
-#[path = "server/workspaces.rs"]
 mod workspaces;
 
 pub use listen::{
@@ -80,7 +58,7 @@ const GRACEFUL_TIMEOUT: Duration = Duration::from_millis(250);
 const RUNTIME_TIMEOUT: Duration = Duration::from_millis(350);
 const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-__STYLE_NONCE__'; style-src-attr 'unsafe-inline'; \
-    img-src 'self'; connect-src 'self'; font-src 'self' data:; \
+    img-src 'self' data:; frame-src 'self' blob:; connect-src 'self'; font-src 'self' data:; \
     object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const ASSET_CSP: &str = "default-src 'none'; script-src 'none'; object-src 'none'; \
     base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox";
@@ -233,14 +211,14 @@ fn start_configured(
         .flatten()
         .unwrap_or_default();
     let appearance = Arc::new(RwLock::new(settings.appearance));
-    let web_preferences = Arc::new(RwLock::new(settings.web));
+    let web_preferences = RwLock::new(settings.web);
     let projects = user_auth
         .as_ref()
         .map(|auth| projects::Registry::open(root.clone(), auth.user_store()).map(Arc::new))
         .transpose()?;
     if projects.is_none() {
         root.attach_resources(
-            state_store::Store::temporary()
+            state_store::Store::local(root.path())
                 .map_err(|error| error.message)?
                 .project("local"),
         )
@@ -248,28 +226,30 @@ fn start_configured(
     }
     let state = Arc::new(AppState {
         library: Arc::new(Library::new(root.clone())),
-        projects,
         access: None,
-        port,
-        host,
-        allowed_hosts: allowed_hosts.into(),
-        authorization: format!("Bearer {token}"),
-        cookie_name: format!("folio_session_{port}"),
-        user_cookie_name: user_auth
-            .as_ref()
-            .map(|auth| auth.cookie_name().to_owned())
-            .unwrap_or_else(|| "folio_user_session".into()),
-        user_auth,
-        token,
-        style_nonce,
-        content_policy,
-        health: health.clone(),
-        requests: Arc::new(Semaphore::new(8)),
-        workers: Arc::new(Semaphore::new(2)),
-        settings_store,
-        settings_update: Arc::new(Mutex::new(())),
-        web_preferences,
-        appearance: appearance.clone(),
+        shared: Arc::new(ServerState {
+            projects,
+            port,
+            host,
+            allowed_hosts: allowed_hosts.into(),
+            authorization: format!("Bearer {token}"),
+            cookie_name: format!("folio_session_{port}"),
+            user_cookie_name: user_auth
+                .as_ref()
+                .map(|auth| auth.cookie_name().to_owned())
+                .unwrap_or_else(|| "folio_user_session".into()),
+            user_auth,
+            token,
+            style_nonce,
+            content_policy,
+            health: health.clone(),
+            requests: Arc::new(Semaphore::new(8)),
+            workers: Arc::new(Semaphore::new(2)),
+            settings_store,
+            settings_update: Mutex::new(()),
+            web_preferences,
+            appearance: appearance.clone(),
+        }),
     });
     let thread_health = health.clone();
     let (shutdown, shutdown_rx) = oneshot::channel();
@@ -379,7 +359,7 @@ fn serve(
     health.running.store(false, Ordering::Release);
     health.stopping.store(true, Ordering::Release);
     runtime.shutdown_timeout(RUNTIME_TIMEOUT);
-    if state.workers.available_permits() != 2 {
+    if state.shared.workers.available_permits() != 2 {
         Err(
             "A filesystem operation did not finish before shutdown; pending saves were cancelled."
                 .into(),
@@ -416,11 +396,15 @@ impl Library {
 #[derive(Clone)]
 struct AppState {
     library: Arc<Library>,
-    projects: Option<Arc<projects::Registry>>,
     access: Option<projects::Access>,
+    shared: Arc<ServerState>,
+}
+
+struct ServerState {
+    projects: Option<Arc<projects::Registry>>,
     port: u16,
     host: Ipv4Addr,
-    allowed_hosts: Arc<[AllowedHostname]>,
+    allowed_hosts: Box<[AllowedHostname]>,
     authorization: String,
     cookie_name: String,
     user_cookie_name: String,
@@ -432,8 +416,8 @@ struct AppState {
     requests: Arc<Semaphore>,
     workers: Arc<Semaphore>,
     settings_store: Option<SettingsStore>,
-    settings_update: Arc<Mutex<()>>,
-    web_preferences: Arc<RwLock<WebPreferences>>,
+    settings_update: Mutex<()>,
+    web_preferences: RwLock<WebPreferences>,
     appearance: Arc<RwLock<Appearance>>,
 }
 
@@ -448,7 +432,7 @@ impl AppState {
     fn authorize(&self, path: Option<&str>, write: bool) -> Result<(), ApiError> {
         match &self.access {
             Some(access) => access.check(path, write),
-            None if self.user_auth.is_none() => Ok(()),
+            None if self.shared.user_auth.is_none() => Ok(()),
             None => Err(ApiError::forbidden("Select an accessible project first.")),
         }
     }

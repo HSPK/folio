@@ -1,10 +1,11 @@
 import { documentSession } from "../../state/document";
 import { decodedPreview } from "../../api/contracts";
 import { decorateCodeBlocks } from "@folio/editor-runtime";
+import { applyTableLayout, readTableLayout } from "../../../shared/table-layout";
 import { MAX_MARKDOWN_BYTES, serializeEditorText } from "@folio/model";
 import type { DocumentSessionId } from "@folio/model";
 import { shell } from "../../state/shell";
-import { clearTimer, requireValue } from "../../types/elements";
+import { element, clearTimer, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { connectionFailure } from "../accounts/authentication";
 import { api } from "../core/api";
@@ -42,14 +43,29 @@ export function emptyPreview(title: string | null, message: string): void {
   const paragraph = document.createElement("p");
   paragraph.textContent = message;
   container.append(heading, paragraph);
-  appState.ui.preview.replaceChildren(container);
+  element("preview").replaceChildren(container);
 }
+
+function readingAnchor(viewport: HTMLElement) {
+  const headings = viewport.querySelectorAll<HTMLElement>(":is(h1,h2,h3,h4,h5,h6)[id]");
+  const top = viewport.getBoundingClientRect().top;
+  let low = 0,
+    high = headings.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (headings[mid].getBoundingClientRect().top <= top + 28) low = mid + 1;
+    else high = mid;
+  }
+  const heading = headings[low - 1];
+  return heading && { id: heading.id, offset: heading.getBoundingClientRect().top - top };
+}
+
 export function renderPreview(html: string | null, resetScroll = false): void {
   if (html === null) {
     previewState.deferredPreview = null;
     appState.renderedPreviewDocument = null;
     appState.renderedPreviewRevision = -1;
-    appState.ui.preview.replaceChildren();
+    element("preview").replaceChildren();
     if (["split", "preview"].includes(shell.view)) schedulePreview(0);
     return;
   }
@@ -66,16 +82,34 @@ export function renderPreview(html: string | null, resetScroll = false): void {
     return;
   }
   previewState.deferredPreview = null;
-  const scrollTop = resetScroll ? 0 : appState.ui.preview.scrollTop;
+  const scrollTop = resetScroll ? 0 : element("preview").scrollTop;
+  const anchor = scrollTop > 0 ? readingAnchor(element("preview")) : null;
   // This is the only HTML sink: the authenticated Rust renderer escapes and sanitizes Markdown.
-  appState.ui.preview.innerHTML = html;
-  decorateCodeBlocks(appState.ui.preview);
-  for (const node of appState.ui.preview.querySelectorAll<HTMLAnchorElement>("a[href], img[src]")) {
-    const attribute = node.tagName === "IMG" ? "src" : "href";
-    node.dataset.noteUrl = requireValue(node.getAttribute(attribute), "Resource URL");
+  // Resolve the authorized URL and loading policy before a live image can start a request.
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  for (const node of template.content.querySelectorAll<HTMLAnchorElement | HTMLImageElement>("a[href], img[src]")) {
+    const image = node.tagName === "IMG";
+    if (image) {
+      (node as HTMLImageElement).loading = "lazy";
+      (node as HTMLImageElement).decoding = "async";
+    }
+    node.dataset.noteUrl = requireValue(node.getAttribute(image ? "src" : "href"), "Resource URL");
     node.dataset.noteTitle = node.getAttribute("title") ?? "";
+    refreshPreviewLink(node);
   }
-  for (const paragraph of appState.ui.preview.querySelectorAll<HTMLElement>("p:has(> img)")) {
+  element("preview").replaceChildren(template.content);
+  decorateCodeBlocks(element("preview"));
+  for (const [index, table] of element("preview").querySelectorAll("table").entries()) {
+    const columns = table.rows[0]?.cells.length;
+    if (!columns) continue;
+    const scroll = document.createElement("div");
+    scroll.className = "folio-reading-table";
+    table.replaceWith(scroll);
+    scroll.append(table);
+    applyTableLayout(table, columns, readTableLayout(documentSession.resourceId, index, columns));
+  }
+  for (const paragraph of element("preview").querySelectorAll<HTMLElement>("p:has(> img)")) {
     const nodes = [...paragraph.childNodes];
     const content = nodes.filter((node) => node.nodeType !== Node.TEXT_NODE || requireValue(node.textContent).trim());
     const images: HTMLImageElement[] = [];
@@ -101,9 +135,8 @@ export function renderPreview(html: string | null, resetScroll = false): void {
     paragraph.classList.add("folio-image-row");
     paragraph.style.setProperty("--folio-image-row-count", String(images.length));
   }
-  refreshPreviewLinks();
   if (!html.trim()) emptyPreview("A fresh page", "Start typing Markdown");
-  for (const link of appState.ui.preview.querySelectorAll<HTMLAnchorElement>(
+  for (const link of element("preview").querySelectorAll<HTMLAnchorElement>(
     'a[href]:not([href^="/"]):not([href^="#"])',
   )) {
     if (link.origin !== window.location.origin) {
@@ -111,31 +144,37 @@ export function renderPreview(html: string | null, resetScroll = false): void {
       link.rel = "noopener noreferrer";
     }
   }
-  appState.ui.preview.scrollTop = scrollTop;
+  const sameSection =
+    anchor && element("preview").querySelector<HTMLElement>(`:is(h1,h2,h3,h4,h5,h6)#${CSS.escape(anchor.id)}`);
+  if (sameSection && anchor) {
+    element("preview").scrollTop +=
+      sameSection.getBoundingClientRect().top - element("preview").getBoundingClientRect().top - anchor.offset;
+  } else element("preview").scrollTop = scrollTop;
   appState.renderedPreviewDocument = documentSession.id;
   appState.renderedPreviewRevision = documentSession.revision;
   restoreViewPosition();
 }
 export function refreshPreviewLinks(): void {
-  for (const node of appState.ui.preview.querySelectorAll<HTMLElement>("[data-note-url]")) {
-    const attribute = node.tagName === "IMG" ? "src" : "href";
-    const url = projectUrl(node.dataset.noteUrl);
-    if (url) {
-      node.setAttribute(attribute, url);
-      if (node.dataset.noteTitle) node.title = node.dataset.noteTitle;
-      else node.removeAttribute("title");
-    } else {
-      node.removeAttribute(attribute);
-      node.title = "Resource unavailable";
-    }
+  for (const node of element("preview").querySelectorAll<HTMLElement>("[data-note-url]")) refreshPreviewLink(node);
+}
+function refreshPreviewLink(node: HTMLElement): void {
+  const attribute = node.tagName === "IMG" ? "src" : "href";
+  const url = projectUrl(node.dataset.noteUrl);
+  if (url) {
+    if (node.getAttribute(attribute) !== url) node.setAttribute(attribute, url);
+    if (node.dataset.noteTitle) node.title = node.dataset.noteTitle;
+    else node.removeAttribute("title");
+  } else {
+    node.removeAttribute(attribute);
+    node.title = "Resource unavailable";
   }
 }
 export function scrollToHeading(hash: string): void {
   if (!hash || hash === "#") {
     const scroller =
       shell.view === "rich"
-        ? appState.element("rich-editor").querySelector<HTMLElement>("[data-editor-scroller]")
-        : appState.ui.preview;
+        ? element("rich-editor").querySelector<HTMLElement>("[data-editor-scroller]")
+        : element("preview");
     scroller?.scrollTo({ top: 0, behavior: "auto" });
     return;
   }
@@ -149,21 +188,21 @@ export function scrollToHeading(hash: string): void {
     appState.inlineEditor.jumpTo(id);
     return;
   }
-  const target = appState.ui.preview.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+  const target = element("preview").querySelector<HTMLElement>(`#${CSS.escape(id)}`);
   if (!target) return;
   const top =
     target.getBoundingClientRect().top -
-    appState.ui.preview.getBoundingClientRect().top +
-    appState.ui.preview.scrollTop -
+    element("preview").getBoundingClientRect().top +
+    element("preview").scrollTop -
     14;
-  appState.ui.preview.scrollTo({
+  element("preview").scrollTo({
     top: Math.max(0, top),
     behavior: "instant",
   });
 }
 export function schedulePreview(delay = settingsState.webPreferences.previewDelayMs): void {
   invalidatePreview();
-  if (!documentSession.current) return;
+  if (!documentSession.current || documentSession.current.id.startsWith("local-new:")) return;
   if (!["split", "preview"].includes(shell.view)) return;
   if (currentEditorAnalysis().bytes > MAX_MARKDOWN_BYTES) {
     previewStatus("Preview paused: over 4 MiB", true);
@@ -203,7 +242,7 @@ export function schedulePreview(delay = settingsState.webPreferences.previewDela
     appState.previewController = controller;
     const body = {
       id: requireValue(documentSession.current).id,
-      content: serializeEditorText(requireValue(documentSession.current), appState.ui.editor.value),
+      content: serializeEditorText(requireValue(documentSession.current), appState.editor.value),
     };
     previewStatus("Updating…");
     try {

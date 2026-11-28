@@ -1,31 +1,29 @@
 import { CellSelection } from "@milkdown/prose/tables";
 import { Plugin } from "@milkdown/prose/state";
 import { $prose } from "@milkdown/utils";
-import { createNodeToolbar, toolButton } from "./node-toolbar.ts";
+import { createNodeToolbar } from "./node-toolbar.ts";
 import { createIcon } from "./icons.ts";
 import { EditorView } from "@milkdown/prose/view";
 import { createTableNodeView, type TableHandle, type TableViewOptions } from "./table-node-view.ts";
 import type { InlineEditorOptions } from "./types/editor.ts";
-import { nodeElement } from "./dom.ts";
+import { nodeElement, createButton } from "./dom.ts";
 import { errorMessage } from "./errors.ts";
 import type { Lifetime } from "../../shared/lifetime.ts";
 export function createTableTools({
   lifetime,
   root,
   onNotice,
+  tableLayoutScope,
 }: {
   lifetime: Lifetime;
   root: HTMLElement;
   onNotice?: InlineEditorOptions["onNotice"];
+  tableLayoutScope?: InlineEditorOptions["tableLayoutScope"];
 }) {
   const toolbar = document.createElement("div");
   toolbar.id = "folio-table-tools";
   toolbar.className = "folio-table-tools";
   toolbar.setAttribute("aria-label", "Table actions");
-  const heading = document.createElement("div");
-  heading.className = "folio-table-menu-heading";
-  heading.textContent = "Table settings";
-  heading.setAttribute("role", "presentation");
   const actions = document.createElement("div");
   actions.className = "folio-table-actions";
   const items: {
@@ -40,7 +38,7 @@ export function createTableTools({
   const labels = {
     row: ["Insert above", "Insert below", "Duplicate row", "Clear contents", "Delete row"],
     column: ["Insert left", "Insert right", "Duplicate column", "Clear contents", "Delete column"],
-    table: ["", "", "Duplicate table", "Clear contents", "Delete table"],
+    table: ["", "", "Duplicate", "Clear contents", "Delete"],
   };
   function run(action: string) {
     try {
@@ -55,7 +53,7 @@ export function createTableTools({
     }
   }
   for (const [index, action] of ["before", "after", "duplicate", "clear", "delete"].entries()) {
-    const button = toolButton({
+    const button = createButton({
       label: labels.column[index],
       text: labels.column[index],
       icon: ["arrow-left", "arrow-right", "copy", "circle-x", "trash"][index],
@@ -72,7 +70,7 @@ export function createTableTools({
   alignment.setAttribute("aria-label", "Alignment");
   const alignments = new Map<string, HTMLButtonElement>();
   for (const value of ["left", "center", "right"]) {
-    const button = toolButton({
+    const button = createButton({
       label: `Align ${value}`,
       text: `Align ${value}`,
       icon: `align-${value}`,
@@ -98,7 +96,7 @@ export function createTableTools({
     ["tsv", "TSV"],
     ["json", "JSON"],
   ]) {
-    const button = toolButton({
+    const button = createButton({
       label: `Copy table as ${text}`,
       text,
       onClick: async () => {
@@ -115,7 +113,34 @@ export function createTableTools({
     formats.append(button);
   }
   exports.append(toggle, formats);
-  toolbar.append(heading, actions, alignment, exports);
+  const display = document.createElement("div");
+  display.className = "folio-table-actions folio-table-display";
+  const wrap = createButton({
+    label: "Wrap text",
+    text: "Wrap text",
+    icon: "text",
+    onClick: () => {
+      menu.target()?.layout_fn(false);
+      menu.refresh();
+      menu.position();
+    },
+  });
+  wrap.setAttribute("role", "menuitemcheckbox");
+  const check = createIcon("check");
+  check.classList.add("folio-menu-check");
+  wrap.append(check);
+  const reset = createButton({
+    label: "Reset widths",
+    text: "Reset widths",
+    icon: "expand-width",
+    onClick: () => {
+      menu.target()?.layout_fn(true);
+      menu.dismiss();
+    },
+  });
+  reset.setAttribute("role", "menuitem");
+  display.append(wrap, reset);
+  toolbar.append(actions, alignment, display, exports);
   lifetime.listen(exports, "toggle", () => menu.position());
   const menu = createNodeToolbar<TableHandle>({
     lifetime,
@@ -128,7 +153,9 @@ export function createTableTools({
       if (shown !== target) exports.open = false;
       shown = target;
       const axis = target.axis_fn();
-      heading.hidden = axis !== "table";
+      display.hidden = axis !== "table";
+      wrap.setAttribute("aria-checked", String(target.wraps_fn()));
+      reset.disabled = !target.customWidths_fn();
       exports.hidden = axis !== "table";
       target.trigger_fn().setAttribute("aria-expanded", "true");
       for (const { button, action, index } of items) {
@@ -259,6 +286,7 @@ export function createTableTools({
     },
     nodeView(options: TableViewOptions) {
       return createTableNodeView(options, {
+        tableLayoutScope,
         toolbarId: toolbar.id,
         menu,
         onNotice,

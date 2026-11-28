@@ -3,11 +3,11 @@ import { projectModel } from "../../state/projects";
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
 import { decodedWorkspace } from "../../api/contracts";
-import { restoredWorkspaceNote, sameWorkspaceNote, type WorkspaceAction } from "../../models/workspace-lists";
+import { restoredWorkspaceNote, sameWorkspaceNote, type WorkspaceAction, isResourceId } from "@folio/model";
 import { createWorkspaceService } from "../../services/workspace";
 import { workspaceModel } from "../../state/workspace";
 import type { WorkspaceNote } from "../../types/domain";
-import { requireValue } from "../../types/elements";
+import { element, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { isRecord } from "../../types/guards";
 import { isAbortError } from "../../api/error";
@@ -15,19 +15,22 @@ import { closeMenus, connectionFailure, handleAuthenticationFailure } from "../a
 import { isConnectionLoss } from "../core/recovery";
 import { api } from "../core/api";
 import { appState } from "../core/bootstrap";
-import { documentNotice, notice, setText } from "../core/dom";
+import { createListRow, documentNotice, notice, setText } from "../core/dom";
 import { readLayoutPreference, storeLayoutPreference } from "../core/layout";
 import { showDialog } from "../dialogs/dialogs";
-import { createIcon } from "@folio/editor-runtime";
+import { createIcon, createButton } from "@folio/editor-runtime";
 import { persistCurrentDraft } from "../documents/drafts";
 import { commitUrl, navigateTo } from "../documents/navigation";
+import { documentReadUrl, entryResourceId } from "../documents/resources";
+import { activePanelPath } from "../../state/library";
+import { openFilePanelResource } from "../navigation/panels";
 import { applicationSignal, listen, onApplicationDispose } from "../lifecycle";
-import { switchProject } from "../projects/projects";
+import { projectStorageKey, switchProject } from "../projects/projects";
 
 let workspaceService: ReturnType<typeof createWorkspaceService> | null = null;
 let workspaceControlSignature: string | null = null;
 export function initializeWorkspaceWorkspace(): void {
-  const dialog = appState.element("workspace-dialog");
+  const dialog = element("workspace-dialog");
   workspaceModel.reset();
   workspaceControlSignature = null;
   const service = createWorkspaceService({
@@ -53,11 +56,11 @@ export function initializeWorkspaceWorkspace(): void {
       workspaceControlSignature = null;
     }
   });
-  listen(appState.element("workspace-open"), "click", () => void openWorkspace());
-  listen(appState.element("workspace-close"), "click", () => dialog.close());
-  listen(appState.element("workspace-kind"), "change", renderWorkspaceList);
-  listen(appState.element("workspace-filter"), "input", renderWorkspaceList);
-  listen(appState.element("workspace-favorite"), "click", async () => {
+  listen(element("workspace-open"), "click", () => void openWorkspace());
+  listen(element("workspace-close"), "click", () => dialog.close());
+  listen(element("workspace-kind"), "change", renderWorkspaceList);
+  listen(element("workspace-filter"), "input", renderWorkspaceList);
+  listen(element("workspace-favorite"), "click", async () => {
     closeMenus();
     if (!projectModel.active || !documentSession.current) return;
     const project = projectModel.active.id;
@@ -82,7 +85,7 @@ export function activeWorkspaceKey() {
 export async function loadUserWorkspace(): Promise<void> {
   if (
     authenticationSession.mode !== "users" ||
-    !appState.ui.authScreen.hidden ||
+    !element("auth-screen").hidden ||
     authenticationSession.scope.signal.aborted
   )
     return;
@@ -102,19 +105,97 @@ export async function changeWorkspace(action: WorkspaceAction) {
 }
 
 export function noteVisited(): void {
+  if (authenticationSession.mode === "launchToken") {
+    storeLayoutPreference(activeWorkspaceKey(), "null");
+    return;
+  }
   if (authenticationSession.mode !== "users" || !projectModel.active || !documentSession.current) return;
   const note = { project: projectModel.active.id, id: documentSession.current.id };
+  if (documentSession.resourceId) {
+    try {
+      sessionStorage.setItem(
+        "folio.start.note",
+        JSON.stringify({
+          ...note,
+          reader: authenticationSession.user?.username,
+          page: window.location.pathname,
+          source: documentReadUrl(note.id).endsWith("&render=source"),
+        }),
+      );
+    } catch {
+      // Read-ahead is optional.
+    }
+  }
   storeLayoutPreference(activeWorkspaceKey(), JSON.stringify(note));
   void changeWorkspace({ action: "visit", ...note }).catch((error) => {
     if (!isAbortError(error)) documentNotice(`Recents update failed: ${error.message}`, "warning");
   });
 }
 
+export async function fileVisited(path: string, resourceId?: string): Promise<void> {
+  if (authenticationSession.mode !== "launchToken" && (authenticationSession.mode !== "users" || !projectModel.active))
+    return;
+  const selection = projectModel.selection,
+    project = projectModel.active?.id ?? "local";
+  const url = new URL("/", appState.committedUrl);
+  if (authenticationSession.mode === "users") url.searchParams.set("project", project);
+  if (resourceId) url.searchParams.set("asset", resourceId);
+  commitUrl(url, "replace");
+  storeLayoutPreference(
+    activeWorkspaceKey(),
+    JSON.stringify({ project, path, kind: "asset", ...(resourceId ? { id: resourceId } : {}) }),
+  );
+  try {
+    sessionStorage.removeItem("folio.start.note");
+  } catch {
+    // Read-ahead is optional.
+  }
+  try {
+    const id = resourceId ?? (await entryResourceId(path));
+    if (selection !== projectModel.selection || activePanelPath() !== path) return;
+    url.searchParams.set("asset", id);
+    commitUrl(url, "replace");
+    storeLayoutPreference(activeWorkspaceKey(), JSON.stringify({ project, id, path, kind: "asset" }));
+    if (authenticationSession.mode === "users") await changeWorkspace({ action: "visit", project, id });
+  } catch (cause) {
+    if (selection === projectModel.selection && !isAbortError(cause))
+      documentNotice(`Recents update failed: ${errorContext(cause).message}`, "warning");
+  }
+}
+
+export function rememberedFilePanel(): { project: string; path: string; id?: string } | null {
+  if (authenticationSession.mode !== "users" && authenticationSession.mode !== "launchToken") return null;
+  const url = new URL(appState.committedUrl);
+  if (url.searchParams.has("document") || url.searchParams.has("asset")) return null;
+  try {
+    const saved: unknown = JSON.parse(readLayoutPreference(activeWorkspaceKey()) ?? "null");
+    const project =
+      authenticationSession.mode === "launchToken"
+        ? "local"
+        : (url.searchParams.get("project") ?? projectModel.active?.id ?? readLayoutPreference(projectStorageKey()));
+    if (
+      isRecord(saved) &&
+      saved.kind === "asset" &&
+      saved.project === project &&
+      typeof saved.project === "string" &&
+      typeof saved.path === "string" &&
+      saved.path.length > 0
+    ) {
+      return { project: saved.project, path: saved.path, ...(isResourceId(saved.id) ? { id: saved.id } : {}) };
+    }
+  } catch {
+    /* An incomplete preference must not prevent connecting. */
+  }
+  return null;
+}
+
 export function restoreActiveWorkspaceNote(): void {
+  if (rememberedFilePanel()) return;
   if (!workspaceModel.loaded || documentSession.current || authenticationSession.mode !== "users") return;
-  const url = new URL(window.location.href);
-  if (url.searchParams.has("document")) return;
-  const requested = url.searchParams.get("project");
+  const url = new URL(appState.committedUrl);
+  if (url.searchParams.has("document") || url.searchParams.has("asset")) return;
+  const remembered = projectModel.active?.id ?? readLayoutPreference(projectStorageKey());
+  const requested = url.searchParams.get("project") ?? (remembered && projectModel.get(remembered) ? remembered : null);
   let saved: { id: string; project: string } | null = null;
   try {
     const value: unknown = JSON.parse(readLayoutPreference(activeWorkspaceKey()) ?? "null");
@@ -128,7 +209,7 @@ export function restoreActiveWorkspaceNote(): void {
   const note = restoredWorkspaceNote(workspaceModel.lists, requested, saved);
   if (!note) return;
   url.searchParams.set("project", note.project);
-  url.searchParams.set("document", note.id);
+  url.searchParams.set(/\.(md|markdown)$/i.test(note.path) ? "document" : "asset", note.id);
   commitUrl(url, "replace");
 }
 
@@ -150,26 +231,30 @@ export function refreshWorkspaceFavorite(): void {
     documentSession.current &&
     sameWorkspaceNote(note, projectModel.active.id, documentSession.current.id);
   setText(
-    appState.element("workspace-favorite"),
+    element("workspace-favorite"),
     workspaceModel.lists.favorites.some(isActive) ? "Remove from favorites" : "Add to favorites",
   );
 }
 
-export async function openWorkspaceNote(note: WorkspaceNote): Promise<void> {
+async function openWorkspaceNote(note: WorkspaceNote): Promise<void> {
   const owner = applicationSignal();
   const scope = authenticationSession.scope;
   const current = () => !owner.aborted && authenticationSession.isCurrent(scope);
-  appState.element("workspace-dialog").close();
+  element("workspace-dialog").close();
   try {
     await persistCurrentDraft();
     if (!current()) return;
-    if (projectModel.active?.id === note.project) await navigateTo(note.id);
-    else {
+    if (projectModel.active?.id === note.project) {
+      if (/\.(md|markdown)$/i.test(note.path)) await navigateTo(note.id);
+      else await openFilePanelResource(note.id);
+    } else {
       await loadProjects();
       if (!current()) return;
-      const url = new URL(window.location.href);
+      const url = new URL(appState.committedUrl);
       url.searchParams.set("project", note.project);
-      url.searchParams.set("document", note.id);
+      url.searchParams.delete("asset");
+      url.searchParams.delete("document");
+      url.searchParams.set(/\.(md|markdown)$/i.test(note.path) ? "document" : "asset", note.id);
       url.hash = "";
       await switchProject(note.project, { url });
     }
@@ -180,54 +265,49 @@ export async function openWorkspaceNote(note: WorkspaceNote): Promise<void> {
   }
 }
 
-export function renderWorkspaceList(): void {
-  const mode = appState.element("workspace-kind").value;
+function renderWorkspaceList(): void {
+  const mode = element("workspace-kind").value;
   if (mode !== "favorites" && mode !== "recent") {
-    notice(appState.element("workspace-message"), "Unknown workspace view", "error");
+    notice(element("workspace-message"), "Unknown workspace view", "error");
     return;
   }
   const notes = workspaceModel.lists[mode];
-  const query = appState.element("workspace-filter").value.trim().toLowerCase();
+  const query = element("workspace-filter").value.trim().toLowerCase();
   const matching = notes.filter((note) => `${note.title} ${note.path}`.toLowerCase().includes(query));
-  appState.element("workspace-list").replaceChildren(
+  element("workspace-list").replaceChildren(
     ...matching.map((note) => {
-      const row = document.createElement("div");
-      const open = document.createElement("button");
-      open.type = "button";
-      open.className = "workspace-item-name";
       // Untitled notes are listed by file name; the full path stays on the detail line.
-      open.textContent = note.title === note.path ? (note.path.split("/").at(-1) ?? note.title) : note.title;
-      const detail = document.createElement("small");
-      detail.textContent = `${projectModel.items.find((project) => project.id === note.project)?.name ?? "Project"} / ${note.path}`;
-      open.append(detail);
-      open.addEventListener("click", () => void openWorkspaceNote(note));
-      row.append(createIcon("file"), open);
+      const row = createListRow(
+        note.title === note.path ? (note.path.split("/").at(-1) ?? note.title) : note.title,
+        `${projectModel.items.find((project) => project.id === note.project)?.name ?? "Project"} / ${note.path}`,
+        () => void openWorkspaceNote(note),
+      );
+      row.prepend(createIcon("file"));
       if (mode === "favorites") {
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.textContent = "Remove";
+        const remove = createButton({ label: "Remove" });
         remove.addEventListener("click", () => {
           void changeWorkspace({ action: "favorite", project: note.project, id: note.id, value: false }).catch(
             (error) => {
-              if (!isAbortError(error)) notice(appState.element("workspace-message"), error.message, "error");
+              if (!isAbortError(error)) notice(element("workspace-message"), error.message, "error");
             },
           );
         });
+
         row.append(remove);
       }
       return row;
     }),
   );
   notice(
-    appState.element("workspace-message"),
+    element("workspace-message"),
     matching.length ? "" : query ? "No matching notes" : mode === "favorites" ? "No favorites yet" : "No recent notes",
   );
 }
 
 export async function openWorkspace(): Promise<void> {
   closeMenus();
-  appState.element("workspace-filter").value = "";
+  element("workspace-filter").value = "";
   renderWorkspaceList();
-  showDialog(appState.element("workspace-dialog"));
+  showDialog(element("workspace-dialog"));
   await loadUserWorkspace();
 }

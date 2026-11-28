@@ -89,7 +89,7 @@ impl FolioCore {
         if self.service.is_some() && location_changed {
             return Err("Stop the notes service before changing its folder or port.".into());
         }
-        let mut prepared = if location_changed && !settings.directory.as_os_str().is_empty() {
+        let mut prepared = if location_changed {
             let service = server::start_with_users(
                 &settings.directory,
                 settings.port,
@@ -110,8 +110,7 @@ impl FolioCore {
         self.first_run = false;
         if let Some(service) = prepared {
             self.service = Some(service);
-        }
-        if let Some(service) = &self.service {
+        } else if let Some(service) = &self.service {
             service.set_appearance(self.settings.appearance.clone())?;
         }
         Ok(())

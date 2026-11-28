@@ -146,7 +146,7 @@ test("image hover supports native saving, replacement during typing and safe nav
     await (await choosing).setFiles({ name: "not-another-note.png", mimeType: "image/png", buffer: original });
     await begun;
     await page.locator('[data-path="Second.md"]').click();
-    await expect(page.locator("#document-title")).toHaveText("Second.md");
+    await expect(page.locator("#document-title")).toHaveText("Second");
     finish();
     await expect(page.locator("#image-message")).toContainText(/changed; (file|image) at/);
     await expect(page.locator(".folio-inline-image")).toHaveCount(0);
@@ -289,11 +289,11 @@ test("read-only image and table tools allow exports but never enable image chang
     await expect(tools.getByRole("menuitem", { name: "Remove image", exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Resize image", exact: true })).toBeHidden();
     for (const selector of [".folio-code-block", ".folio-block-image", ".ProseMirror blockquote"]) {
-      await page.locator(selector).hover();
+      await page.locator(selector).click();
       await page.locator(".folio-block-grip").click();
       const menu = page.getByRole("menu", { name: "Block actions", exact: true });
-      await expect(menu.getByRole("menuitem", { name: "Duplicate block", exact: true })).toBeDisabled();
-      await expect(menu.getByRole("menuitem", { name: "Delete block", exact: true })).toBeDisabled();
+      await expect(menu.getByRole("menuitem", { name: "Duplicate", exact: true })).toBeDisabled();
+      await expect(menu.getByRole("menuitem", { name: "Delete", exact: true })).toBeDisabled();
       await expect(menu).toBeFocused();
       await expect(menu.getByText(/Copy .*as/)).toHaveCount(0);
       await menu.press("Escape");
@@ -441,7 +441,12 @@ test("table cells stay neutral on hover and handle menus duplicate and clear onl
   await cell.click();
   await expect(table.locator(".folio-table-selection")).toBeVisible();
   const grip = table.locator(".folio-table-column-grip");
-  await expect(grip).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(grip).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  const header = await table.locator("th").first().boundingBox();
+  const topGrip = await grip.boundingBox();
+  const rowGrip = await table.locator(".folio-table-row-grip").boundingBox();
+  expect(topGrip.y + topGrip.height).toBeLessThan(header.y);
+  expect(rowGrip.x + rowGrip.width).toBeLessThan(header.x);
   await grip.hover();
   await expect(grip).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   const selected = await cell.boundingBox();

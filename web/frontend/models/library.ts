@@ -1,6 +1,7 @@
-import { normalizeNotePath } from "./paths";
+import { normalizeNotePath, noteName } from "./paths";
 
 export interface FileEntry {
+  panel?: boolean;
   path: string;
   name: string;
   title?: string | null;
@@ -8,6 +9,7 @@ export interface FileEntry {
 }
 
 export interface FileTree<File extends FileEntry = FileEntry> {
+  id?: string;
   name: string;
   title: string | null;
   path: string;
@@ -16,20 +18,7 @@ export interface FileTree<File extends FileEntry = FileEntry> {
 }
 
 export function fileLabel(file: FileEntry) {
-  return file.title ?? (file.name.replace(/\.(?:md|markdown)$/i, "") || file.name);
-}
-
-export function fileDisplayKey(file: FileEntry) {
-  return fileLabel(file).normalize("NFC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
-}
-
-export function countFileDisplays(files: readonly FileEntry[]) {
-  const counts = new Map<string, number>();
-  for (const file of files) {
-    const key = fileDisplayKey(file);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return counts;
+  return file.title?.trim() || noteName(file.name);
 }
 
 interface SearchableFile {
@@ -93,6 +82,7 @@ export function sameTreeEntries(left: readonly FileEntry[], right: readonly File
 }
 
 interface Branch<File extends FileEntry> {
+  id?: string;
   name: string;
   title: string | null;
   path: string;
@@ -104,8 +94,10 @@ const treeCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 
 export function buildFileTree<File extends FileEntry>(
   files: readonly File[],
   directories: readonly FileEntry[] = [],
+  includeEmpty = true,
 ): FileTree<File> {
   const root: Branch<File> = { name: "", title: null, path: "", directories: new Map(), files: [] };
+  const matchingDirectories = includeEmpty ? null : new Map<string, Branch<File>>();
   const ensureChild = (parent: Branch<File>, name: string) => {
     let child = parent.directories.get(name);
     if (!child) {
@@ -117,6 +109,7 @@ export function buildFileTree<File extends FileEntry>(
         files: [],
       };
       parent.directories.set(name, child);
+      matchingDirectories?.set(child.path, child);
     }
     return child;
   };
@@ -132,14 +125,19 @@ export function buildFileTree<File extends FileEntry>(
     }
     return parent;
   };
+  for (const file of files) ensurePath(file.path, false).files.push(file);
   for (const directory of directories) {
-    const branch = ensurePath(directory.path, true);
+    const branch = matchingDirectories
+      ? matchingDirectories.get(normalizeNotePath(directory.path))
+      : ensurePath(directory.path, true);
+    if (!branch) continue;
+    branch.id = directory.id;
     if (directory.title) branch.title = directory.title;
   }
-  for (const file of files) ensurePath(file.path, false).files.push(file);
   const compare = (a: Pick<FileEntry, "name" | "title">, b: Pick<FileEntry, "name" | "title">) =>
     treeCollator.compare(a.title ?? a.name, b.title ?? b.name);
   const finish = (branch: Branch<File>): FileTree<File> => ({
+    id: branch.id,
     name: branch.name,
     title: branch.title,
     path: branch.path,

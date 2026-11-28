@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 
 use super::{ApiError, AppState, Work, routes::blocking};
 
-#[path = "images/process.rs"]
 mod process;
 
 #[derive(Deserialize)]
@@ -47,6 +46,7 @@ pub(super) async fn upload(
         state.authorize(Some(&document), true)?;
         state.root.document(&document)?;
         let settings = state
+            .shared
             .web_preferences
             .read()
             .map_err(|_| ApiError::internal("Settings are unavailable."))?
@@ -55,6 +55,7 @@ pub(super) async fn upload(
         let directory = match &state.access {
             Some(access) => access.image_directory()?,
             None => state
+                .shared
                 .web_preferences
                 .read()
                 .map_err(|_| ApiError::internal("Settings are unavailable."))?

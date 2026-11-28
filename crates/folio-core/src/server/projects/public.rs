@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::{collections::HashMap, net::IpAddr, time::Instant};
 
 use axum::{
     Json,
@@ -7,6 +8,7 @@ use axum::{
     http::{HeaderMap, HeaderValue, StatusCode, Uri, header},
     response::{IntoResponse, Response},
 };
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -17,6 +19,8 @@ use crate::server::{AppState, Work, routes::blocking};
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub(super) struct PublicLink {
+    #[serde(skip)]
+    pub(super) code: String,
     #[serde(default)]
     pub(super) resource: Option<String>,
     pub(super) token: String,
@@ -30,6 +34,7 @@ pub(super) struct PublicLink {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct PublicLinkInfo {
+    code: String,
     document: Option<String>,
     token: String,
     access: Sharing,
@@ -38,8 +43,14 @@ pub(super) struct PublicLinkInfo {
 }
 
 impl PublicLink {
+    pub(super) fn short_id(&self) -> Result<String, ApiError> {
+        let bytes = uuid::Uuid::parse_str(self.token.get(..32).unwrap_or(""))
+            .map_err(|_| ApiError::internal("Invalid public link configuration."))?;
+        Ok(URL_SAFE_NO_PAD.encode(bytes.as_bytes()))
+    }
     pub(super) fn info(&self) -> PublicLinkInfo {
         PublicLinkInfo {
+            code: self.code.clone(),
             document: self.resource.clone(),
             token: self.token.clone(),
             access: self.access,
@@ -63,7 +74,7 @@ impl PublicLink {
         }
         if self
             .expires_at
-            .is_some_and(|time| time < 0 || time > 8_640_000_000_000_000)
+            .is_some_and(|time| !(0..=8_640_000_000_000_000).contains(&time))
         {
             return Err(ApiError::internal("Invalid public link expiration."));
         }
@@ -108,6 +119,36 @@ fn invalid_link() -> ApiError {
     ApiError::forbidden("This public link is invalid or has been revoked.")
 }
 
+// Limit unsuccessful short-code lookups by transport peer, not attacker-controlled proxy headers.
+#[derive(Default)]
+pub(super) struct MissBudget {
+    window: Option<Instant>,
+    misses: HashMap<IpAddr, u16>,
+}
+impl MissBudget {
+    fn check(&mut self, peer: IpAddr) -> Result<(), ApiError> {
+        let now = Instant::now();
+        if self
+            .window
+            .is_none_or(|start| now.duration_since(start).as_secs() >= 60)
+        {
+            self.window = Some(now);
+            self.misses.clear();
+        }
+        if self
+            .misses
+            .get(&peer)
+            .map_or(self.misses.len() >= 8192, |count| *count >= 32)
+        {
+            return Err(ApiError::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too many link attempts. Try again in a minute.",
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl Registry {
     fn public_project(&self, fingerprint: &str) -> Result<(String, String, Project), ApiError> {
         let catalog = self.load()?.ok_or_else(invalid_link)?;
@@ -121,9 +162,7 @@ impl Registry {
             .storage()?
             .project(id)
             .resource(link.resource.as_deref().ok_or_else(invalid_link)?, false)?;
-        if resource.path != *path
-            || resource.kind != crate::server::state_store::resources::ResourceKind::Document
-        {
+        if resource.path != *path || resource.kind != files::panels::share_kind(path)? {
             return Err(invalid_link());
         }
         let time = crate::server::state_store::now()?;
@@ -172,16 +211,20 @@ impl Registry {
         token: &str,
         headers: &HeaderMap,
     ) -> Result<Access, ApiError> {
-        if !valid_token(token) {
+        if !crate::server::state_store::page_codes::valid(token)
+            && !valid_token(token)
+            && !(token.len() == 22 && URL_SAFE_NO_PAD.decode(token).is_ok_and(|id| id.len() == 16))
+        {
             return Err(invalid_link());
         }
-        let fingerprint = digest(token);
-        let (id, path, project) = self.public_project(&fingerprint)?;
+        let (id, path, project) = self.public_project(&digest(token))?;
+        let link = project.public_links.get(&path).ok_or_else(invalid_link)?;
+        // Long and short URLs share grants, expiry, revocation and visitor cookies.
+        let fingerprint = digest(&link.token);
         let library = self.library(&id, &project)?;
         let credential =
             crate::server::security::cookie_value(headers, &visitor_cookie(&fingerprint))
                 .map(str::to_owned);
-        let link = project.public_links.get(&path).ok_or_else(invalid_link)?;
         let visitor = credential
             .as_ref()
             .map(|token| {
@@ -243,7 +286,17 @@ impl Registry {
                     ApiError::forbidden("Only the owner can change document permissions.")
                 })?;
             let path = self.permission_path(id, &document)?;
-            files::validate_document_path(&path)?;
+            let note = files::is_markdown(&path);
+            files::panels::share_kind(&path)?;
+            if !note
+                && (matches!(permission, DocumentPermission::PublicEdit)
+                    || (matches!(permission, DocumentPermission::Edit)
+                        && files::panels::kind(&path) != Some("code")))
+            {
+                return Err(ApiError::bad_request(
+                    "This file supports read-only sharing.",
+                ));
+            }
             let revoking = matches!(
                 permission,
                 DocumentPermission::Inherit | DocumentPermission::Private
@@ -252,8 +305,8 @@ impl Registry {
                 (path, None)
             } else {
                 let root = files::Root::open(&project.root)?;
-                let path = root.canonical_document_path(&path)?;
-                let content = if revoking {
+                let path = root.canonical_file_path(&path)?;
+                let content = if revoking || !note {
                     None
                 } else {
                     Some(root.document(&path)?.content)
@@ -310,6 +363,7 @@ impl Registry {
                 let expires_at = previous.and_then(|link| link.expires_at);
                 let password_hash = previous.and_then(|link| link.password_hash.clone());
                 let mut link = PublicLink {
+                    code: self.storage()?.page_code("s", &digest(&token))?,
                     resource: Some(document.clone()),
                     token,
                     access,
@@ -335,6 +389,7 @@ pub(in crate::server) fn endpoint(path: &str) -> bool {
             | "/api/public/resource"
             | "/api/public/resources/resolve"
             | "/api/public/document"
+            | "/api/public/panel-file"
             | "/api/public/preview"
             | "/api/public/assets"
             | "/api/public/images"
@@ -348,6 +403,7 @@ pub(in crate::server) async fn scope(
     state: Arc<AppState>,
     uri: Uri,
     headers: HeaderMap,
+    peer: Option<IpAddr>,
 ) -> Result<Arc<AppState>, ApiError> {
     #[derive(Deserialize)]
     struct Query {
@@ -364,8 +420,23 @@ pub(in crate::server) async fn scope(
         .or(query.share.clone())
         .ok_or_else(invalid_link)?;
     tokio::task::spawn_blocking(move || {
-        let registry = state.projects.as_ref().ok_or_else(invalid_link)?;
-        let access = registry.resolve_public(&token, &headers)?;
+        let registry = state.shared.projects.as_ref().ok_or_else(invalid_link)?;
+        let peer = peer.filter(|_| crate::server::state_store::page_codes::valid(&token));
+        if let Some(peer) = peer {
+            registry
+                .short_link_misses
+                .lock()
+                .map_err(|_| ApiError::internal("Link lookup unavailable."))?
+                .check(peer)?;
+        }
+        let access = registry.resolve_public(&token, &headers).inspect_err(|_| {
+            if let Some(peer) = peer
+                && let Ok(mut budget) = registry.short_link_misses.lock()
+            {
+                let count = budget.misses.entry(peer).or_default();
+                *count = count.saturating_add(1);
+            }
+        })?;
         if uri.path() != "/api/public/session" {
             access.check(
                 access.guest.as_ref().map(|guest| guest.path.as_str()),
@@ -383,6 +454,12 @@ pub(in crate::server) async fn scope(
 
 #[derive(Serialize)]
 pub(in crate::server) struct Session {
+    #[serde(skip_serializing_if = "is_false")]
+    file: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<String>,
+    #[serde(rename = "recoveryKey", skip_serializing_if = "Option::is_none")]
+    recovery_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -440,6 +517,9 @@ pub(in crate::server) async fn session(
             let Some(input) = &mut credentials else {
                 return Ok((
                     Session {
+                        file: false,
+                        code: None,
+                        recovery_key: None,
                         id: None,
                         project: None,
                         path: None,
@@ -462,10 +542,17 @@ pub(in crate::server) async fn session(
                 ));
             }
         }
-        let document = state.root.source_document(&path)?;
-        let resource_id = document
-            .id
-            .ok_or_else(|| ApiError::internal("This document has no resource identity."))?;
+        let file = !files::is_markdown(&path);
+        let resource_id = if file {
+            state.root.canonical_file_path(&path)?;
+            link.resource.clone().ok_or_else(invalid_link)?
+        } else {
+            state
+                .root
+                .source_document(&path)?
+                .id
+                .ok_or_else(|| ApiError::internal("This document has no resource identity."))?
+        };
         let cookie = if existing.is_none() {
             let (token, expires) =
                 store.issue_visitor(&guest.digest, &link.password_signature(), link.expires_at)?;
@@ -479,10 +566,13 @@ pub(in crate::server) async fn session(
         };
         Ok((
             Session {
+                file,
+                code: Some(link.code.clone()),
+                recovery_key: Some(link.token.clone()),
                 id: Some(resource_id),
                 project: Some(id),
                 path: Some(path),
-                writable: link.access == Sharing::Edit,
+                writable: !file && link.access == Sharing::Edit,
                 password_required: false,
             },
             cookie,

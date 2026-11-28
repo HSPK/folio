@@ -1,184 +1,50 @@
-import * as Dialog from "@kobalte/core/dialog";
-import * as Popover from "@kobalte/core/popover";
-import {
-  createContext,
-  createEffect,
-  createSignal,
-  onCleanup,
-  onMount,
-  Show,
-  splitProps,
-  useContext,
-  type Accessor,
-  type JSX,
-} from "solid-js";
-import { insert, spread } from "solid-js/web";
+import { autoUpdate, computePosition, flip, offset, shift, size } from "@floating-ui/dom";
+import { onCleanup, onMount, splitProps, type JSX } from "solid-js";
+import { requiredQuery } from "../types/elements";
 
-type AppDialogProps = Omit<JSX.IntrinsicElements["dialog"], "ref" | "open"> & {
-  id: string;
+type IconButtonProps = Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, "children" | "type" | "aria-label"> & {
+  label: string;
+  icon: string;
 };
 
-/** Mount only the interaction layer; native form and editor references stay stable. */
-export function AppDialog(props: AppDialogProps) {
-  const [open, setOpen] = createSignal(false);
-  const [local, attributes] = splitProps(props, ["children", "id"]);
-  let dialog!: HTMLDialogElement;
-  let nativeShow: HTMLDialogElement["showModal"];
-  let nativeClose: HTMLDialogElement["close"];
-
-  function close(value?: string) {
-    setOpen(false);
-    nativeClose.call(dialog, value);
-  }
-
-  function dismiss() {
-    if (dialog.open && dialog.dispatchEvent(new Event("cancel", { cancelable: true }))) close();
-  }
-
-  function bind(node: HTMLDialogElement) {
-    dialog = node;
-    nativeShow = node.showModal;
-    nativeClose = node.close;
-    node.showModal = () => {
-      nativeShow.call(node);
-      setOpen(true);
-    };
-    node.close = close;
-    const synchronize = () => setOpen(node.open);
-    node.addEventListener("close", synchronize);
-    onCleanup(() => {
-      node.removeEventListener("close", synchronize);
-      node.showModal = nativeShow;
-      node.close = nativeClose;
-    });
-  }
-
-  function InteractionLayer(layer: JSX.IntrinsicElements["dialog"]) {
-    spread(dialog, layer, false, true);
-    return null;
-  }
-
+export function IconButton(props: IconButtonProps) {
+  const [local, attributes] = splitProps(props, ["label", "icon", "title", "class"]);
   return (
-    <Dialog.Root
-      open={open()}
-      modal={false}
-      onOpenChange={(next) => {
-        if (!next) dismiss();
-      }}
-      preventScroll={false}
+    <button
+      {...attributes}
+      class={local.class ?? "icon-button"}
+      type="button"
+      title={local.title ?? local.label}
+      aria-label={local.label}
     >
-      <dialog {...attributes} id={local.id} ref={bind}>
-        {local.children}
-      </dialog>
-      <Show when={open()}>
-        <Dialog.Content
-          as={InteractionLayer}
-          id={local.id}
-          aria-labelledby={props["aria-labelledby"]}
-          onOpenAutoFocus={(event) => event.preventDefault()}
-          onCloseAutoFocus={(event) => event.preventDefault()}
-          onInteractOutside={(event) => event.preventDefault()}
-          onEscapeKeyDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            dismiss();
-          }}
-        />
-      </Show>
-    </Dialog.Root>
+      <svg data-icon={local.icon} aria-hidden="true"></svg>
+    </button>
   );
 }
 
-interface MenuContextValue {
-  open: Accessor<boolean>;
-  setOpen: (next: boolean) => void;
-  trigger: () => HTMLElement | null;
-}
-
-const MenuContext = createContext<MenuContextValue>();
-
-function menuContext() {
-  const context = useContext(MenuContext);
-  if (!context) throw new Error("Menu primitives must be inside AppMenu.");
-  return context;
-}
-
-/** Bridge persistent popup contents to a conditionally mounted Kobalte layer. */
-export function AppMenu(props: JSX.IntrinsicElements["details"]) {
-  const [open, setOpen] = createSignal(false);
-  const [local, attributes] = splitProps(props, ["children", "ref", "open"]);
-  let details!: HTMLDetailsElement;
-  const descriptor = Object.getOwnPropertyDescriptor(HTMLDetailsElement.prototype, "open");
-  if (!descriptor?.get || !descriptor.set) throw new Error("Native details state is unavailable.");
-  const nativeGet = descriptor.get;
-  const nativeSet = descriptor.set;
-
-  function changeOpen(next: boolean) {
-    nativeSet.call(details, next);
-    setOpen(next);
-  }
-
-  const context: MenuContextValue = {
-    open,
-    setOpen: changeOpen,
-    trigger: () => details.querySelector(":scope > summary"),
-  };
-
-  function bind(node: HTMLDetailsElement) {
-    details = node;
-    Object.defineProperty(node, "open", {
-      configurable: true,
-      get: () => nativeGet.call(node),
-      set: (next: boolean) => changeOpen(Boolean(next)),
-    });
-    onCleanup(() => {
-      Reflect.deleteProperty(node, "open");
-    });
-  }
-
+export function DialogHeading(props: { id: string; title: string }) {
   return (
-    <Popover.Root
-      open={open()}
-      onOpenChange={changeOpen}
-      placement="bottom-end"
-      gutter={5}
-      overflowPadding={12}
-      fitViewport
-      preventScroll={false}
-    >
-      <MenuContext.Provider value={context}>
-        <details {...attributes} ref={bind}>
-          {local.children}
-        </details>
-      </MenuContext.Provider>
-    </Popover.Root>
+    <header class="workspace-heading">
+      <h2 id={`${props.id}-title`}>{props.title}</h2>
+      <IconButton id={`${props.id}-close`} title="Close" label={`Close ${props.title.toLowerCase()}`} icon="x" />
+    </header>
   );
 }
 
-type MenuTriggerProps = {
-  children?: JSX.Element;
-  class?: string;
-  title?: string;
-  "aria-label"?: string;
-  "aria-controls"?: string;
-};
-
-/** Keep native summary semantics while Kobalte owns popup state. */
-export function AppMenuTrigger(props: MenuTriggerProps) {
-  return <Popover.Trigger as="summary" {...props} onClick={(event) => event.preventDefault()} />;
+function menuItems(panel: HTMLElement) {
+  return [...panel.querySelectorAll<HTMLElement>("button:not(:disabled), a[href], summary")].filter(
+    (node) => node.getClientRects().length && !node.closest("[hidden], [inert]"),
+  );
 }
 
-/** Focus visible actions without interfering with embedded form controls. */
-function navigateMenu(event: KeyboardEvent, panel: HTMLElement) {
+export function navigateMenu(event: KeyboardEvent, panel: HTMLElement) {
   if (
     !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) ||
     event.target instanceof HTMLInputElement ||
     event.target instanceof HTMLSelectElement
   )
     return;
-  const items = [...panel.querySelectorAll<HTMLElement>("button:not(:disabled), a[href], summary")].filter(
-    (node) => node.getClientRects().length && !node.closest("[hidden], [inert]"),
-  );
+  const items = menuItems(panel);
   if (!items.length) return;
   const active = document.activeElement;
   const index = active instanceof HTMLElement ? items.indexOf(active) : -1;
@@ -189,53 +55,65 @@ function navigateMenu(event: KeyboardEvent, panel: HTMLElement) {
         ? items.length - 1
         : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
   event.preventDefault();
-  items[next].focus({ preventScroll: true });
+  items[next].focus();
 }
 
-/** Preserve popup nodes between openings and let Kobalte handle positioning. */
-export function AppMenuContent(props: JSX.IntrinsicElements["div"]) {
-  const menu = menuContext();
-  const popover = Popover.usePopoverContext();
-  const panel = document.createElement("div");
-  const [local, attributes] = splitProps(props, ["children", "ref"]);
-  spread(panel, attributes, false, true);
-  insert(panel, () => local.children);
-  let host!: HTMLDivElement;
-  createEffect(() => {
-    panel.inert = !menu.open();
-    if (!popover.contentPresent() && host) host.append(panel);
-  });
+/** Native popovers own visibility, dismissal and focus; only positioning needs a service. */
+export function AppMenu(props: JSX.IntrinsicElements["div"]) {
+  let menu!: HTMLDivElement;
   onMount(() => {
-    if (!menu.open()) host.append(panel);
-  });
-
-  function PanelElement(layer: JSX.IntrinsicElements["div"]) {
-    spread(panel, layer, false, true);
-    // The panel outlives each layer, so state attributes from a finished layer must not leak into the next opening.
+    const trigger = requiredQuery(menu, ":scope > button", HTMLButtonElement);
+    const panel = requiredQuery(menu, ":scope > [popover]", HTMLDivElement);
+    const controller = new AbortController();
+    const { signal } = controller;
+    let stop: (() => void) | undefined;
+    let generation = 0;
+    panel.addEventListener(
+      "beforetoggle",
+      (event) => {
+        const open = event.newState === "open";
+        const current = ++generation;
+        panel.inert = !open;
+        trigger.setAttribute("aria-expanded", String(open));
+        stop?.();
+        stop = undefined;
+        if (!open) return;
+        // Native opening finishes before the next animation frame.
+        const frame = requestAnimationFrame(() => {
+          if (signal.aborted || current !== generation) return;
+          stop = autoUpdate(trigger, panel, () => {
+            void computePosition(trigger, panel, {
+              placement: "bottom-end",
+              strategy: "fixed",
+              middleware: [
+                offset(5),
+                flip({ padding: 12 }),
+                shift({ padding: 12 }),
+                size({
+                  padding: 12,
+                  apply({ availableWidth, availableHeight }) {
+                    panel.style.maxWidth = `${availableWidth}px`;
+                    panel.style.maxHeight = `${Math.min(680, availableHeight)}px`;
+                  },
+                }),
+              ],
+            }).then(({ x, y }) => {
+              if (signal.aborted || current !== generation) return;
+              panel.style.left = `${x}px`;
+              panel.style.top = `${y}px`;
+            });
+          });
+          menuItems(panel)[0]?.focus({ preventScroll: true });
+        });
+        stop = () => cancelAnimationFrame(frame);
+      },
+      { signal },
+    );
+    panel.addEventListener("keydown", (event) => navigateMenu(event, panel), { signal });
     onCleanup(() => {
-      panel.removeAttribute("data-closed");
-      panel.removeAttribute("data-expanded");
+      controller.abort();
+      stop?.();
     });
-    return panel;
-  }
-
-  return (
-    <div class="menu-panel-host" ref={host}>
-      <Popover.Content
-        as={PanelElement}
-        id={props.id}
-        class={props.class}
-        role={props.role}
-        aria-label={props["aria-label"]}
-        onKeyDown={(event) => navigateMenu(event, panel)}
-        onCloseAutoFocus={(event) => event.preventDefault()}
-        onEscapeKeyDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          menu.setOpen(false);
-          menu.trigger()?.focus({ preventScroll: true });
-        }}
-      />
-    </div>
-  );
+  });
+  return <div {...props} ref={menu} />;
 }

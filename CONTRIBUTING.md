@@ -37,7 +37,7 @@ Commit generated assets in `web/public/` together with their corresponding sourc
 changes. The app shell is generated from `web/frontend/`; do not edit the generated
 `web/public/app.mjs` or `styles.css` directly.
 
-The interface uses SolidJS, TypeScript, Vite, and Kobalte. Keep UI components in
+The interface uses SolidJS, TypeScript, and Vite. Keep UI components in
 `web/frontend/components/`, fine-grained view state in `state/`, and explicitly
 imported business controllers in `runtime/`. Do not concatenate modules by
 filename or leave same-named `.mjs` and `.ts` controller copies: Vite can resolve
@@ -93,6 +93,8 @@ before clearing the previous document so rejected history writes remain retryabl
 `runtime/core/events.ts` is composition-only event wiring. Controllers use
 `core/connection.ts` for connection workflows and `projects/permissions.ts` for
 permission queries, rather than importing event initialization.
+Static control handlers and resize gestures belong to their Solid components;
+keep application-wide and editor-host subscriptions in the runtime.
 
 `state/projects.ts` is the authoritative, principal-owned project registry.
 Project responses update their addressed record; they must never replace a
@@ -115,9 +117,10 @@ not document identity. Register listeners and resources with their owning
 `Lifetime` immediately after creation, including during partial initialization.
 
 Milkdown, CodeMirror, and collaborative documents own their editor DOM and stay
-outside reactive stores. Dialog forms remain mounted while their Kobalte
-interaction layers open and close. Use immutable result signals and virtualize
-long collections rather than rebuilding the entire interface on input.
+outside reactive stores. Dialog forms remain mounted; native dialogs and popovers
+own visibility, dismissal, and focus. Floating UI only positions menus. Do not
+mirror native open state or override native methods. Use immutable result signals
+and virtualize long collections rather than rebuilding the entire interface on input.
 An editor's `clear()` retains reusable tools; its terminal `destroy()` releases
 the instance's listeners, observers, floating UI, and editor session.
 

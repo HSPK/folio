@@ -1,6 +1,6 @@
 import { isNode, isScalar, isSeq, parseDocument } from "yaml";
 import { replaceMetadataText, splitFrontMatter } from "./editor-helpers.ts";
-import { createIcon } from "./icons.ts";
+import { createButton } from "./dom.ts";
 import { assertMetadataMap, isMetadataValues } from "./metadata-properties.ts";
 import { errorMessage } from "./errors.ts";
 
@@ -150,11 +150,8 @@ export function mountTagEditor(
             label.title = `Find notes tagged ${tag}`;
             label.addEventListener("click", () => onTag(tag));
           }
-          const remove = document.createElement("button");
+          const remove = createButton({ label: `Remove tag ${tag}`, icon: "x" });
           remove.className = "folio-tag-remove";
-          remove.type = "button";
-          remove.append(createIcon("x"));
-          remove.setAttribute("aria-label", `Remove tag ${tag}`);
           remove.addEventListener("click", () => commit(current.filter((value) => value !== tag)));
           chip.append(label, remove);
           return chip;

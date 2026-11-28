@@ -177,7 +177,7 @@ impl ProjectStore {
         self.store.with(|connection| {
             connection
                 .execute(
-                    "DELETE FROM trash WHERE project=?1 AND deleted < ?2",
+                    "DELETE FROM trash WHERE project=?1 AND kind IN ('note','asset') AND deleted < ?2",
                     params![self.project, now()? - RETENTION_MS],
                 )
                 .map_err(db_error)?;
@@ -195,7 +195,11 @@ impl ProjectStore {
                         path: row.get(1)?,
                         size: row.get(2)?,
                         version: row.get(3)?,
-                        kind: row.get(4)?,
+                        kind: match row.get::<_, String>(4)?.as_str() {
+                            "entry-note" => "note".into(),
+                            "entry-directory" => "directory".into(),
+                            other => other.into(),
+                        },
                         actor: row.get(5)?,
                         deleted: row.get(6)?,
                     })
@@ -211,11 +215,19 @@ impl ProjectStore {
         id: i64,
     ) -> Result<(String, String, Vec<u8>, String), ApiError> {
         self.store.with(|connection| {
-            let (path, kind, bytes, resource): (String, String, Vec<u8>, String) = connection.query_row(
-                "SELECT path,kind,content,resource_id FROM trash WHERE project=?1 AND id=?2 AND deleted >= ?3",
-                params![self.project, id, now()? - RETENTION_MS], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?,row.get(3)?)))
-                .optional().map_err(db_error)?.ok_or_else(|| ApiError::bad_request("This recycled item expired or was removed."))?;
-            Ok((path, kind, decompress(&bytes)?,resource))
+            let (path, kind, bytes, resource): (String, String, Vec<u8>, String) = connection
+                .query_row(
+                    "SELECT path,kind,content,resource_id FROM trash WHERE project=?1 AND id=?2
+                 AND (kind IN ('entry-note','entry-directory') OR deleted >= ?3)",
+                    params![self.project, id, now()? - RETENTION_MS],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .optional()
+                .map_err(db_error)?
+                .ok_or_else(|| {
+                    ApiError::bad_request("This recycled item expired or was removed.")
+                })?;
+            Ok((path, kind, decompress(&bytes)?, resource))
         })
     }
 

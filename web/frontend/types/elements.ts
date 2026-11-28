@@ -2,7 +2,6 @@ const elementKinds = {
   "about-close": HTMLButtonElement,
   "about-dialog": HTMLDialogElement,
   "about-open": HTMLButtonElement,
-  "about-title": HTMLElement,
   "account-password": HTMLInputElement,
   "account-password-cancel": HTMLButtonElement,
   "account-password-dialog": HTMLDialogElement,
@@ -21,7 +20,6 @@ const elementKinds = {
   "attachments-open": HTMLButtonElement,
   "attachments-recycle": HTMLButtonElement,
   "attachments-refresh": HTMLButtonElement,
-  "attachments-title": HTMLElement,
   "attachments-unused": HTMLInputElement,
   "auth-back-login": HTMLButtonElement,
   "auth-confirm": HTMLInputElement,
@@ -41,10 +39,7 @@ const elementKinds = {
   "backlinks-list": HTMLDivElement,
   "backlinks-message": HTMLParagraphElement,
   "backlinks-open": HTMLButtonElement,
-  "backlinks-title": HTMLElement,
-  "cancel-new-folder": HTMLButtonElement,
   "cancel-new-note": HTMLButtonElement,
-  "cancel-rename": HTMLButtonElement,
   "close-details": HTMLButtonElement,
   "collaboration-cursors": HTMLDivElement,
   "collaboration-join": HTMLButtonElement,
@@ -57,17 +52,15 @@ const elementKinds = {
   "command-list": HTMLDivElement,
   "command-palette-open": HTMLButtonElement,
   "command-query": HTMLInputElement,
-  "command-title": HTMLElement,
   "compact-layout-menu": HTMLDetailsElement,
-  "confirm-rename": HTMLButtonElement,
   "confirmation-dialog": HTMLDialogElement,
-  "confirmation-title": HTMLElement,
   "conflict-message": HTMLDivElement,
+  "conflict-copy": HTMLButtonElement,
+  "conflict-latest": HTMLButtonElement,
   "connection-label": HTMLSpanElement,
   "connection-message": HTMLDivElement,
   "copy-status": HTMLSpanElement,
   "copy-text": HTMLButtonElement,
-  "create-folder": HTMLButtonElement,
   "create-note": HTMLButtonElement,
   "details-dialog": HTMLDialogElement,
   "details-metadata-title": HTMLElement,
@@ -75,17 +68,13 @@ const elementKinds = {
   "details-name": HTMLElement,
   "details-path": HTMLElement,
   "details-size": HTMLElement,
-  "details-title": HTMLElement,
   "dirty-indicator": HTMLSpanElement,
   "document-message": HTMLSpanElement,
   "document-modified": HTMLSpanElement,
-  "document-name": HTMLSpanElement,
   "document-outline": HTMLElement,
   "document-panes": HTMLDivElement,
   "document-tags-open": HTMLButtonElement,
-  "document-title": HTMLElement,
   "document-trash": HTMLButtonElement,
-  "document-view-options": HTMLElement,
   "draft-recovery-apply": HTMLButtonElement,
   "draft-recovery-close": HTMLButtonElement,
   "draft-recovery-copy": HTMLButtonElement,
@@ -94,29 +83,24 @@ const elementKinds = {
   "draft-recovery-error": HTMLParagraphElement,
   "draft-recovery-info": HTMLParagraphElement,
   "draft-recovery-source": HTMLTextAreaElement,
-  "draft-recovery-title": HTMLElement,
   "drafts-close": HTMLButtonElement,
   "drafts-dialog": HTMLDialogElement,
   "drafts-list": HTMLDivElement,
   "drafts-message": HTMLParagraphElement,
   "drafts-open": HTMLButtonElement,
-  "drafts-title": HTMLElement,
   editor: HTMLTextAreaElement,
-  "editor-stats": HTMLSpanElement,
-  "empty-document": HTMLElement,
   "empty-new-note": HTMLButtonElement,
   "file-context-menu": HTMLDivElement,
-  "file-context-name": HTMLSpanElement,
   "file-icon-choices": HTMLDivElement,
   "file-details": HTMLButtonElement,
   "file-filter": HTMLInputElement,
   "file-list": HTMLUListElement,
   "file-nav": HTMLElement,
+  "file-duplicate": HTMLButtonElement,
   "file-rename": HTMLButtonElement,
-  "files-panel": HTMLElement,
+  "file-rename-hint": HTMLElement,
   "files-scroll-frame": HTMLDivElement,
   "focus-mode": HTMLButtonElement,
-  "folio-root": HTMLDivElement,
   "hidden-patterns": HTMLTextAreaElement,
   "history-close": HTMLButtonElement,
   "history-copy": HTMLButtonElement,
@@ -127,7 +111,6 @@ const elementKinds = {
   "history-message": HTMLParagraphElement,
   "history-open": HTMLButtonElement,
   "history-restore": HTMLButtonElement,
-  "history-title": HTMLElement,
   "image-message": HTMLDivElement,
   "invitations-list": HTMLDivElement,
   "invite-code": HTMLInputElement,
@@ -138,23 +121,21 @@ const elementKinds = {
   "loading-message": HTMLDivElement,
   logout: HTMLButtonElement,
   "metadata-message": HTMLParagraphElement,
-  "more-actions-panel": HTMLElement,
-  "more-document-actions": HTMLDivElement,
-  "more-menu": HTMLDetailsElement,
+  "more-actions-panel": HTMLDivElement,
   "more-recovery": HTMLDetailsElement,
-  "more-recovery-actions": HTMLDivElement,
+  "reader-options": HTMLDetailsElement,
+  "reader-theme": HTMLSelectElement,
+  "reader-size": HTMLSelectElement,
   "more-workspace-actions": HTMLDivElement,
   "new-folder": HTMLButtonElement,
-  "new-folder-dialog": HTMLDialogElement,
-  "new-folder-error": HTMLParagraphElement,
-  "new-folder-form": HTMLFormElement,
-  "new-folder-path": HTMLInputElement,
-  "new-folder-title": HTMLElement,
+  "new-from-template": HTMLButtonElement,
+  "tree-new-note": HTMLButtonElement,
+  "tree-new-folder": HTMLButtonElement,
+  "file-recycle": HTMLButtonElement,
   "new-note": HTMLButtonElement,
   "new-note-dialog": HTMLDialogElement,
   "new-note-error": HTMLParagraphElement,
   "new-note-form": HTMLFormElement,
-  "new-note-heading": HTMLElement,
   "new-note-hint": HTMLParagraphElement,
   "new-note-template": HTMLSelectElement,
   "new-note-title": HTMLInputElement,
@@ -168,9 +149,7 @@ const elementKinds = {
   preview: HTMLElement,
   "preview-status": HTMLSpanElement,
   "project-back": HTMLButtonElement,
-  "project-confirm": HTMLElement,
   "project-confirm-cancel": HTMLButtonElement,
-  "project-confirm-message": HTMLParagraphElement,
   "project-confirm-proceed": HTMLButtonElement,
   "project-create": HTMLButtonElement,
   "project-create-cancel": HTMLButtonElement,
@@ -181,7 +160,6 @@ const elementKinds = {
   "project-new": HTMLButtonElement,
   "project-source": HTMLInputElement,
   "project-source-field": HTMLDivElement,
-  "projects-browser": HTMLElement,
   "projects-close": HTMLButtonElement,
   "projects-dialog": HTMLDialogElement,
   "projects-empty": HTMLParagraphElement,
@@ -195,15 +173,7 @@ const elementKinds = {
   "public-password-error": HTMLParagraphElement,
   "public-password-form": HTMLFormElement,
   "public-password-submit": HTMLButtonElement,
-  "public-password-title": HTMLElement,
   "reload-document": HTMLButtonElement,
-  "rename-dialog": HTMLDialogElement,
-  "rename-error": HTMLParagraphElement,
-  "rename-form": HTMLFormElement,
-  "rename-hint": HTMLParagraphElement,
-  "rename-path": HTMLInputElement,
-  "rename-title": HTMLElement,
-  "rename-update-links": HTMLInputElement,
   "rich-editor": HTMLDivElement,
   "rich-warning": HTMLDivElement,
   "root-warning": HTMLDivElement,
@@ -217,11 +187,9 @@ const elementKinds = {
   "search-message": HTMLParagraphElement,
   "search-project": HTMLSelectElement,
   "search-query": HTMLInputElement,
-  "search-results": HTMLUListElement,
   "search-selected-tags": HTMLDivElement,
   "search-tag-filters": HTMLDivElement,
   "search-tags": HTMLDivElement,
-  "search-title": HTMLElement,
   "settings-auto-save": HTMLSelectElement,
   "settings-cancel": HTMLButtonElement,
   "settings-cjk-font": HTMLInputElement,
@@ -263,7 +231,6 @@ const elementKinds = {
   "settings-spellcheck": HTMLInputElement,
   "settings-strong-focus": HTMLInputElement,
   "settings-theme": HTMLSelectElement,
-  "settings-title": HTMLElement,
   "settings-tree-refresh": HTMLSelectElement,
   "share-page": HTMLButtonElement,
   "shares-close": HTMLButtonElement,
@@ -271,13 +238,11 @@ const elementKinds = {
   "shares-list": HTMLDivElement,
   "shares-message": HTMLParagraphElement,
   "shares-open": HTMLButtonElement,
-  "shares-title": HTMLElement,
   "sharing-cancel": HTMLButtonElement,
   "sharing-clear-password": HTMLInputElement,
   "sharing-clear-password-field": HTMLElement,
   "sharing-copy-link": HTMLButtonElement,
   "sharing-description": HTMLParagraphElement,
-  "sharing-dialog": HTMLElement,
   "sharing-documents": HTMLDivElement,
   "sharing-documents-section": HTMLElement,
   "sharing-error": HTMLParagraphElement,
@@ -310,20 +275,13 @@ const elementKinds = {
   "tags-error": HTMLParagraphElement,
   "tags-form": HTMLFormElement,
   "tags-input": HTMLTextAreaElement,
-  "tags-title": HTMLElement,
   "trash-close": HTMLButtonElement,
   "trash-dialog": HTMLDialogElement,
   "trash-list": HTMLDivElement,
   "trash-message": HTMLParagraphElement,
   "trash-open": HTMLButtonElement,
-  "trash-title": HTMLElement,
   "tree-limit": HTMLParagraphElement,
   "tree-message": HTMLParagraphElement,
-  "view-editor": HTMLButtonElement,
-  "view-label": HTMLSpanElement,
-  "view-preview": HTMLButtonElement,
-  "view-rich": HTMLButtonElement,
-  "view-split": HTMLButtonElement,
   "workspace-close": HTMLButtonElement,
   "workspace-dialog": HTMLDialogElement,
   "workspace-favorite": HTMLButtonElement,
@@ -333,11 +291,15 @@ const elementKinds = {
   "workspace-message": HTMLParagraphElement,
   "workspace-open": HTMLButtonElement,
   "workspace-search-open": HTMLButtonElement,
-  "workspace-title": HTMLElement,
 };
 
 type ElementId = keyof typeof elementKinds;
 type ElementFor<K extends ElementId> = InstanceType<(typeof elementKinds)[K]>;
+const elements = new Map<string, HTMLElement>();
+
+export function clearElements() {
+  elements.clear();
+}
 
 function knownElementId(id: string): id is ElementId {
   return Object.hasOwn(elementKinds, id);
@@ -347,11 +309,14 @@ function knownElementId(id: string): id is ElementId {
 export function element<K extends ElementId>(id: K): ElementFor<K>;
 export function element(id: string): HTMLElement;
 export function element(id: string): HTMLElement {
+  const cached = elements.get(id);
+  if (cached?.isConnected) return cached;
   const node = document.getElementById(id);
   const kind = knownElementId(id) ? elementKinds[id] : HTMLElement;
   if (!(node instanceof HTMLElement) || !(node instanceof kind)) {
     throw new Error(`The required interface element "${id}" is missing or has the wrong type.`);
   }
+  elements.set(id, node);
   return node;
 }
 
@@ -364,17 +329,6 @@ export function requiredQuery<T extends Element>(
   const node = root.querySelector(selector);
   if (!(node instanceof kind)) throw new Error(`Required interface descendant not found: ${selector}`);
   return node;
-}
-
-/** Verify a structure-owned ancestor without confusing it with a descendant query. */
-export function requiredClosest<T extends Element>(
-  node: Element,
-  selector: string,
-  kind: new (...args: never[]) => T,
-): T {
-  const ancestor = node.closest(selector);
-  if (!(ancestor instanceof kind)) throw new Error(`Required interface ancestor not found: ${selector}`);
-  return ancestor;
 }
 
 /** Cancel an optional browser timer without inventing a sentinel timer ID. */

@@ -2,6 +2,11 @@ export function normalizeNotePath(path: string) {
   return path.replace(/\\/g, "/");
 }
 
+export function noteName(path: string) {
+  const name = normalizeNotePath(path).split("/").at(-1) ?? "";
+  return name.replace(/\.(?:md|markdown)$/i, "") || name;
+}
+
 export function isReservedFileName(name: string) {
   return /^(con|prn|aux|nul|clock\$|com[1-9¹²³]|lpt[1-9¹²³])$/i.test(name.split(".")[0].trimEnd());
 }

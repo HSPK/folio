@@ -53,12 +53,29 @@ test("filter reveal and catalog reset retain one source of selection and release
   model.select({ id, path: "Folder/Current.md" });
   assert.equal(model.view.outsideFilter, true);
   model.focusCurrent();
-  assert.equal(model.catalog.collapsedFolders.has("Folder"), false);
+  assert.equal(model.catalog.expandedFolders.has("Folder"), true);
   assert.ok(model.view.focusRequest);
   model.reset();
   assert.equal(model.catalog.files.length, 0);
   assert.equal(model.view.outsideFilter, false);
   assert.equal(model.view.focusRequest, null);
+});
+
+test("folder expansion is opt-in and new catalog entries do not inherit an expanded default", () => {
+  const model = createLibraryModel();
+  const folder = { path: "Folder", name: "Folder" };
+  model.replace([], [folder], false);
+  assert.deepEqual([...model.catalog.expandedFolders], []);
+  const changes: string[][] = [];
+  model.observeExpanded((paths) => changes.push([...paths]));
+  model.setCollapsed("Folder", false);
+  model.replace([], [folder, { path: "New", name: "New" }], false);
+  assert.deepEqual([...model.catalog.expandedFolders], ["Folder"]);
+  model.setCollapsed("Folder", true);
+  assert.deepEqual(changes, [["Folder"], []]);
+  model.restoreExpanded(["Folder"]);
+  assert.deepEqual(changes, [["Folder"], []]);
+  assert.deepEqual([...model.catalog.expandedFolders], ["Folder"]);
 });
 
 test("tree decoding preserves resource identity and rejects ambiguous normalized paths", () => {

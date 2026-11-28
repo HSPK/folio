@@ -10,7 +10,8 @@ import {
   type SaveCheckpoint,
   type SaveOperation,
   type SessionDocument,
-} from "../models/document";
+  isResourceId,
+} from "@folio/model";
 
 export interface DocumentLoad {
   readonly id: DocumentSessionId;
@@ -74,6 +75,9 @@ export function createDocumentSession() {
     get current() {
       return document;
     },
+    get resourceId() {
+      return document && isResourceId(document.id) ? document.id : null;
+    },
     get conflict() {
       return conflict;
     },
@@ -85,6 +89,16 @@ export function createDocumentSession() {
     },
     open(next: SessionDocument) {
       replace(next);
+    },
+    adoptCreated(key: string, payload: DocumentPayload) {
+      if (!document || document.id !== key || !key.startsWith("local-new:")) return false;
+      document = ownedDocument({ ...createDocumentModel(payload), root: document.root });
+      invalidateAnalysis();
+      changed();
+      return true;
+    },
+    relocate(path: string) {
+      if (document) document = ownedDocument({ ...document, path });
     },
     close() {
       replace(null);
@@ -164,6 +178,7 @@ export function createDocumentSession() {
         throw new Error("A shared save must acknowledge the current document.");
       document = ownedDocument({ ...createDocumentModel(payload), root });
       invalidateAnalysis();
+      return document;
     },
     beginLoad(mode: DocumentLoad["mode"]) {
       cancelLoad();

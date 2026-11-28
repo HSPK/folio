@@ -3,12 +3,13 @@ var sourceEncoder = new TextEncoder();
 var MAX_NATIVE_SOURCE_LINES = 4e3;
 function shouldVirtualizeSource(source, byteThreshold) {
   if (source.length >= byteThreshold) return true;
+  const lineLimit = source.length >= 64 * 1024 ? 1024 : MAX_NATIVE_SOURCE_LINES;
   let from = 0;
-  if (source.length >= MAX_NATIVE_SOURCE_LINES) {
-    for (let line = 0; line < MAX_NATIVE_SOURCE_LINES; line += 1) {
+  if (source.length >= lineLimit) {
+    for (let line = 0; line < lineLimit; line += 1) {
       const next = source.indexOf("\n", from);
       if (next < 0) break;
-      if (line === MAX_NATIVE_SOURCE_LINES - 1) return true;
+      if (line === lineLimit - 1) return true;
       from = next + 1;
     }
   }
@@ -69,6 +70,7 @@ function splitFrontMatter(source) {
     body: source.slice(bomLength),
     bodyStart: bomLength
   };
+  if (!source.startsWith("---", bomLength)) return none;
   const opening = sourceLine(source, bomLength);
   if (!/^---[ \t]*$/.test(opening.text) || !opening.ending) return none;
   let position = opening.end;
@@ -112,13 +114,17 @@ function replaceMetadataRaw(parts, raw) {
 function headingSlug(text) {
   let output = "";
   let separator = false;
-  for (const character of [...text].slice(0, 160).flatMap((value) => [...value.toLowerCase()])) {
-    if (/[\p{Alphabetic}\p{N}_]/u.test(character)) {
-      if (separator && output) output += "-";
-      separator = false;
-      output += character;
-    } else if (/[\p{White_Space}-]/u.test(character)) {
-      separator = true;
+  let count = 0;
+  for (const value of text) {
+    if (count++ === 160) break;
+    for (const character of value.toLowerCase()) {
+      if (/[\p{Alphabetic}\p{N}_]/u.test(character)) {
+        if (separator && output) output += "-";
+        separator = false;
+        output += character;
+      } else if (/[\p{White_Space}-]/u.test(character)) {
+        separator = true;
+      }
     }
   }
   return output || "section";

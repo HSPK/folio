@@ -1,27 +1,17 @@
-import { AppDialog } from "./primitives";
 import { SearchResults } from "./SearchResults";
+import { DialogHeading } from "./primitives";
 
 /** Mount account workspace, search, history, and recovery surfaces. */
 export function WorkspaceDialogs() {
   return (
     <>
-      <AppDialog id="backlinks-dialog" class="workspace-dialog" aria-labelledby="backlinks-title">
-        <header class="workspace-heading">
-          <h2 id="backlinks-title">Links to this note</h2>
-          <button id="backlinks-close" type="button">
-            Close
-          </button>
-        </header>
+      <dialog id="backlinks-dialog" class="workspace-dialog" aria-labelledby="backlinks-title">
+        <DialogHeading id="backlinks" title="Links to this note" />
         <div id="backlinks-list" class="workspace-list"></div>
         <p id="backlinks-message" class="notice" role="status" data-inline-status hidden></p>
-      </AppDialog>
-      <AppDialog id="attachments-dialog" class="workspace-dialog" aria-labelledby="attachments-title">
-        <header class="workspace-heading">
-          <h2 id="attachments-title">Attachments</h2>
-          <button id="attachments-close" type="button">
-            Close
-          </button>
-        </header>
+      </dialog>
+      <dialog id="attachments-dialog" class="workspace-dialog" aria-labelledby="attachments-title">
+        <DialogHeading id="attachments" title="Attachments" />
         <label class="form-hint">
           <input id="attachments-unused" type="checkbox" checked />
           Only unreferenced files
@@ -36,8 +26,8 @@ export function WorkspaceDialogs() {
             Recycle selected files
           </button>
         </div>
-      </AppDialog>
-      <AppDialog id="public-password-dialog" aria-labelledby="public-password-title">
+      </dialog>
+      <dialog id="public-password-dialog" aria-labelledby="public-password-title">
         <form id="public-password-form">
           <h2 id="public-password-title">Protected document</h2>
           <label for="public-password">Share password</label>
@@ -52,24 +42,14 @@ export function WorkspaceDialogs() {
             </button>
           </div>
         </form>
-      </AppDialog>
-      <AppDialog id="shares-dialog" class="workspace-dialog" aria-labelledby="shares-title">
-        <header class="workspace-heading">
-          <h2 id="shares-title">Your public links</h2>
-          <button id="shares-close" type="button">
-            Close
-          </button>
-        </header>
+      </dialog>
+      <dialog id="shares-dialog" class="workspace-dialog" aria-labelledby="shares-title">
+        <DialogHeading id="shares" title="Your public links" />
         <div id="shares-list" class="workspace-list"></div>
         <p id="shares-message" class="notice" role="status" data-inline-status hidden></p>
-      </AppDialog>
-      <AppDialog id="workspace-dialog" class="workspace-dialog" aria-labelledby="workspace-title">
-        <header class="workspace-heading">
-          <h2 id="workspace-title">Your workspace</h2>
-          <button id="workspace-close" type="button">
-            Close
-          </button>
-        </header>
+      </dialog>
+      <dialog id="workspace-dialog" class="workspace-dialog" aria-labelledby="workspace-title">
+        <DialogHeading id="workspace" title="Your workspace" />
         <div class="workspace-filters">
           <select id="workspace-kind" aria-label="Workspace list">
             <option value="favorites">Favorites</option>
@@ -79,18 +59,13 @@ export function WorkspaceDialogs() {
         </div>
         <div id="workspace-list" class="workspace-list"></div>
         <p id="workspace-message" class="notice" role="status" data-inline-status hidden></p>
-      </AppDialog>
-      <AppDialog id="drafts-dialog" class="workspace-dialog" aria-labelledby="drafts-title">
-        <header class="workspace-heading">
-          <h2 id="drafts-title">Local recovery</h2>
-          <button id="drafts-close" type="button">
-            Close
-          </button>
-        </header>
+      </dialog>
+      <dialog id="drafts-dialog" class="workspace-dialog" aria-labelledby="drafts-title">
+        <DialogHeading id="drafts" title="Local recovery" />
         <div id="drafts-list" class="workspace-list"></div>
         <p id="drafts-message" class="notice" role="status" data-inline-status hidden></p>
-      </AppDialog>
-      <AppDialog id="draft-recovery-dialog" class="workspace-dialog" aria-labelledby="draft-recovery-title">
+      </dialog>
+      <dialog id="draft-recovery-dialog" class="workspace-dialog" aria-labelledby="draft-recovery-title">
         <h2 id="draft-recovery-title">Recover local draft</h2>
         <p id="draft-recovery-info" class="form-hint"></p>
         <textarea
@@ -115,14 +90,9 @@ export function WorkspaceDialogs() {
             Apply draft
           </button>
         </div>
-      </AppDialog>
-      <AppDialog id="search-dialog" class="workspace-dialog search-dialog" aria-labelledby="search-title">
-        <header class="workspace-heading">
-          <h2 id="search-title">Search notes</h2>
-          <button id="search-close" type="button">
-            Close
-          </button>
-        </header>
+      </dialog>
+      <dialog id="search-dialog" class="workspace-dialog search-dialog" aria-labelledby="search-title">
+        <DialogHeading id="search" title="Search notes" />
         <form id="search-form">
           <label class="visually-hidden" for="search-query">
             Search title, body and metadata
@@ -164,8 +134,8 @@ export function WorkspaceDialogs() {
             </p>
           </section>
         </div>
-      </AppDialog>
-      <AppDialog id="tags-dialog" aria-labelledby="tags-title">
+      </dialog>
+      <dialog id="tags-dialog" aria-labelledby="tags-title">
         <form id="tags-form">
           <h2 id="tags-title">Document tags</h2>
           <label for="tags-input">Tags</label>
@@ -185,14 +155,9 @@ export function WorkspaceDialogs() {
             </button>
           </div>
         </form>
-      </AppDialog>
-      <AppDialog id="history-dialog" class="workspace-dialog" aria-labelledby="history-title">
-        <header class="workspace-heading">
-          <h2 id="history-title">History</h2>
-          <button id="history-close" type="button">
-            Close
-          </button>
-        </header>
+      </dialog>
+      <dialog id="history-dialog" class="workspace-dialog" aria-labelledby="history-title">
+        <DialogHeading id="history" title="History" />
         <div class="history-layout">
           <nav id="history-list" aria-label="Document versions"></nav>
           <section>
@@ -209,17 +174,12 @@ export function WorkspaceDialogs() {
             Restore version
           </button>
         </div>
-      </AppDialog>
-      <AppDialog id="trash-dialog" class="workspace-dialog" aria-labelledby="trash-title">
-        <header class="workspace-heading">
-          <h2 id="trash-title">Recycle bin</h2>
-          <button id="trash-close" type="button">
-            Close
-          </button>
-        </header>
+      </dialog>
+      <dialog id="trash-dialog" class="workspace-dialog" aria-labelledby="trash-title">
+        <DialogHeading id="trash" title="Recycle bin" />
         <div id="trash-list" class="workspace-list"></div>
         <p id="trash-message" class="notice" role="status" data-inline-status hidden></p>
-      </AppDialog>
+      </dialog>
     </>
   );
 }

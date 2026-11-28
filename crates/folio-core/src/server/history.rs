@@ -48,7 +48,8 @@ impl Library {
         if let Some(store) = &self.store {
             if let Err(error) = store.record(&document, actor, kind) {
                 eprintln!("Could not record document history: {}", error.message);
-                document.warning = Some("Note saved without history. Contact the project owner.".into());
+                document.warning =
+                    Some("Note saved without history. Contact the project owner.".into());
             }
             if let Err(error) = store.invalidate_index(&document.path, &document.version) {
                 eprintln!("Could not invalidate the search index: {}", error.message);
@@ -205,7 +206,9 @@ pub(super) async fn trash_list(
 ) -> Result<Json<Vec<TrashEntry>>, ApiError> {
     blocking(state, work, move |state, _| {
         state.owner()?;
-        state.history_store()?.trash_list()
+        let store = state.root.resource_store()?;
+        store.require_durable_trash()?;
+        store.trash_list()
     })
     .await
     .map(Json)
@@ -288,8 +291,13 @@ pub(super) async fn restore_trash(
             .saves
             .lock()
             .map_err(|_| ApiError::internal("The save lock is unavailable."))?;
-        let store = state.history_store()?;
+        let store = state.root.resource_store()?;
+        store.require_durable_trash()?;
         let (path, kind, bytes, resource) = store.trashed(body.id)?;
+        if matches!(kind.as_str(), "entry-note" | "entry-directory") {
+            return super::recycle::restore(state, work, body.id, &resource, &path, &bytes);
+        }
+        let store = state.history_store()?;
         let identity = state.root.resource_store()?.resource(&resource, true)?;
         if !identity.deleted && identity.path != path {
             return Err(ApiError::conflict(

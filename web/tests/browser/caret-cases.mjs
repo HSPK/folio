@@ -60,7 +60,7 @@ for (const width of [1440, 390]) {
     await expectNextLineCaret(page, second, spacing);
     await page.keyboard.insertText("中文");
     await expectGlyphCaret(page, code);
-    await expect(block.locator(".folio-code-gutter > span")).toHaveText(["1", "2", "3"]);
+    await expect(block.locator(".folio-code-gutter")).toHaveText("1\n2\n3");
     await expect(code).toHaveCSS("font-size", typography.size);
     await expect(code).toHaveCSS("line-height", typography.line);
     await expect(page.locator(".ProseMirror .folio-live-caret, .ProseMirror .folio-caret-metrics")).toHaveCount(0);
@@ -138,7 +138,7 @@ test("Live caret respects ranges, block menus, nested scrolling and editor dispo
   const cached = await page.locator(".folio-live-caret").elementHandle();
   await chooseView(page, "rich");
   await page.locator('[data-path="Second.md"]').click();
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
+  await expect(page.locator("#document-title")).toHaveText("Second");
   expect(await cached.evaluate(node => node.isConnected)).toBe(false);
   await expect(page.locator(".folio-live-caret")).toHaveCount(1);
 });

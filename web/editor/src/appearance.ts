@@ -9,15 +9,16 @@ interface AppearanceState {
   fontResult: Promise<string>;
 }
 
-const appearanceRoots = new WeakMap<HTMLElement, AppearanceState>();
+let appearance: AppearanceState | undefined;
 let fontGeneration = 0;
 const cjkGlyphs =
   "U+2E80-2FFF,U+3000-303F,U+3040-30FF,U+3100-312F,U+31A0-31FF,U+31C0-31EF,U+3400-4DBF,U+4E00-9FFF,U+AC00-D7AF,U+F900-FAFF,U+FE30-FE4F,U+FF00-FFEF,U+20000-323AF";
 
-export function applyAppearance(value: unknown, root = document.documentElement) {
+export function applyAppearance(value: unknown) {
+  const root = document.documentElement;
   const settings = validateAppearance(value);
   const signature = JSON.stringify(settings);
-  const previous = appearanceRoots.get(root);
+  const previous = appearance;
   if (previous?.signature === signature) {
     return previous.fontResult.then((warning) => ({
       changed: false,
@@ -32,7 +33,7 @@ export function applyAppearance(value: unknown, root = document.documentElement)
     settings,
     signature,
   };
-  appearanceRoots.set(root, state);
+  appearance = state;
   if (root.dataset.theme !== settings.theme) root.dataset.theme = settings.theme;
   if (
     !previous ||

@@ -49,7 +49,7 @@ impl AppState {
     pub(super) fn document_permissions(&self, path: &str) -> Result<DocumentPermissions, ApiError> {
         match &self.access {
             Some(access) => access.document_permissions(path),
-            None if self.user_auth.is_none() => Ok(DocumentPermissions {
+            None if self.shared.user_auth.is_none() => Ok(DocumentPermissions {
                 writable: true,
                 collaborative: true,
                 owner: true,
@@ -74,11 +74,14 @@ enum DocumentRender {
     #[default]
     Full,
     Source,
+    Stamp,
 }
 
 #[derive(serde::Deserialize)]
 pub(super) struct DocumentQuery {
     id: String,
+    stamp: Option<String>,
+    version: Option<String>,
     #[serde(default)]
     render: DocumentRender,
 }
@@ -96,6 +99,14 @@ pub(super) async fn document(
         let json = match query.render {
             DocumentRender::Full => state.root.document_json_with_revision(&path, revision)?,
             DocumentRender::Source => state.root.source_json_with_revision(&path, revision)?,
+            DocumentRender::Stamp => {
+                let stamp = state.root.document_stamp(&path)?;
+                let changed = query.stamp.as_ref() != Some(&stamp)
+                    && Some(state.root.document_version(&path)?) != query.version;
+                axum::body::Bytes::from(
+                    serde_json::json!({ "stamp": stamp, "changed": changed }).to_string(),
+                )
+            }
         };
         if state.document_path(&query.id)? != path {
             return Err(ApiError::conflict(

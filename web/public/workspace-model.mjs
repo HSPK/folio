@@ -1,7 +1,7 @@
 // Generated from frontend/models/workspace.ts; do not edit.
 
 // frontend/models/workspace.ts
-import { isReservedFileName, markdownByteLength, validateNewNotePath } from "./model.mjs";
+import { isReservedFileName, markdownByteLength, validateNewNotePath } from "./model.mjs?v=19db2a736ebd456e31468e6ee920bf6fe3a81a2f86fa6bb139e35c9e7aa1cb20";
 function calendarDate(date = /* @__PURE__ */ new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
@@ -69,7 +69,6 @@ tags: [${tag}]
   }[kind];
 }
 export {
-  calendarDate,
   calendarWeek,
   notePathFromTitle,
   templateContent,

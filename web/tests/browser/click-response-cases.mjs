@@ -162,6 +162,7 @@ test("cached Markdown bodies keep per-file links, fresh history and external cha
   }
   try {
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    for (const folder of folders) await page.locator(`details.directory[data-path="${folder}"] > summary`).click();
     await page.locator('#file-list button[data-path="Cache-scope-a/note.md"]').click();
     await expect(page.locator(".ProseMirror h1")).toHaveText("Shared body");
     const firstLink = await page.locator(".ProseMirror a").getAttribute("href");
@@ -288,7 +289,7 @@ test("hidden previews are materialized only on demand and keep the latest saved 
   await page.locator("#preview").evaluate((node) => { node.scrollTop = 300; });
   await chooseView(page, "editor");
   await page.locator('[data-path="Second.md"]').click();
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
+  await expect(page.locator("#document-title")).toHaveText("Second");
   await page.locator("#editor").fill("# Saved while hidden\n\nNew body.\n");
   await page.keyboard.press("Control+s");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
@@ -373,16 +374,16 @@ test("workspace opens from cached account data before a delayed refresh and surf
   let release;
   try {
     const [page] = library.pages;
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await page.locator("#workspace-favorite").click();
     await expect(page.locator("#workspace-favorite")).toHaveText("Remove from favorites");
     const gate = new Promise((resolve) => { release = resolve; });
     await page.route("**/api/workspace", async (route) => {
       if (route.request().method() !== "GET") return route.continue();
       await gate;
-      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Workspace temporarily unavailable." }) });
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Workspace temporarily unavailable." }) });
     });
-    await page.locator("#more-menu > summary").click();
+    await page.locator("#more-menu > button").click();
     await page.locator("#workspace-open").click();
     await expect(page.locator("#workspace-dialog")).toBeVisible();
     await expect(page.locator("#workspace-list")).toContainText("Shared");
@@ -403,11 +404,11 @@ test("document navigation resets Source scrolling before paint without a stale f
   await editor.evaluate((node) => { node.scrollTop = node.scrollHeight; });
   await expect.poll(() => editor.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
   await page.locator('[data-path="Scroll-next.md"]').click();
-  await expect(page.locator("#document-title")).toHaveText("Scroll-next.md");
+  await expect(page.locator("#document-title")).toHaveText("Scroll-next");
   await expect.poll(() => editor.evaluate((node) => node.scrollTop)).toBe(0);
   await page.locator('[data-path="Scroll-first.md"]').click();
   await page.locator('[data-path="Second.md"]').click();
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
+  await expect(page.locator("#document-title")).toHaveText("Second");
   await expect(editor).toHaveValue("# Second\n\nAnother note.\n");
   await expect.poll(() => editor.evaluate((node) => node.scrollTop)).toBe(0);
 });

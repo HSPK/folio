@@ -1,19 +1,54 @@
+import { onCleanup } from "solid-js";
 import { shell } from "../state/shell";
+import { setSidebar, submitAuthentication } from "../runtime/accounts/authentication";
+import { appState } from "../runtime/core/bootstrap";
+import { setSidebarWidth } from "../runtime/core/layout";
+import { element } from "../types/elements";
 import { DocumentWorkspace } from "./DocumentWorkspace";
 import { LibrarySidebar } from "./LibrarySidebar";
 
 /** Mount the workspace chrome around independently owned editor and navigation hosts. */
 export function WorkspaceShell() {
+  let sidebarResizeOffset = 0;
+  let widthFrame = 0;
+  let pendingWidth = 0;
+  const flushWidth = () => {
+    if (!widthFrame) return;
+    cancelAnimationFrame(widthFrame);
+    widthFrame = 0;
+    setSidebarWidth(pendingWidth);
+  };
+  const finishSidebarResize = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    flushWidth();
+    if (event.type === "pointerup") setSidebarWidth(event.clientX - sidebarResizeOffset);
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    delete document.body.dataset.resizingSidebar;
+    setSidebarWidth(appState.preferredSidebarWidth, true);
+  };
+  onCleanup(() => {
+    cancelAnimationFrame(widthFrame);
+    delete document.body.dataset.resizingSidebar;
+  });
   return (
     <>
-      <a class="skip-link" href="#editor">
+      <a
+        class="skip-link"
+        href="#editor"
+        onClick={(event) => {
+          event.preventDefault();
+          if (shell.view === "rich") appState.inlineEditor.focus();
+          else if (shell.view === "preview") element("preview").focus();
+          else appState.editor.focus();
+        }}
+      >
         Skip to document
       </a>
       <main id="auth-screen" class="auth-screen" aria-labelledby="auth-title" hidden>
         <section class="auth-card">
           <img src="/icon.svg" alt="" width="52" height="52" />
           <h1 id="auth-title">Log in to Folio</h1>
-          <form id="auth-form">
+          <form id="auth-form" onSubmit={submitAuthentication}>
             <div id="auth-invitation-field" hidden>
               <label for="auth-invitation">Invitation key</label>
               <input
@@ -67,8 +102,37 @@ export function WorkspaceShell() {
           aria-orientation="vertical"
           aria-valuemin="210"
           aria-valuemax="420"
-          aria-valuenow="260"
+          aria-valuenow="240"
           tabIndex="0"
+          onPointerDown={(event) => {
+            if (event.button !== 0 || appState.compactLayout.matches || !shell.sidebarOpen) return;
+            event.preventDefault();
+            sidebarResizeOffset = event.clientX - element("sidebar").getBoundingClientRect().width;
+            document.body.dataset.resizingSidebar = "true";
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+            pendingWidth = event.clientX - sidebarResizeOffset;
+            if (!widthFrame) widthFrame = requestAnimationFrame(flushWidth);
+          }}
+          onPointerUp={finishSidebarResize}
+          onPointerCancel={finishSidebarResize}
+          onLostPointerCapture={() => {
+            flushWidth();
+            delete document.body.dataset.resizingSidebar;
+          }}
+          onDblClick={() => setSidebarWidth(appState.SIDEBAR_DEFAULT, true)}
+          onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
+            event.preventDefault();
+            setSidebarWidth(
+              event.key === "Home"
+                ? appState.SIDEBAR_DEFAULT
+                : appState.preferredSidebarWidth + (event.key === "ArrowLeft" ? -10 : 10),
+              true,
+            );
+          }}
         ></div>
         <DocumentWorkspace />
       </div>
@@ -78,6 +142,7 @@ export function WorkspaceShell() {
         aria-label="Close sidebar"
         tabIndex="-1"
         hidden={!shell.sidebarOpen || !shell.compact}
+        onClick={() => setSidebar(false, true)}
       ></button>
       <div id="collaboration-cursors" aria-hidden="true"></div>
     </>

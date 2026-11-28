@@ -62,6 +62,9 @@ impl Directory {
     pub(in super::super) fn create_dir(&self, _: &OsStr) -> io::Result<()> {
         Err(unsupported())
     }
+    pub(in super::super) fn create_private_dir(&self, _: &OsStr) -> io::Result<()> {
+        Err(unsupported())
+    }
     pub(in super::super) fn move_entry_to(&self, _: &OsStr, _: &Self, _: &OsStr) -> io::Result<()> {
         Err(unsupported())
     }

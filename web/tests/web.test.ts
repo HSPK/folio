@@ -8,6 +8,8 @@ import {
   createDocumentModel,
   createSaveSnapshot,
   createWordCounter,
+  compactPageUrl,
+  expandedPageUrl,
   entryDestination,
   filterNotes,
   formatByteCount,
@@ -475,6 +477,21 @@ test("a rename changes location without changing the identity accepted by save r
   assert.equal(result.document.id, model.id);
   assert.equal(result.document.path, "Renamed.md");
   assert.equal(result.dirty, false);
+});
+
+test("compact addresses round trip resource IDs and anchors without exposing project or file paths", () => {
+  const origin = "https://example.test";
+  const id = "01961e0b-9831-7000-8000-000000000001";
+  const project = "0123456789abcdef0123456789abcdef";
+  const address = compactPageUrl(`${origin}/?document=${id}&project=${project}#hello`);
+  assert.match(address.pathname, /^\/n\/[A-Za-z0-9_-]{22}$/);
+  assert.equal(address.search, "");
+  assert.deepEqual(readNoteRoute(address), { id, hash: "#hello" });
+  assert.equal(expandedPageUrl(compactPageUrl(`${origin}/?project=${project}`)).searchParams.get("project"), project);
+  const shared = compactPageUrl(`${origin}/share?share=${"ff".repeat(32)}#hello`);
+  assert.match(shared.href, /\/s\/_{21}w#hello$/);
+  assert.equal(compactPageUrl(makeNoteUrl(shared, id, "#next")).pathname, shared.pathname);
+  assert.throws(() => readNoteRoute(`${origin}/n/not-a-valid-id`), /Invalid short link/);
 });
 
 test("a new resource at an old path invalidates the existing tree structure", () => {

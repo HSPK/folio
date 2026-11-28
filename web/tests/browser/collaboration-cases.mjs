@@ -74,7 +74,7 @@ export async function collaborativeLibrary(browser, { content, source = false, r
       await expect(pages[0].locator("#collaboration-join")).toBeHidden();
     }
     return {
-      pages, notes, url, sockets,
+      pages, notes, url, sockets, contexts,
       async restart(crash = false) {
         const exited = new Promise((resolve) => service.once("exit", resolve));
         if (crash) service.kill("SIGKILL");
@@ -123,21 +123,170 @@ async function sourceCaret(page, word) {
   }, word);
 }
 
+test("Duplicate from Other copies both writers' accepted edits before autosave", async ({ browser }) => {
+  const original = "\uFEFF# Shared\r\n\r\nAlpha\r\nBeta\r\n";
+  const library = await collaborativeLibrary(browser, { content: original, source: true, saveDelay: 10_000 });
+  try {
+    const [alice, bob] = library.pages;
+    const third = await alice.context().newPage();
+    await third.goto(await userDocumentUrl(third.context(), library.url, "Other.md"));
+    await third.locator('button[data-path="Shared.md"]').click({ button: "right" });
+    await third.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
+    const name = third.locator("#file-list").getByRole("textbox", { name: "File name" });
+    await expect(name).toBeFocused();
+
+    // Another writer wins the destination after the tree offered it.
+    const taken = path.join(library.notes, "Shared copy.md");
+    await fs.writeFile(taken, "Keep this file", { flag: "wx" });
+    await name.press("Enter");
+    await expect(third.getByText("Name already exists", { exact: true })).toBeVisible();
+    await sourceCaret(alice, "Alpha");
+    await alice.keyboard.insertText(" from Alice");
+    await expect(bob.locator("#editor")).toHaveValue(/Alpha from Alice/);
+    await sourceCaret(bob, "Beta");
+    await bob.keyboard.insertText(" from Bob");
+    await expect(alice.locator("#editor")).toHaveValue(/Beta from Bob/);
+    await name.fill("Merged copy");
+    await name.press("Enter");
+    await expect(third.locator('button[data-path="Merged copy.md"]')).toBeVisible();
+    expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe(original);
+    expect(await fs.readFile(path.join(library.notes, "Merged copy.md"), "utf8")).toBe(
+      original.replace("Alpha", "Alpha from Alice").replace("Beta", "Beta from Bob"));
+    expect(await fs.readFile(taken, "utf8")).toBe("Keep this file");
+    await expect(third.locator("#document-title")).toHaveText("Other");
+  } finally { await library.close(); }
+});
+
+test("Duplicate of the open private note keeps its unsaved local draft", async ({ browser }) => {
+  const library = await collaborativeLibrary(browser, { participants: 1, sharing: "private", source: true, saveDelay: 10_000 });
+  try {
+    const [page] = library.pages;
+    const source = path.join(library.notes, "Shared.md");
+    const original = await fs.readFile(source, "utf8");
+    await page.locator("#editor").fill("Only in my editor");
+    await page.locator('button[data-path="Shared.md"]').click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
+    await page.getByRole("textbox", { name: "File name" }).press("Enter");
+    await expect(page.locator('button[data-path="Shared copy.md"]')).toBeVisible();
+    expect(await fs.readFile(path.join(library.notes, "Shared copy.md"), "utf8")).toBe("Only in my editor");
+    expect(await fs.readFile(source, "utf8")).toBe(original);
+  } finally { await library.close(); }
+});
+
+for (const lines of [6, 3800]) test(`collaboration benchmark measures actual input to peer text (${lines} lines)`, async ({ browser }) => {
+  test.skip(!process.env.FOLIO_BENCH_PEERS, "Opt-in two-browser benchmark");
+  test.setTimeout(60000);
+  const content = "# Shared\n\n" + "Plain text with Unicode 中文😀.\n".repeat(lines) + "Tail";
+  const library = await collaborativeLibrary(browser, { content, source: true, saveDelay: 10000 });
+  try {
+    const [alice, bob] = library.pages;
+    for (const page of library.pages) {
+      await chooseView(page, "editor");
+      const virtual = page.locator(".virtual-source-editor .cm-content");
+      if (await virtual.isVisible()) {
+        await virtual.focus();
+        await page.keyboard.press("Control+End");
+        await expect(virtual).toContainText("Tail");
+      } else {
+        await sourceCaret(page, "Tail");
+        await page.locator("#editor").evaluate(el => { el.scrollTop = el.scrollHeight; });
+      }
+    }
+    const totals = [];
+    const sends = [];
+    await alice.evaluate(() => {
+      const send = WebSocket.prototype.send;
+      WebSocket.prototype.send = function(data) {
+        if (typeof data !== "string") window.sentAt = performance.timeOrigin + performance.now();
+        return send.call(this, data);
+      };
+    });
+    for (let i = 0; i < 12; i++) {
+      const marker = `[${i}]`;
+      await bob.evaluate(marker => {
+        window.seenEdit = new Promise((resolve, reject) => {
+          const start = performance.now();
+          function sample() {
+            const source = document.querySelector("#editor");
+            const text = source.hidden ? document.querySelector(".cm-content").textContent : source.value;
+            if (text.includes(marker)) resolve(performance.timeOrigin + performance.now());
+            else if (performance.now() - start > 3000) reject(new Error("Peer did not receive " + marker));
+            else requestAnimationFrame(sample);
+          }
+          sample();
+        });
+      }, marker);
+      await alice.evaluate(() => {
+        document.addEventListener("beforeinput", () => {
+          window.inputAt = performance.timeOrigin + performance.now();
+        }, {capture: true, once: true});
+      });
+      await alice.keyboard.insertText(marker);
+      const visible = await bob.evaluate(() => window.seenEdit);
+      const { inputAt, sentAt } = await alice.evaluate(() => ({ inputAt: window.inputAt, sentAt: window.sentAt }));
+      totals.push(visible - inputAt);
+      sends.push(sentAt - inputAt);
+    }
+    totals.sort((a, b) => a - b);
+    sends.sort((a, b) => a - b);
+    console.log("PEER INPUT", process.env.FOLIO_BENCH_PEERS, {utf8Bytes: Buffer.byteLength(content), sendMs: sends[6], medianMs: totals[6], p95Ms: totals[11]});
+  } finally { await library.close(); }
+});
+
+test("a collaborator can use the menu without losing the Source selection on remote edits", async ({ browser }) => {
+  const library = await collaborativeLibrary(browser, { source: true });
+  try {
+    const [alice, bob] = library.pages;
+    await sourceCaret(alice, "Beta");
+    await alice.locator("#more-menu > button").focus();
+    const avatar = await alice.locator(".collaboration-avatar").first().elementHandle();
+    await sourceCaret(bob, "Alpha");
+    await bob.keyboard.insertText(" edit");
+    await expect(alice.locator("#editor")).toHaveValue(/Alpha edit/);
+    expect(await alice.locator("#editor").evaluate(el => el.selectionStart === el.value.indexOf("Beta") + 4)).toBe(true);
+    await expect(alice.locator("#more-menu > button")).toBeFocused();
+    expect(await avatar.evaluate(node => node.isConnected)).toBe(true);
+    const source = alice.locator("#editor");
+    await source.focus();
+    await source.evaluate(el => {
+      const start = el.value.indexOf("Beta");
+      el.setSelectionRange(start, start + 4, "backward");
+    });
+    await bob.keyboard.insertText(" again");
+    await expect(source).toHaveValue(/Alpha edit again/);
+    await expect(source).toHaveJSProperty("selectionDirection", "backward");
+    await source.press("Shift+ArrowLeft");
+    expect(await source.evaluate(el => el.value.slice(el.selectionStart, el.selectionEnd))).toBe("\nBeta");
+
+    await alice.locator('[data-entry-path="Shared.md"]').click({button:"right"});
+    await expect(alice.getByRole("menuitem", {name:"Rename"})).toBeDisabled();
+    await expect(alice.locator("#file-rename-hint")).toBeVisible();
+  } finally { await library.close(); }
+});
+
 test("two authenticated editors merge simultaneous Source edits, preserve local undo and show colored cursors", async ({ browser }) => {
   const library = await collaborativeLibrary(browser);
   try {
     const [alice, bob] = library.pages;
+    await alice.locator("#more-menu > button").click();
     await expect(alice.getByRole("img", { name: "alice (you)", exact: true })).toBeVisible();
     await expect(alice.getByRole("img", { name: "bob", exact: true })).toBeVisible();
     const colors = await alice.locator(".collaboration-avatar").evaluateAll(
       (avatars) => avatars.map((avatar) => getComputedStyle(avatar).borderColor),
     );
     expect(new Set(colors).size).toBe(2);
+    await alice.locator("#more-menu > button").click();
     for (const page of library.pages) await chooseView(page, "editor");
     await sourceCaret(alice, "Alpha");
     await sourceCaret(bob, "Beta");
     await expect(alice.locator(".collaboration-caret-name")).toHaveText("bob");
     await expect(bob.locator(".collaboration-caret-name")).toHaveText("alice");
+    const caret = await alice.locator(".collaboration-caret-name").elementHandle();
+    await alice.evaluate(() => new Promise(resolve => {
+      document.dispatchEvent(new Event("scroll"));
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }));
+    expect(await caret.evaluate(node => node.isConnected)).toBe(true);
     await alice.screenshot({ path: path.join(buildRoot, "collaboration-source.png") });
     await Promise.all([
       alice.keyboard.insertText(" alice"),
@@ -152,6 +301,29 @@ test("two authenticated editors merge simultaneous Source edits, preserve local 
     for (const page of library.pages) await expect(page.locator("#editor")).toHaveValue(/Alpha\n\nBeta bob/);
     await alice.keyboard.press("Control+Shift+z");
     for (const page of library.pages) await expect(page.locator("#editor")).toHaveValue(/Alpha alice[\s\S]*Beta bob/);
+  } finally { await library.close(); }
+});
+
+test("solo Source undo crosses the collaboration handoff without touching the other author's text", async ({ browser }) => {
+  const library = await collaborativeLibrary(browser, { source: true, participants: 1 });
+  try {
+    const [alice] = library.pages;
+    await sourceCaret(alice, "Alpha");
+    await alice.keyboard.insertText(" SOLO");
+    await expect(alice.locator("#editor")).toHaveValue(/Alpha SOLO/);
+    const bob = await library.contexts[1].newPage();
+    await bob.goto(await userDocumentUrl(bob.context(), library.url, "Shared.md"));
+    await chooseView(bob, "editor");
+    for (const page of [alice, bob]) await expect(page.locator(".collaboration-avatar")).toHaveCount(2);
+    // Insert inside Alice's marker, not merely in an unrelated paragraph.
+    await sourceCaret(bob, "Alpha SO");
+    await bob.keyboard.insertText("[bob]");
+    await expect(alice.locator("#editor")).toHaveValue(/Alpha SO\[bob\]LO/);
+    await alice.locator("#editor").focus();
+    await alice.keyboard.press(`${primaryModifier}+z`);
+    for (const page of [alice, bob]) await expect(page.locator("#editor")).toHaveValue(/Alpha\[bob\]\n/);
+    await alice.keyboard.press(`${primaryModifier}+Shift+z`);
+    for (const page of [alice, bob]) await expect(page.locator("#editor")).toHaveValue(/Alpha SO\[bob\]LO/);
   } finally { await library.close(); }
 });
 
@@ -200,6 +372,7 @@ test("the last collaborator disconnecting flushes accepted edits before the auto
 });
 
 test("authenticated collaboration remains connected beyond the HTTP header timeout", async ({ browser }) => {
+  test.setTimeout(60_000);
   const library = await collaborativeLibrary(browser, { routeSockets: true, source: true });
   try {
     const [alice, bob] = library.pages;
@@ -244,6 +417,21 @@ test("collaborative edits queued during IME and disconnection merge after reconn
   } finally { await library.close(); }
 });
 
+test("an external disk edit reaches all shared editors and becomes their next save baseline", async ({ browser }) => {
+  const library = await collaborativeLibrary(browser, { content: "😀 Shared\n\nTail\n", source: true });
+  try {
+    const [alice, bob] = library.pages;
+    const file = path.join(library.notes, "Shared.md");
+    const agent = "😀 From agent\n\nTail\n";
+    await fs.writeFile(file, agent);
+    for (const page of [alice, bob]) await expect(page.locator("#editor")).toHaveValue(agent);
+    await sourceCaret(alice, "Tail");
+    await alice.keyboard.insertText(" edited");
+    await expect(bob.locator("#editor")).toHaveValue(agent.replace("Tail", "Tail edited"));
+    await expect.poll(() => fs.readFile(file, "utf8")).toBe(agent.replace("Tail", "Tail edited"));
+  } finally { await library.close(); }
+});
+
 test("collaborative large Source uses virtual editing and protects external disk changes", async ({ browser }) => {
   const content = "# Large shared\n\n" + "Paragraph with enough text for virtualization.\n".repeat(20_000);
   const library = await collaborativeLibrary(browser, { content, source: true });
@@ -262,8 +450,8 @@ test("collaborative large Source uses virtual editing and protects external disk
       .toBe(`Bob\n\n${content}Alice 中文\n`);
     await fs.writeFile(path.join(library.notes, "Shared.md"), "# Externally replaced\n");
     await alice.keyboard.insertText("Keep this draft");
-    await expect(alice.locator("#collaboration-message")).toContainText("save failed");
-    await expect(bob.locator("#collaboration-message")).toContainText("save failed");
+    await expect(alice.locator("#collaboration-message")).toContainText("note changed elsewhere");
+    await expect(bob.locator("#collaboration-message")).toContainText("note changed elsewhere");
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toBe("# Externally replaced\n");
   } finally { await library.close(); }
 });

@@ -7,7 +7,7 @@ import type { Attrs, Mark, Node as ProseNode } from "@milkdown/prose/model";
 import type { MarkView } from "@milkdown/prose/view";
 import type { InlineEditorOptions, MarkdownUrl, ReadyEditorSession } from "./types/editor.ts";
 import { isReadySession } from "./editor-session.ts";
-import { closestElement, nodeElement } from "./dom.ts";
+import { closestElement, createButton, nodeElement } from "./dom.ts";
 import { errorMessage } from "./errors.ts";
 import type { Lifetime } from "../../shared/lifetime.ts";
 interface LinkRange {
@@ -35,7 +35,7 @@ interface LinkToolsOptions {
   onCreate_fn?: InlineEditorOptions["onCreateLink"];
   onBeforeEdit_fn?: () => void;
 }
-export function linkRangeAt(state: EditorState, position: number): LinkRange | null {
+function linkRangeAt(state: EditorState, position: number): LinkRange | null {
   const atom = state.doc.nodeAt(position);
   if (atom?.type.name === "wiki_link")
     return {
@@ -133,10 +133,7 @@ export function createLinkTools({
     text: string,
     fn: (info: LinkTarget, anchor: HTMLElement | null) => unknown | Promise<unknown>,
   ) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = text;
-    button.setAttribute("aria-label", label);
+    const button = createButton({ label, text });
     lifetime.listen(button, "pointerdown", (event) => event.preventDefault());
     lifetime.listen(button, "click", async () => {
       const current = previewAnchor;
@@ -318,9 +315,7 @@ export function createLinkTools({
   actions.className = "dialog-actions";
   let target: LinkTarget | null = null;
   const button = (text: string, handler: () => unknown | Promise<unknown>) => {
-    const control = document.createElement("button");
-    control.type = "button";
-    control.textContent = text;
+    const control = createButton({ label: text });
     lifetime.listen(control, "click", () => void run(handler));
     actions.append(control);
     return control;

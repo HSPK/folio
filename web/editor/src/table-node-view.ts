@@ -2,15 +2,33 @@ import { CellSelection, selectedRect, TableMap } from "@milkdown/prose/tables";
 import { Selection, TextSelection } from "@milkdown/prose/state";
 import type { Node as ProseNode } from "@milkdown/prose/model";
 import type { EditorView, NodeViewConstructor } from "@milkdown/prose/view";
-import { createNodeToolbar, toolButton } from "./node-toolbar.ts";
+import { createNodeToolbar } from "./node-toolbar.ts";
 import { canDeleteTableAxis, tableActionTransaction, tableAxisTransaction, type TableAxis } from "./table-model.ts";
 import { tableFormat } from "./table-formats.ts";
 import { focusEditorView } from "./cursor-coordinates.ts";
-import { closestElement, nodeElement } from "./dom.ts";
+import { closestElement, nodeElement, createButton } from "./dom.ts";
 import { errorMessage } from "./errors.ts";
+import { tableResizers } from "./table-resize.ts";
+import { readTableLayout, storeTableLayout } from "../../shared/table-layout.ts";
 import type { InlineEditorOptions, NodeActivity } from "./types/editor.ts";
 
 type MenuAxis = TableAxis | "table";
+const tableOrder = new WeakMap<ProseNode, Map<number, number>>();
+function tableIndex(doc: ProseNode, at: number) {
+  let order = tableOrder.get(doc);
+  if (!order) {
+    const found = new Map<number, number>();
+    doc.descendants((node, pos) => {
+      if (node.type.name === "table") {
+        found.set(pos, found.size);
+        return false;
+      }
+      return !node.isTextblock;
+    });
+    tableOrder.set(doc, (order = found));
+  }
+  return order.get(at) ?? -1;
+}
 
 export interface TableHandle extends NodeActivity {
   owns_fn: (view: EditorView) => boolean;
@@ -25,6 +43,9 @@ export interface TableHandle extends NodeActivity {
   can_fn: (action: string) => boolean;
   menuSelection_fn: () => boolean;
   alignment_fn: () => string | null;
+  wraps_fn: () => boolean;
+  customWidths_fn: () => boolean;
+  layout_fn: (reset: boolean) => void;
   run_fn: (action: string) => void;
   format_fn: (format: string) => string;
   reactivate_fn: () => void;
@@ -38,6 +59,7 @@ export interface TableViewOptions extends NodeActivity {
 }
 
 interface TableControls {
+  tableLayoutScope?: InlineEditorOptions["tableLayoutScope"];
   toolbarId: string;
   menu: ReturnType<typeof createNodeToolbar<TableHandle>>;
   onNotice?: InlineEditorOptions["onNotice"];
@@ -48,7 +70,7 @@ interface TableControls {
 
 export function createTableNodeView(
   { active_fn, editable_fn, serialize_fn }: TableViewOptions,
-  { toolbarId, menu, onNotice, focusMenu_fn, activate_fn, register_fn }: TableControls,
+  { toolbarId, menu, onNotice, tableLayoutScope, focusMenu_fn, activate_fn, register_fn }: TableControls,
 ): NodeViewConstructor {
   return (initial, view, getPos) => {
     let node = initial;
@@ -71,7 +93,6 @@ export function createTableNodeView(
     const table = document.createElement("table");
     const contentDOM = document.createElement("tbody");
     table.append(contentDOM);
-    scroll.append(table);
     const outline = document.createElement("div");
     outline.className = "folio-table-selection";
     outline.setAttribute("aria-hidden", "true");
@@ -92,7 +113,7 @@ export function createTableNodeView(
         view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(position() + 3))));
     };
     function grip(value: TableAxis) {
-      const button = toolButton({
+      const button = createButton({
         label: `${value === "row" ? "Row" : "Column"} actions`,
         icon: "grip",
         onClick: () => handle.open_fn(value, button),
@@ -109,7 +130,7 @@ export function createTableNodeView(
     const grips = { row: grip("row"), column: grip("column") };
     const appendControls: HTMLButtonElement[] = [];
     for (const value of ["row", "column"] as const) {
-      const button = toolButton({
+      const button = createButton({
         label: `Add ${value} at end`,
         icon: "plus",
         onClick: () => {
@@ -203,6 +224,14 @@ export function createTableNodeView(
         header.forEach((cell) => values.push(cell.attrs.alignment ?? "left"));
         return values.every((value) => value === values[0]) ? values[0] : null;
       },
+      wraps_fn: () => layout.wrap,
+      customWidths_fn: () => !!layout.widths.length,
+      layout_fn(reset) {
+        if (reset) layout.widths = [];
+        else layout.wrap = !layout.wrap;
+        resize.apply();
+        saveLayout();
+      },
       run_fn(action) {
         if (!editable_fn()) throw new Error("Table not editable");
         view.dispatch(
@@ -261,13 +290,16 @@ export function createTableNodeView(
           height: end.bottom - start.top,
         });
         place(grips.column, {
-          left: Math.max(0, Math.min(viewport.width - 28, column.left + column.width / 2 - bounds.left - 14)),
-          top: viewport.top - bounds.top - 7,
+          left:
+            viewport.left -
+            bounds.left +
+            Math.max(0, Math.min(viewport.width - 28, column.left + column.width / 2 - viewport.left - 14)),
+          top: viewport.top - bounds.top - 18,
           width: 28,
           height: 14,
         });
         place(grips.row, {
-          left: viewport.left - bounds.left - 7,
+          left: viewport.left - bounds.left - 18,
           top: row.top + row.height / 2 - bounds.top - 14,
           width: 14,
           height: 28,
@@ -277,11 +309,15 @@ export function createTableNodeView(
       },
     };
     const unregister = register_fn(dom, handle);
-    const updateWidth = () => {
-      const width = `${TableMap.get(node).width * 112}px`;
-      if (table.style.minWidth !== width) table.style.minWidth = width;
+    const ordinal = () => tableIndex(view.state.doc, position());
+    const layout = readTableLayout(tableLayoutScope?.() ?? null, ordinal(), TableMap.get(node).width);
+    const saveLayout = () => {
+      if (active_fn()) storeTableLayout(tableLayoutScope?.() ?? null, ordinal(), layout);
     };
-    updateWidth();
+    const resize = tableResizers(scroll, table, layout, saveLayout, () => {
+      if (dom.classList.contains("is-active")) handle.refresh_fn();
+    });
+    resize.sync(TableMap.get(node).width);
     dom.addEventListener("pointerdown", (event) => {
       if (!closestElement(event.target, "td, th")) return;
       suppressed = null;
@@ -295,17 +331,23 @@ export function createTableNodeView(
     return {
       dom,
       contentDOM,
-      destroy: unregister,
+      destroy() {
+        resize.destroy();
+        unregister();
+      },
       update(next) {
         if (next.type !== node.type) return false;
         node = next;
-        updateWidth();
+        resize.sync(TableMap.get(node).width);
         return true;
       },
       ignoreMutation: (mutation) => mutation.type !== "selection" && !contentDOM.contains(mutation.target),
       stopEvent: (event) => {
         const target = event.target;
-        return target instanceof Node && controls.some((control) => control.contains(target));
+        return (
+          target instanceof Node &&
+          (resize.rail.contains(target) || controls.some((control) => control.contains(target)))
+        );
       },
     };
   };

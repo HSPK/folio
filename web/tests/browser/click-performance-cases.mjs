@@ -47,11 +47,11 @@ test("click latency benchmark separates UI feedback from document and workspace 
         if (request.path === "/api/document") documentPayloadBytes.push(request.decodedBytes);
       }
       await expect(page.locator("#editor")).toBeEnabled();
-      await page.locator("#more-menu > summary").click();
+      await page.locator("#more-menu > button").click();
       const workspace = await clickFrame("#workspace-open", "#workspace-dialog[open]");
       record("workspaceClickFrameMs", workspace.feedbackMs);
       await page.locator("#workspace-close").click();
-      await page.locator("#more-menu > summary").click();
+      await page.locator("#more-menu > button").click();
       const settings = await clickFrame("#settings-open", "#settings-dialog[open]");
       record("settingsClickFrameMs", settings.feedbackMs);
       await page.locator("#settings-cancel").click();

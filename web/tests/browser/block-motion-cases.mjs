@@ -1,10 +1,10 @@
-import { test, expect, openFixture, hoverBlockTools, openSettingsDialog, primaryModifier } from "./fixture.mjs";
+import { test, expect, openFixture, activateBlockTools, openSettingsDialog, primaryModifier } from "./fixture.mjs";
 import { imageFixture } from "./node-tools-cases.mjs";
 
 test("block plus focuses a real new paragraph and supports the existing slash insertion menu", async ({ page }) => {
   await openFixture(page, "Block-plus-slash.md", "Before.\n\nAfter.\n");
-  await hoverBlockTools(page, page.locator(".ProseMirror > p").first(), "Text");
-  await page.getByRole("button", { name: "Add block below", exact: true }).click();
+  await page.locator(".ProseMirror > p").first().click();
+  await page.getByRole("button", { name: "Add below", exact: true }).click();
   await expect(page.locator(".ProseMirror")).toBeFocused();
   await page.keyboard.insertText("/h2");
   const menu = page.getByRole("listbox", { name: "Insert block", exact: true });
@@ -20,16 +20,17 @@ test("block plus focuses a real new paragraph and supports the existing slash in
   await expect(page.locator(".ProseMirror > h2")).toHaveText("Added heading");
 });
 
-test("hover tools fade both ways, become inert immediately and reopen without a delayed dismissal", async ({ page }) => {
+test("image hover and clicked block tools fade both ways, become inert immediately and reopen safely", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await imageFixture(page, "Hover-tool-motion.md");
   const image = page.locator(".folio-block-image");
   const toolbar = page.locator(".folio-image-tools");
   const controls = page.locator(".folio-block-controls");
-  await image.hover();
+  await activateBlockTools(page, image, "Image block");
   await expect(toolbar).toHaveCSS("opacity", "1");
   await expect(controls).toHaveCSS("opacity", "1");
   await page.mouse.move(5, 5);
+  await page.mouse.click(5, 5);
   await expect(toolbar).toBeHidden();
   await expect(controls).toBeHidden();
   expect(await toolbar.evaluate(node => parseFloat(getComputedStyle(node).transitionDuration))).toBeGreaterThan(0.01);
@@ -46,13 +47,14 @@ test("hover tools fade both ways, become inert immediately and reopen without a 
     requestAnimationFrame(sample);
   });
   const before = await image.boundingBox();
-  await image.hover();
+  await activateBlockTools(page, image, "Image block");
   await expect.poll(() => page.evaluate(() => new Set(window.toolFadeSamples
     .filter(sample => sample.opening && sample.opacity > 0 && sample.opacity < 1).map(sample => sample.selector)).size)).toBe(2);
   await expect(toolbar).toHaveCSS("opacity", "1");
   await expect(controls).toHaveCSS("opacity", "1");
   expect(await image.boundingBox()).toEqual(before);
   await page.mouse.move(5, 5);
+  await page.mouse.click(5, 5);
   await expect.poll(() => page.evaluate(() => new Set(window.toolFadeSamples
     .filter(sample => !sample.opening && sample.opacity > 0 && sample.opacity < 1).map(sample => sample.selector)).size)).toBe(2);
   for (const element of [toolbar, controls]) {
@@ -60,7 +62,7 @@ test("hover tools fade both ways, become inert immediately and reopen without a 
     await expect(element).toHaveAttribute("aria-hidden", "true");
     await expect(element).toHaveCSS("pointer-events", "none");
   }
-  await image.hover();
+  await activateBlockTools(page, image, "Image block");
   await expect(toolbar).not.toHaveAttribute("inert");
   await expect(controls).not.toHaveAttribute("inert");
   await expect(toolbar).toHaveCSS("opacity", "1");
@@ -73,7 +75,7 @@ test("hover tools fade both ways, become inert immediately and reopen without a 
 });
 
 for (const reducedBy of ["system", "preference"]) {
-  test(`hover tools honor reduced motion from ${reducedBy}`, async ({ page }) => {
+  test(`node tools honor reduced motion from ${reducedBy}`, async ({ page }) => {
     await page.emulateMedia({ reducedMotion: reducedBy === "system" ? "reduce" : "no-preference" });
     await imageFixture(page, `Hover-reduced-${reducedBy}.md`);
     if (reducedBy === "preference") {
@@ -86,7 +88,7 @@ for (const reducedBy of ["system", "preference"]) {
       await expect(page.locator("html")).toHaveAttribute("data-reduced-motion", "true");
     }
     const image = page.locator(".folio-block-image");
-    await image.hover();
+    await activateBlockTools(page, image, "Image block");
     for (const selector of [".folio-image-tools", ".folio-block-controls"]) {
       const element = page.locator(selector);
       const longest = await element.evaluate(node => Math.max(...getComputedStyle(node).transitionDuration
@@ -95,6 +97,7 @@ for (const reducedBy of ["system", "preference"]) {
       await expect(element).toHaveCSS("opacity", "1");
     }
     await page.mouse.move(5, 5);
+    await page.mouse.click(5, 5);
     await expect(page.locator(".folio-image-tools")).toBeHidden();
     await expect(page.locator(".folio-block-controls")).toBeHidden();
   });

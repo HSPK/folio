@@ -13,6 +13,45 @@ pub(crate) struct Access {
 }
 
 impl Access {
+    pub(in crate::server) fn privatize_recycled(
+        &self,
+        root: &str,
+        documents: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    ) -> Result<(), ApiError> {
+        self.owner()?;
+        let prefix = format!("{root}/");
+        self.registry.mutate(|catalog| {
+            let project = catalog
+                .projects
+                .get_mut(&self.id)
+                .filter(|p| p.owned(&self.identity) && p.root == self.library.root.path())
+                .ok_or_else(|| ApiError::forbidden("The project or owner changed."))?;
+            for (path, assets) in documents {
+                project.pages.insert(path.clone(), Sharing::Private);
+                // Keep historical attachment restrictions as well as current references.
+                project
+                    .attachments
+                    .entry(path.clone())
+                    .or_default()
+                    .extend(assets.iter().cloned());
+            }
+            if project.pages.len() > 5000 {
+                return Err(ApiError::conflict(
+                    "The document permission limit was reached.",
+                ));
+            }
+            for (path, level) in &mut project.pages {
+                if path == root || path.starts_with(&prefix) {
+                    *level = Sharing::Private;
+                }
+            }
+            project
+                .public_links
+                .retain(|path, _| path != root && !path.starts_with(&prefix));
+            Ok(())
+        })
+    }
+
     pub(in crate::server) fn actor(&self) -> &str {
         self.guest
             .as_ref()
@@ -126,8 +165,10 @@ impl Access {
         #[cfg(any(windows, target_os = "macos"))]
         {
             if !project.pages.is_empty() {
-                match path.filter(|path| files::is_markdown(path)) {
-                    Some(path) => match self.library.root.canonical_document_path(path) {
+                match path
+                    .filter(|path| files::is_markdown(path) || files::panels::kind(path).is_some())
+                {
+                    Some(path) => match self.library.root.canonical_file_path(path) {
                         Ok(path) => return Ok(Some(path)),
                         Err(error) if error.status == axum::http::StatusCode::NOT_FOUND => {}
                         Err(error) => return Err(error),
@@ -197,6 +238,33 @@ impl Access {
             tree.files.retain(|file| {
                 project.permission(&self.identity, Some(&file.path)) != Sharing::Private
             });
+            if !project.owned(&self.identity) && !tree.panel_files.is_empty() {
+                let mut restricted = std::collections::BTreeSet::new();
+                for (note, level) in &project.pages {
+                    if *level != Sharing::Private || !files::is_markdown(note) {
+                        continue;
+                    }
+                    if let Some(assets) = project.attachments.get(note) {
+                        restricted.extend(assets.iter().cloned());
+                    }
+                    match self.library.root.source_document(note) {
+                        Ok(doc) => restricted.extend(crate::server::markdown::referenced_assets(
+                            note,
+                            &doc.content,
+                        )),
+                        Err(err) if err.status == axum::http::StatusCode::NOT_FOUND => {}
+                        Err(err) => return Err(err),
+                    }
+                }
+                tree.panel_files.retain(|p| {
+                    project.permission(&self.identity, Some(p)) != Sharing::Private
+                        && (project
+                            .pages
+                            .get(p)
+                            .is_some_and(|level| *level != Sharing::Private)
+                            || matches!(self.includes_asset(&restricted, p), Ok(false)))
+                });
+            }
             for directory in &mut tree.directories {
                 if !project.owned(&self.identity)
                     && project.pages.iter().any(|(path, level)| {
@@ -212,12 +280,22 @@ impl Access {
             return Ok(tree);
         }
         let mut entries = Vec::new();
+        let mut panel_files = Vec::new();
         for path in project.pages.keys() {
             if project.permission(&self.identity, Some(path)) == Sharing::Private {
                 continue;
             }
+            if files::panels::kind(path).is_some() {
+                match self.library.root.canonical_file_path(path) {
+                    Ok(path) => panel_files.push(path),
+                    Err(error) if error.status == axum::http::StatusCode::NOT_FOUND => (),
+                    Err(error) => return Err(error),
+                }
+                continue;
+            }
             match self.library.root.source_document(path) {
                 Ok(doc) => entries.push(files::TreeFile {
+                    code: doc.code,
                     id: doc.id,
                     path: path.clone(),
                     name: path.rsplit('/').next().unwrap_or(path).into(),
@@ -230,6 +308,7 @@ impl Access {
         Ok(files::Tree {
             root: self.id.clone(),
             files: entries,
+            panel_files,
             directories: Vec::new(),
             truncated: false,
         })
@@ -245,11 +324,17 @@ impl Access {
         if !self.is_public() && project.owned(&self.identity) {
             return Ok(());
         }
+        let canonical = self.canonical_permission_path(&project, Some(path))?;
+        let path = canonical.as_deref().unwrap_or(path);
+        if files::panels::kind(path).is_some() && project.pages.contains_key(path) {
+            self.check(Some(path), false)?;
+            return Ok(());
+        }
         if files::is_markdown(path) {
             self.check(Some(path), false)?;
         }
         for (private, level) in &project.pages {
-            if *level != Sharing::Private {
+            if *level != Sharing::Private || !files::is_markdown(private) {
                 continue;
             }
             let mut referenced = match project.attachments.get(private) {

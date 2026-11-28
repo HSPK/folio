@@ -3,6 +3,12 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+export async function browserPageUrl(page, value = page.url()) {
+  return new URL(await page.evaluate(async url => {
+    const model = document.querySelector('link[rel="modulepreload"][href^="/model.mjs"]').href;
+    return (await import(model)).expandedPageUrl(url).href;
+  }, value));
+}
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 export const buildRoot = path.resolve(webRoot, "..", "build");
@@ -63,8 +69,8 @@ export async function openOutline(page) {
 }
 
 export async function openMoreAction(page, id) {
-  const menu = page.locator("#more-menu");
-  if (await menu.getAttribute("open") === null) await menu.locator(":scope > summary").click();
+  const menu = page.locator("#more-actions-panel");
+  if (!await menu.evaluate(node => node.matches(":popover-open"))) await page.locator("#more-menu > button").click();
   const action = page.locator(`#${id}`);
   const disclosure = await action.evaluate(node => node.closest(".menu-disclosure")?.id ?? null);
   if (disclosure && await page.locator(`#${disclosure}`).getAttribute("open") === null) {
@@ -108,7 +114,7 @@ export async function openTableTools(page, index = 0, axis = "column") {
     await expect(tools).toBeHidden();
   }
   const table = page.locator(".folio-table-wrapper").nth(index);
-  if (axis === "table") await table.hover();
+  if (axis === "table") await activateBlockTools(page, table, "Table");
   if (axis !== "table" && !await table.evaluate(node => node.classList.contains("is-active"))) await table.locator("th, td").first().click();
   await (axis === "table" ? page : table).getByRole("button", {
     name: axis === "row" ? "Row actions" : axis === "table" ? "Table actions" : "Column actions", exact: true,
@@ -120,15 +126,17 @@ export async function openTableTools(page, index = 0, axis = "column") {
 export async function openBlockTools(page, block, label) {
   const opened = page.locator('.folio-node-toolbar[role="menu"]:not([inert]):visible');
   if (await opened.count()) await opened.press("Escape");
-  await hoverBlockTools(page, block, label);
+  await activateBlockTools(page, block, label);
   await page.locator(".folio-block-grip").click();
   const menu = page.getByRole("menu", { name: label === "Table" ? "Table actions" : "Block actions", exact: true });
   await expect(menu).toBeVisible();
   return menu;
 }
 
-export async function hoverBlockTools(page, block, label) {
+export async function activateBlockTools(page, block, label) {
   await block.hover();
+  // Keep the prepared caret intact for menu selection-restoration tests.
+  await block.dispatchEvent("pointerdown", { button: 0, buttons: 1, pointerType: "mouse" });
   const grip = page.locator(".folio-block-grip");
   await expect(grip).toHaveAttribute("aria-label", `${label} actions`);
   return page.getByRole("group", { name: "Block controls", exact: true });
@@ -144,7 +152,7 @@ export async function openLinkOptions(page, link = page.locator(".ProseMirror a"
   return dialog;
 }
 
-export async function openFixture(page, name, content, displayTitle = name) {
+export async function openFixture(page, name, content, displayTitle = path.basename(name).replace(/\.(md|markdown)$/i, "")) {
   await fs.writeFile(path.join(root, name), content);
   await page.goto(await fixtureDocumentUrl(name));
   await expect(page.locator("#document-title")).toHaveText(displayTitle);
@@ -258,7 +266,7 @@ test.beforeEach(async ({ page }) => {
   });
   expect(settings.ok, await settings.text()).toBeTruthy();
   await page.goto(await fixtureDocumentUrl("README.md"));
-  await expect(page.locator("#document-title")).toHaveText("README.md");
+  await expect(page.locator("#document-title")).toHaveText("README");
   await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
   await expect(page.locator("#dirty-indicator")).toBeHidden();
   await expect(page.locator("#document-modified")).toBeHidden();

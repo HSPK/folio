@@ -11,25 +11,20 @@ use rusqlite::{Connection, OpenFlags};
 
 use super::ApiError;
 
-#[path = "state_store/collaboration.rs"]
 mod collaboration;
-#[path = "state_store/relocate.rs"]
+pub(super) mod page_codes;
+mod recycle;
 mod relocate;
-#[path = "state_store/revisions.rs"]
 mod revisions;
-#[path = "state_store/search.rs"]
 pub(super) mod search;
-#[path = "state_store/visitors.rs"]
 mod visitors;
-#[path = "state_store/workspaces.rs"]
 pub(super) mod workspaces;
 pub(super) use collaboration::StoredRoom;
 pub(super) use revisions::{Revision, RevisionContent, TrashEntry};
-#[path = "state_store/resources.rs"]
+pub(super) mod file_properties;
 pub(super) mod resources;
 
 #[cfg(test)]
-#[path = "state_store/read_tests.rs"]
 mod read_tests;
 
 pub(super) const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
@@ -53,16 +48,7 @@ impl Store {
         let parent = path
             .parent()
             .ok_or_else(|| ApiError::internal("Workspace storage has no parent."))?;
-        let mut directory = fs::DirBuilder::new();
-        directory.recursive(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            directory.mode(0o700);
-        }
-        directory
-            .create(parent)
-            .map_err(|error| ApiError::io("Could not create workspace storage", error))?;
+        Self::create_storage_directory(parent)?;
         let connection = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -80,12 +66,64 @@ impl Store {
         Self::initialize(connection, parent, Some(path))
     }
 
-    pub(super) fn temporary() -> Result<Arc<Self>, ApiError> {
-        Self::initialize(
-            Connection::open_in_memory().map_err(db_error)?,
-            Path::new(""),
-            None,
+    pub(super) fn local(root: &Path) -> Result<Arc<Self>, ApiError> {
+        Self::open_local(root).or_else(|error| {
+            eprintln!(
+                "Local recycle storage unavailable: {}. Starting with session-only identities.",
+                error.message
+            );
+            Self::initialize(
+                Connection::open_in_memory().map_err(db_error)?,
+                Path::new(""),
+                None,
+            )
+        })
+    }
+
+    fn open_local(root: &Path) -> Result<Arc<Self>, ApiError> {
+        use sha2::{Digest, Sha256};
+        let base = match std::env::var_os("FOLIO_LOCAL_STATE_DIR") {
+            Some(path) => std::path::PathBuf::from(path),
+            None => {
+                let settings = crate::settings::SettingsStore::platform_default()
+                    .map_err(ApiError::internal)?;
+                settings
+                    .path()
+                    .parent()
+                    .ok_or_else(|| ApiError::internal("No local state directory."))?
+                    .to_owned()
+            }
+        };
+        if !base.is_absolute() {
+            return Err(ApiError::bad_request(
+                "Local state storage needs an absolute directory.",
+            ));
+        }
+        Self::create_storage_directory(&base)?;
+        // A trusted home/config base may itself be a symlink. Resolve it once,
+        // but keep SQLITE_OPEN_NOFOLLOW for the Folio-controlled database path.
+        let base = fs::canonicalize(base)
+            .map_err(|e| ApiError::io("Could not resolve local storage", e))?;
+        let key = super::hex(&Sha256::digest(root.as_os_str().as_encoded_bytes()));
+        Self::open(
+            &base
+                .join(".local-workspaces")
+                .join(key)
+                .join("workspace.sqlite"),
         )
+    }
+
+    fn create_storage_directory(path: &Path) -> Result<(), ApiError> {
+        let mut directory = fs::DirBuilder::new();
+        directory.recursive(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            directory.mode(0o700);
+        }
+        directory
+            .create(path)
+            .map_err(|e| ApiError::io("Could not create workspace storage", e))
     }
 
     fn initialize(
@@ -133,6 +171,14 @@ impl Store {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS resource_location ON resources(project,path) WHERE deleted=0;
             CREATE INDEX IF NOT EXISTS resource_project ON resources(project,id);
+            CREATE TABLE IF NOT EXISTS file_properties (
+                resource TEXT PRIMARY KEY REFERENCES resources(id), revision INTEGER NOT NULL,
+                data TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS page_codes (
+                kind TEXT NOT NULL, identity TEXT NOT NULL, code TEXT NOT NULL,
+                PRIMARY KEY(kind,identity), UNIQUE(kind,code)
+            );
             CREATE TABLE IF NOT EXISTS resource_epochs (project TEXT PRIMARY KEY,revision INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS public_sessions (
                 digest TEXT PRIMARY KEY, project TEXT NOT NULL, link TEXT NOT NULL, password TEXT NOT NULL,
@@ -225,7 +271,10 @@ impl Store {
                 .execute("DELETE FROM revisions WHERE created < ?1", [cutoff])
                 .map_err(db_error)?;
             connection
-                .execute("DELETE FROM trash WHERE deleted < ?1", [cutoff])
+                .execute(
+                    "DELETE FROM trash WHERE kind IN ('note','asset') AND deleted < ?1",
+                    [cutoff],
+                )
                 .map_err(db_error)?;
             Ok(())
         })

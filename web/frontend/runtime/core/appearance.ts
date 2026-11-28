@@ -1,6 +1,6 @@
 import { decodedAppearance } from "../../api/contracts";
 import { applyAppearance } from "@folio/editor-runtime";
-import { clearTimer } from "../../types/elements";
+import { element, clearTimer } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { settingsState } from "../preferences/settings";
 import { publicState } from "../sharing/public";
@@ -24,9 +24,9 @@ export function scheduleAppearancePolling(): void {
   }
 }
 export function appearanceNotice(message: string): void {
-  if (appState.ui.appearanceMessage.textContent === message && appState.ui.appearanceMessage.hidden === !message)
+  if (element("appearance-message").textContent === message && element("appearance-message").hidden === !message)
     return;
-  notice(appState.ui.appearanceMessage, message, message ? "warning" : "");
+  notice(element("appearance-message"), message, message ? "warning" : "");
 }
 export async function refreshAppearance(force = false): Promise<void> {
   if (publicState.publicView) return;

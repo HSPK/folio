@@ -1,11 +1,13 @@
-import { Compartment, EditorSelection, EditorState, Transaction, type Text } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory, selectLine } from "@codemirror/commands";
+import { Compartment, EditorSelection, EditorState, Transaction, type Text, type ChangeDesc } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import { history, historyField, isolateHistory, undo, redo } from "@codemirror/commands";
+import { sourceCommands } from "./source-commands.ts";
 import "./source-editor.css";
 import { textareaCursorRect, textareaOffsetAtPoint } from "./cursor-coordinates.ts";
 import { shouldVirtualizeSource } from "./editor-helpers.ts";
 import { createNativeSourceHistory } from "./native-source-history.ts";
-import type { Command } from "@codemirror/view";
+import { liveTransaction, markdownHistory, type HistoryCommand, type LiveEdit } from "./markdown-history.ts";
+import { mapImageRange, type ImageBookmark } from "./image-bookmarks.ts";
 import type { ChangedRange, SourceChanges, SourceEditorOptions } from "./types/editor.ts";
 
 const VIRTUAL_SOURCE_THRESHOLD = 768 * 1024;
@@ -19,7 +21,7 @@ export function createSourceEditor({
   const pane = textarea.parentElement;
   if (!pane) throw new Error("The source editor needs a textarea inside its workspace.");
   const host = document.createElement("div");
-  host.className = "virtual-source-editor";
+  host.className = "virtual-source-editor folio-source-surface";
   host.hidden = true;
   textarea.after(host);
   const editable = new Compartment();
@@ -54,26 +56,8 @@ export function createSourceEditor({
     const text = pending;
     pending = null;
     textarea.value = text;
-    nativeHistory.reset(text);
   };
   for (const type of ["focus", "pointerdown", "keydown", "beforeinput"]) textarea.addEventListener(type, sync, true);
-  const insertLineAbove: Command = ({ state, dispatch }) => {
-    if (state.readOnly) return false;
-    dispatch(
-      state.update(
-        state.changeByRange((range) => {
-          const line = state.doc.lineAt(range.from);
-          const indent = line.text.match(/^[ \t]*/)?.[0] ?? "";
-          return {
-            changes: { from: line.from, insert: indent + state.lineBreak },
-            range: EditorSelection.cursor(line.from + indent.length),
-          };
-        }),
-        { scrollIntoView: true, userEvent: "input", annotations: isolateHistory.of("full") },
-      ),
-    );
-    return true;
-  };
 
   const value = () => {
     if (!view) return pending ?? textarea.value;
@@ -86,11 +70,29 @@ export function createSourceEditor({
 
   const emitInput = (changes?: SourceChanges) =>
     textarea.dispatchEvent(changes ? new CustomEvent("input", { detail: { changes } }) : new Event("input"));
+  const bookmarks = new Map<number, { from: number; to: number }>();
+  const remoteRanges = new Map<number, { text: string; range: { from: number; to: number } | null }>();
+  let serial = 0;
+  let inserting = Infinity;
+  const mapRanges = (ranges: ChangedRange[]) => {
+    for (const [id, range] of bookmarks) {
+      const next = mapImageRange(range, ranges, id > inserting);
+      if (next) bookmarks.set(id, next);
+      else bookmarks.delete(id);
+    }
+  };
+  const mapImages = (changes: ChangeDesc) => {
+    if (!bookmarks.size) return;
+    const ranges: ChangedRange[] = [];
+    changes.iterChangedRanges((fromA, toA, fromB, toB) => ranges.push({ fromA, toA, fromB, toB }));
+    mapRanges(ranges);
+  };
   const nativeHistory = createNativeSourceHistory({
     textarea,
-    active_fn: () => !view,
+    active_fn: () => !view && pending === null,
     editable_fn: () => !disabled && !readOnly,
     emit_fn: emitInput,
+    mapImages,
     onNotice,
   });
   const createView = (text: string) => {
@@ -99,24 +101,15 @@ export function createSourceEditor({
     textarea.hidden = true;
     textarea.value = "";
     host.hidden = false;
+    const previous = nativeHistory.state;
     view = new EditorView({
       parent: host,
       state: EditorState.create({
         doc: text,
         extensions: [
           history(),
-          EditorState.transactionExtender.of((transaction) =>
-            ["delete.line", "move.line", "input.copyline"].some((event) => transaction.isUserEvent(event))
-              ? { annotations: isolateHistory.of("full") }
-              : null,
-          ),
-          keymap.of([
-            { key: "Mod-Shift-Enter", run: insertLineAbove, preventDefault: true },
-            { key: "Mod-l", run: selectLine, preventDefault: true },
-            ...defaultKeymap,
-            ...historyKeymap,
-            indentWithTab,
-          ]),
+          ...(previous ? [historyField.init(() => previous.field(historyField))] : []),
+          sourceCommands,
           EditorState.tabSize.of(4),
           wrapping.of(lineWrapping ? EditorView.lineWrapping : []),
           EditorView.cspNonce.of(nonce ?? ""),
@@ -132,6 +125,7 @@ export function createSourceEditor({
           editable.of(editability()),
           EditorView.updateListener.of((update) => {
             if (update.docChanged && !syncing) {
+              mapImages(update.changes);
               cachedDocument = null;
               const ranges: ChangedRange[] = [];
               update.changes.iterChangedRanges((fromA, toA, fromB, toB) => {
@@ -166,14 +160,42 @@ export function createSourceEditor({
     pane.classList.remove("is-virtual-source");
   };
 
-  const setValue = (text: string, reset = false) => {
+  const setValue = (text: string, reset = false, live?: LiveEdit) => {
     text = String(text);
+    if (reset) {
+      bookmarks.clear();
+      remoteRanges.clear();
+    }
+    // Collaboration (or a save normalization) supplies text, not a CM transaction.
+    if (bookmarks.size && value() !== text) {
+      const previous = value();
+      let start = 0,
+        a = previous.length,
+        b = text.length;
+      while (start < a && start < b && previous[start] === text[start]) start++;
+      while (a > start && b > start && previous[a - 1] === text[b - 1]) {
+        a--;
+        b--;
+      }
+      mapRanges([{ fromA: start, toA: a, fromB: start, toB: b }]);
+      // Identical runs of text are ambiguous to a diff. For a shared edit use
+      // the actual Y.Text delta, including separate changes on either side.
+      for (const [id, rebased] of remoteRanges) {
+        if (rebased.text === text) {
+          if (rebased.range) bookmarks.set(id, rebased.range);
+          else bookmarks.delete(id);
+        }
+      }
+      remoteRanges.clear();
+    }
     if (reset && view) destroyView("");
     if (!view) {
       if (!reset && value() === text) return;
       invalidateVirtualSize();
       // A textarea normalizes line endings, so only text it would store unchanged may wait.
       if (!reset && text.length >= DEFERRED_WRITE_LENGTH && !text.includes("\r")) {
+        if (live) nativeHistory.live(text, live);
+        else nativeHistory.reset(text);
         pending = text;
         if (pendingTimer !== null) clearTimeout(pendingTimer);
         pendingTimer = setTimeout(sync, 250);
@@ -181,26 +203,136 @@ export function createSourceEditor({
       }
       pending = null;
       textarea.value = text;
-      nativeHistory.reset(textarea.value);
+      if (live) nativeHistory.live(textarea.value, live);
+      else nativeHistory.reset(textarea.value);
       return;
     }
-    if (value() === text) return;
+    const previous = value();
+    if (previous === text) return;
+    if (live) {
+      syncing = true;
+      try {
+        view.dispatch(liveTransaction(view.state, previous, text, live));
+      } finally {
+        syncing = false;
+      }
+      cachedDocument = view.state.doc;
+      cachedValue = text;
+      return;
+    }
+    let from = 0;
+    let to = view.state.doc.length;
+    let end = text.length;
+    if (to === previous.length) {
+      while (from < to && from < end && previous.charCodeAt(from) === text.charCodeAt(from)) from++;
+      while (to > from && end > from && previous.charCodeAt(to - 1) === text.charCodeAt(end - 1)) {
+        to--;
+        end--;
+      }
+    }
     syncing = true;
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: text },
-      annotations: Transaction.addToHistory.of(false),
-    });
-    syncing = false;
+    try {
+      view.dispatch({
+        changes: { from, to, insert: text.slice(from, end) },
+        annotations: Transaction.addToHistory.of(false),
+      });
+    } finally {
+      syncing = false;
+    }
     cachedDocument = view.state.doc;
     cachedValue = text;
   };
 
   return {
+    captureImageInsertion(): ImageBookmark | null {
+      if (disabled || readOnly) return null;
+      sync();
+      const original = value();
+      const id = ++serial;
+      const { from: a, to: b } = this.getSelection();
+      const from = Math.min(a, b),
+        to = Math.max(a, b);
+      bookmarks.set(id, { from, to });
+      if (from !== to) this.setSelectionRange(to, to);
+      return {
+        cancel: () => {
+          bookmarks.delete(id);
+          remoteRanges.delete(id);
+        },
+        beforeRemote: (changes, text) => {
+          const range = bookmarks.get(id);
+          if (range) remoteRanges.set(id, { text, range: mapImageRange(range, changes) });
+        },
+        canCancel: (undo) => {
+          const range = bookmarks.get(id);
+          const sel = this.getSelection();
+          return Boolean(range && (undo ? value() === original : sel.from === sel.to && sel.to === range.to));
+        },
+        insert: (urls) => {
+          sync();
+          const range = bookmarks.get(id);
+          if (!range || disabled || readOnly || original.slice(from, to) !== value().slice(range.from, range.to))
+            return false;
+          const current = this.getSelection();
+          if (
+            range.from !== range.to &&
+            range.from < Math.max(current.from, current.to) &&
+            range.to > Math.min(current.from, current.to)
+          )
+            return false;
+          bookmarks.delete(id);
+          inserting = id;
+          try {
+            const insert = urls.map((url) => `![Image](${url})`).join("\n");
+            if (view) {
+              const changes = view.state.changes({ ...range, insert });
+              view.dispatch({
+                changes,
+                selection: view.state.selection.map(changes, 1),
+                annotations: isolateHistory.of("full"),
+                userEvent: "input.paste",
+              });
+            } else nativeHistory.insertImage(range.from, range.to, insert);
+          } finally {
+            inserting = Infinity;
+          }
+          return true;
+        },
+      };
+    },
     get value() {
       return value();
     },
     set value(text: string) {
       setValue(text);
+    },
+    mirrorLive(text: string, edit: LiveEdit) {
+      setValue(text, false, edit);
+    },
+    historyState() {
+      const state = view?.state ?? nativeHistory.state;
+      return state ? markdownHistory(state) : null;
+    },
+    runHistory(kind: HistoryCommand) {
+      if (disabled || readOnly) return false;
+      sync();
+      return view ? (kind === "undo" ? undo : redo)(view) : nativeHistory.runHistory(kind);
+    },
+    applyDiskChange(change: { from: number; to: number; insert: string }, next: string) {
+      sync();
+      if (view) {
+        syncing = true;
+        try {
+          view.dispatch({ changes: change, annotations: Transaction.addToHistory.of(false) });
+        } finally {
+          syncing = false;
+        }
+        cachedDocument = view.state.doc;
+        cachedValue = next;
+      } else {
+        nativeHistory.applyRemote(change, next);
+        invalidateVirtualSize();
+      }
     },
     get disabled() {
       return disabled;
@@ -237,7 +369,9 @@ export function createSourceEditor({
       sync();
       return view
         ? { from: view.state.selection.main.anchor, to: view.state.selection.main.head }
-        : { from: textarea.selectionStart, to: textarea.selectionEnd };
+        : textarea.selectionDirection === "backward"
+          ? { from: textarea.selectionEnd, to: textarea.selectionStart }
+          : { from: textarea.selectionStart, to: textarea.selectionEnd };
     },
     cursorRect(position: number) {
       sync();
@@ -295,7 +429,7 @@ export function createSourceEditor({
         view.dispatch({
           selection: EditorSelection.range(Math.max(0, Math.min(length, from)), Math.max(0, Math.min(length, to))),
         });
-      } else textarea.setSelectionRange(from, to);
+      } else textarea.setSelectionRange(Math.min(from, to), Math.max(from, to), from > to ? "backward" : "forward");
     },
     revealSelection(from: number, to: number, { focus = true } = {}) {
       this.prepare();

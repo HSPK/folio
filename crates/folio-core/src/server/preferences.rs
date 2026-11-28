@@ -22,11 +22,13 @@ pub(super) struct Preferences {
 
 pub(super) async fn get(State(state): State<Arc<AppState>>) -> Result<Json<Preferences>, ApiError> {
     let appearance = state
+        .shared
         .appearance
         .read()
         .map_err(|_| ApiError::internal("The appearance settings are unavailable."))?
         .clone();
     let web = state
+        .shared
         .web_preferences
         .read()
         .map_err(|_| ApiError::internal("The Web settings are unavailable."))?
@@ -48,10 +50,11 @@ pub(super) async fn put(
     let saved = preferences.clone();
     blocking(state, work, move |state, _| {
         let _update = state
+            .shared
             .settings_update
             .lock()
             .map_err(|_| ApiError::internal("The settings update lock is unavailable."))?;
-        if let Some(store) = &state.settings_store {
+        if let Some(store) = &state.shared.settings_store {
             let mut settings = store
                 .load()
                 .map_err(ApiError::internal)?
@@ -61,11 +64,13 @@ pub(super) async fn put(
             store.save(&settings).map_err(ApiError::internal)?;
         }
         *state
+            .shared
             .appearance
             .write()
             .map_err(|_| ApiError::internal("The appearance settings are unavailable."))? =
             saved.appearance.clone();
         *state
+            .shared
             .web_preferences
             .write()
             .map_err(|_| ApiError::internal("The Web settings are unavailable."))? =

@@ -21,6 +21,7 @@ pub(super) struct RecoveryIdentity {
 
 fn account_id(state: &AppState, username: &str) -> Result<String, ApiError> {
     state
+        .shared
         .user_auth
         .as_ref()
         .ok_or_else(|| ApiError::forbidden("A user account is required."))?
@@ -35,6 +36,7 @@ pub(super) fn recovery_identity(
 ) -> Result<RecoveryIdentity, ApiError> {
     let id = account_id(state, username)?;
     let store = state
+        .shared
         .projects
         .as_ref()
         .ok_or_else(|| ApiError::internal("Projects are unavailable."))?
@@ -42,7 +44,7 @@ pub(super) fn recovery_identity(
     Ok(RecoveryIdentity {
         draft_key: store.user_key(&id)?,
         id,
-        scope: state.user_cookie_name.clone(),
+        scope: state.shared.user_cookie_name.clone(),
     })
 }
 
@@ -55,6 +57,7 @@ pub(super) async fn get(
     blocking(state, work, move |state, _| {
         let id = account_id(state, &user.username)?;
         state
+            .shared
             .projects
             .as_ref()
             .ok_or_else(|| ApiError::internal("Projects are unavailable."))?
@@ -87,6 +90,7 @@ pub(super) async fn change(
         }
         let (project, resource_id) = action.target();
         let registry = state
+            .shared
             .projects
             .as_ref()
             .ok_or_else(|| ApiError::internal("Projects are unavailable."))?;
@@ -94,19 +98,33 @@ pub(super) async fn change(
             .storage()?
             .resource(resource_id, !action.needs_access())?;
         if resource.project != project
-            || resource.kind != super::state_store::resources::ResourceKind::Document
+            || resource.kind != files::panels::share_kind(&resource.path)?
         {
             return Err(ApiError::forbidden(
                 "This workspace resource belongs to a different project or type.",
             ));
         }
         let path = &resource.path;
-        files::validate_document_path(path)?;
         let title = if action.needs_access() {
             let access = registry.resolve(project, &user)?;
             access.check(Some(path), false)?;
-            let document = access.library.root.source_document(path)?;
-            Some(document.title.unwrap_or(document.path))
+            if files::is_markdown(path) {
+                let document = access.library.root.source_document(path)?;
+                Some(document.title.unwrap_or(document.path))
+            } else {
+                access.asset(path, None)?;
+                access.library.root.canonical_file_path(path)?;
+                Some(
+                    registry
+                        .storage()?
+                        .project(project)
+                        .file_properties(&resource.id)?
+                        .properties
+                        .title,
+                )
+                .filter(|title| !title.is_empty())
+                .or_else(|| Some(path.clone()))
+            }
         } else {
             None
         };

@@ -1,6 +1,5 @@
+import { element } from "../../types/elements";
 import type { LeaveConfirmation } from "../../services/document-transitions";
-import { appState } from "../core/bootstrap";
-import { presenceState } from "../collaboration/presence";
 import { confirmAction, hasDialogConfirmation } from "../dialogs/dialogs";
 import { resumeStatusNotice, suspendStatusNotice } from "../navigation/status";
 
@@ -8,30 +7,36 @@ import { resumeStatusNotice, suspendStatusNotice } from "../navigation/status";
 export async function confirmDocumentLeave(request: LeaveConfirmation, owner: AbortSignal) {
   const { action, policy, snapshot, signal } = request;
   if (policy === "discard")
-    return confirmAction(`Discard unsaved changes and ${action}?`, {
-      label: "Discard changes",
-      signal,
-    });
+    return confirmAction(
+      snapshot.conflict && action === "reload this note from disk"
+        ? "Replace your edits with the latest version?"
+        : `Discard unsaved changes and ${action}?`,
+      {
+        label: snapshot.conflict && action === "reload this note from disk" ? "Use latest" : "Discard changes",
+        cancelLabel: "Keep editing",
+        signal,
+      },
+    );
   const open = document.querySelector<HTMLDialogElement>("dialog[open]");
   if (open && hasDialogConfirmation(open)) return false;
   const failures = [
-    appState.ui.documentMessage,
-    appState.ui.conflictMessage,
-    presenceState.collaborationUi.message,
-    appState.ui.sizeWarning,
-    appState.ui.rootWarning,
-    appState.ui.connectionMessage,
+    element("document-message"),
+    element("conflict-message"),
+    element("collaboration-message"),
+    element("size-warning"),
+    element("root-warning"),
+    element("connection-message"),
   ].filter((node) => !node.hidden && node.textContent);
   const detail = failures.map((node) => node.textContent).join("\n");
-  const suspension = crypto.randomUUID();
+  const suspension = `leave-${performance.now()}`;
   for (const node of failures) suspendStatusNotice(node, suspension);
   try {
     return await confirmAction(
       snapshot.conflict
-        ? `${detail || "Changed on disk, not saved"}\n\nDiscard local version and ${action}?`
+        ? `Leave your unsaved edits and ${action}?`
         : `${detail || "Changes not saved"}\n\nRetry saving before you ${action}?`,
       {
-        label: snapshot.conflict ? "Discard and continue" : "Retry save",
+        label: snapshot.conflict ? "Discard my edits" : "Retry save",
         cancelLabel: "Keep editing",
         alternativeLabel: snapshot.conflict ? null : "Discard and continue",
         signal,

@@ -1,0 +1,1 @@
+default-src 'none'; script-src 'sha256-IiWDZpf6u5OeHF/7Zj7erqhrmZ0gUT0eQcXJnpNtIoc='; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts

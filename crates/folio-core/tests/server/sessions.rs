@@ -70,6 +70,40 @@ fn persistent_login_cookies_are_renewed_and_logout_still_revokes_access() {
     let server = start_with_users(&workspace.root, 0, users).unwrap();
     let client = Client::new(&server);
     let cookie = login(&client, "owner", "owner test password long enough");
+    let shell = client.request("GET", "/", &[("Cookie", &cookie)], b"");
+    assert!(shell.text().contains("data-reader=\"owner\""));
+    assert!(shell.headers["cache-control"].contains("no-store"));
+    assert!(
+        !client
+            .request("GET", "/", &[], b"")
+            .text()
+            .contains("data-reader")
+    );
+    assert!(
+        !client
+            .request("GET", "/share", &[("Cookie", &cookie)], b"")
+            .text()
+            .contains("window.folioStart")
+    );
+    client
+        .request(
+            "GET",
+            "/api/projects",
+            &[("Cookie", &cookie), ("X-Folio-Start-Reader", "other")],
+            b"",
+        )
+        .error(403);
+    assert_eq!(
+        client
+            .request(
+                "GET",
+                "/api/projects",
+                &[("Cookie", &cookie), ("X-Folio-Start-Reader", "owner")],
+                b""
+            )
+            .status,
+        200
+    );
     let response = client.request("GET", "/api/auth/status", &[("Cookie", &cookie)], b"");
     assert_eq!(response.json()["authenticated"], true);
     let renewed = &response.headers["set-cookie"];

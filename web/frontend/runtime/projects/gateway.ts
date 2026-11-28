@@ -1,5 +1,5 @@
 import { decodedProject, decodedProjects } from "../../api/contracts";
-import type { ProjectChange } from "../../models/projects";
+import type { ProjectChange } from "@folio/model";
 import { createProjectService } from "../../services/projects";
 import { authenticationSession } from "../../state/authentication";
 import { projectModel } from "../../state/projects";

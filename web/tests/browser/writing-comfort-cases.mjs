@@ -41,7 +41,7 @@ test("new notes save the current text first without a discard prompt", async ({ 
   await page.locator(".ProseMirror p").click();
   await page.keyboard.press("End");
   await page.keyboard.insertText(" Keep this edit.");
-  await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
+  await page.locator("#new-menu > button").click(); await page.locator("#new-from-template").click();
   await expect(page.locator("#new-note-dialog")).toBeVisible();
   await expect(page.locator("#confirmation-dialog")).toBeHidden();
   await expect(page.locator("#document-modified")).toBeHidden();
@@ -69,9 +69,9 @@ test("navigation waits for an in-flight save and does not require a second click
     await begun;
     await expect(page.locator("#new-note")).toBeEnabled();
     await page.locator('[data-path="Second.md"]').click();
-    await expect(page.locator("#document-title")).toContainText("README.md");
+    await expect(page.locator("#document-title")).toContainText("README");
     release();
-    await expect(page.locator("#document-title")).toHaveText("Second.md");
+    await expect(page.locator("#document-title")).toHaveText("Second");
     expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe("# Saved before leaving\n");
     expect(writes).toBe(1);
   } finally { release(); }
@@ -95,7 +95,7 @@ test("continuing to type while a transition saves cancels navigation and keeps n
     await begun;
     await page.locator("#editor").fill("# Newer text must remain\n");
     release();
-    await expect(page.locator("#document-title")).toContainText("README.md");
+    await expect(page.locator("#document-title")).toContainText("README");
     await expect(page.locator("#editor")).toHaveValue("# Newer text must remain\n");
     await expect(page.locator("#dirty-indicator")).toHaveAttribute("data-state", "saved");
     expect(await fs.readFile(path.join(root, "README.md"), "utf8")).toBe("# Newer text must remain\n");
@@ -113,7 +113,7 @@ test("failed transition saves offer retry and keep-editing choices without losin
   });
   await page.locator("#editor").fill("# Retry this draft\n");
   await page.locator("#sidebar-toggle").click();
-  await page.locator("#new-menu > summary").click(); await page.locator("#new-note").click();
+  await page.locator("#new-menu > button").click(); await page.locator("#new-from-template").click();
   const confirmation = page.locator("#confirmation-dialog");
   await expect(confirmation).toBeVisible();
   await expect(confirmation.locator("[data-confirmation-message]")).toContainText("Temporary save failure.");
@@ -143,7 +143,7 @@ test("collaborative notes are durably saved before opening note creation", async
     await alice.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End");
     await alice.keyboard.insertText("\nKeep the shared edit.\n");
     await expect(bob.locator("#editor")).toHaveValue(/Keep the shared edit/);
-    await alice.locator("#new-menu > summary").click(); await alice.locator("#new-note").click();
+    await alice.locator("#new-menu > button").click(); await alice.locator("#new-from-template").click();
     await expect(alice.locator("#new-note-dialog")).toBeVisible();
     await expect(alice.locator("#confirmation-dialog")).toBeHidden();
     expect(await fs.readFile(path.join(library.notes, "Shared.md"), "utf8")).toContain("Keep the shared edit.");
@@ -226,11 +226,11 @@ test("settings search reveals matching controls and clearing restores the previo
   await expect(page.locator("#settings-dialog [data-search-match]")).toHaveCount(0);
 });
 
-test("filtered navigation explains the hidden current note and duplicate titles have stable paths", async ({ page, browserName }) => {
+test("filtered navigation explains the hidden current note and duplicate titles stay single-line", async ({ page, browserName }) => {
   await openFixture(page, "Origin-comfort.md", "# Origin\n\n[Second](Second.md)\n");
   await page.locator("#file-filter").fill("Origin-comfort");
   await page.locator(".ProseMirror a").click({ modifiers: [primaryModifier] });
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
+  await expect(page.locator("#document-title")).toHaveText("Second");
   await expect(page.locator("#file-filter")).toHaveValue("Origin-comfort");
   await expect(page.locator("#filtered-current-note")).toContainText("filtered out");
   await capture(page, "filtered-current-note-context", browserName);
@@ -240,15 +240,22 @@ test("filtered navigation explains the hidden current note and duplicate titles 
   for (const name of ["Meeting-a.md", "Meeting-b.md"]) await fs.writeFile(path.join(root, name), "---\ntitle: Meeting notes\n---\n\nBody.\n");
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   for (const name of ["Meeting-a.md", "Meeting-b.md"]) {
-    await expect(page.locator(`.file-button[data-path="${name}"] .file-path`)).toBeVisible();
-    await expect(page.locator(`.file-button[data-path="${name}"] .file-path`)).toHaveText(name);
+    const row = page.locator(`.file-button[data-path="${name}"]`);
+    await expect(row).toHaveText("Meeting notes");
+    await expect(row).toHaveAccessibleName(name);
+    await expect(row.locator("small")).toHaveCount(0);
   }
-  await capture(page, "disambiguated-note-titles", browserName);
+  await capture(page, "single-line-duplicate-titles", browserName);
+  const first = page.locator('[data-path="Meeting-a.md"]');
+  const second = page.locator('[data-path="Meeting-b.md"]');
+  expect((await first.boundingBox()).height).toBe((await second.boundingBox()).height);
+  await second.click();
+  await expect(second).toHaveAttribute("aria-current", "page");
+  await expect(first).not.toHaveAttribute("aria-current", "page");
   await page.locator('[data-path="Meeting-a.md"]').click();
   await page.locator(".folio-metadata > details > summary").click();
   await page.getByRole("textbox", { name: "Document title", exact: true }).fill("Distinct title");
   await page.keyboard.press(`${primaryModifier}+s`);
   await expect(page.locator('[data-path="Meeting-a.md"] .file-name')).toHaveText("Distinct title");
-  await expect(page.locator('[data-path="Meeting-b.md"] .file-path')).toBeHidden();
   await expect(page.locator('[data-path="Meeting-b.md"]')).toHaveText("Meeting notes");
 });

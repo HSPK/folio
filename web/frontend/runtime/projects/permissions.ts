@@ -26,3 +26,12 @@ export function projectCanCreate() {
 export function projectOwns() {
   return !publicState.publicView && (authenticationSession.mode !== "users" || Boolean(projectModel.active?.owned));
 }
+
+export function projectCanMove(path: string, kind: "file" | "directory", destination: string) {
+  if (!projectCanCreate() || !projectWritable(path) || !projectWritable(destination)) return false;
+  const project = projectModel.active;
+  if (authenticationSession.mode !== "users" || !project) return true;
+  const exceptions = Object.keys(project.pages);
+  if (kind === "directory" && !project.owned && exceptions.length) return false;
+  return !exceptions.some((page) => page === destination || page.startsWith(`${destination}/`));
+}

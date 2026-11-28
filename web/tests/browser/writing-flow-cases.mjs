@@ -30,7 +30,7 @@ test("view switching preserves source selections and the reading position after 
   expect(await page.locator("#editor").evaluate(node => node.value.slice(node.selectionStart, node.selectionStart + 20))).toContain("Paragraph 55");
 });
 
-test("file menus keep keyboard navigation on the selected object and unchanged rename is disabled", async ({ page, browserName }) => {
+test("file menus rename the target inline without changing its display title", async ({ page, browserName }) => {
   await openFixture(page, "Named.md", "---\ntitle: Display title\n---\n\n# Body\n", "Display title");
   const file = page.locator('[data-path="Named.md"]');
   await file.click({ button: "right" });
@@ -39,19 +39,28 @@ test("file menus keep keyboard navigation on the selected object and unchanged r
   await expect(page.locator("#file-rename")).toBeFocused();
   await capture(page, "file-menu-target-focus", browserName);
   await page.keyboard.press("Enter");
-  await expect(page.locator("#rename-title")).toHaveText("Rename file");
-  await expect(page.locator("#rename-hint")).toContainText("not the title");
-  await expect(page.locator("#confirm-rename")).toBeDisabled();
-  await page.locator("#rename-path").fill("Other-name.md");
-  await expect(page.locator("#confirm-rename")).toBeEnabled();
+  const name = page.locator("#file-list").getByRole("textbox", { name: "File name" });
+  await expect(name).toBeFocused();
+  await expect(name).toHaveValue("Named");
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await name.fill("README");
+  await name.press("Enter");
+  await expect(name).toHaveAttribute("aria-invalid", "true");
+  await name.fill("Other-name");
   await capture(page, "explicit-file-rename", browserName);
-  await page.locator("#confirm-rename").click();
+  await name.press("Enter");
   await expect(page.locator('[data-path="Other-name.md"]')).toHaveText("Display title");
   await fs.mkdir(path.join(root, "A folder"));
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.locator('summary[data-entry-path="A folder"]').click({ button: "right" });
   await expect(page.locator("#file-rename")).toBeFocused();
   await page.keyboard.press("Escape");
+  await expect(page.locator('summary[data-entry-path="A folder"]')).toBeFocused();
+  await page.locator('summary[data-entry-path="A folder"]').click({ button: "right" });
+  await page.locator("#file-rename").click();
+  const folder = page.getByRole("textbox", { name: "Folder name" });
+  await folder.fill("Canceled");
+  await folder.press("Escape");
   await expect(page.locator('summary[data-entry-path="A folder"]')).toBeFocused();
 });
 

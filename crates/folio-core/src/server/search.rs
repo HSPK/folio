@@ -195,6 +195,7 @@ pub(super) async fn search(
     }
     blocking(state, work, move |state, work| {
         let registry = state
+            .shared
             .projects
             .as_ref()
             .ok_or_else(|| ApiError::forbidden("Projects are unavailable."))?;
@@ -246,6 +247,7 @@ pub(super) async fn search(
         }
         let patterns = hidden_patterns(
             &state
+                .shared
                 .web_preferences
                 .read()
                 .map_err(|_| ApiError::internal("Settings are unavailable."))?

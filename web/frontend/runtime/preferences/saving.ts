@@ -1,9 +1,9 @@
 import { decodedPreferences } from "../../api/preferences";
-import type { Preferences, SettingsSnapshot } from "../../models/preferences";
+import type { Preferences, SettingsSnapshot } from "@folio/model";
 import { createSettingsSaver, SettingsSaveError } from "../../services/settings-saving";
 import { authenticationSession } from "../../state/authentication";
 import { projectModel } from "../../state/projects";
-import { requireValue } from "../../types/elements";
+import { element, requireValue } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { isAbortError } from "../../api/error";
 import { api } from "../core/api";
@@ -17,7 +17,7 @@ interface SettingsUiPorts {
   collect: () => Preferences;
   apply: (preferences: Preferences) => void;
   preview: () => void;
-  shortcut: (value: string, persist?: boolean) => void;
+  shortcut: (value: string) => void;
   checkpoint: (snapshot: SettingsSnapshot | null) => void;
 }
 
@@ -31,7 +31,7 @@ export function beginSettingsView() {
 function formSignature() {
   return JSON.stringify(
     [
-      ...appState.ui.settingsForm.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+      ...element("settings-form").querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
         "input, select, textarea",
       ),
     ]
@@ -61,36 +61,36 @@ export function initializeSettingsSaving(ports: SettingsUiPorts): void {
     writePreferences: (body, signal) =>
       api("/api/preferences", { decode: decodedPreferences, method: "PUT", body, signal, timeoutMs: 15000 }),
   });
-  listen(appState.ui.settingsDialog, "close", () => {
-    if (!appState.ui.settingsDialog.open) view = null;
+  listen(element("settings-dialog"), "close", () => {
+    if (!element("settings-dialog").open) view = null;
   });
   onApplicationDispose(() => {
     view = null;
     revision++;
   });
-  listen(appState.ui.settingsForm, "submit", async (event) => {
+  listen(element("settings-form"), "submit", async (event) => {
     event.preventDefault();
     if (operation) return;
     const opened = requireValue(view, "Settings view");
     const scope = authenticationSession.scope;
     const current = () => !owner.aborted && authenticationSession.isCurrent(scope);
     if (opened.selection !== projectModel.selection) {
-      notice(appState.ui.settingsError, "Project changed, reopen Settings", "error");
+      notice(element("settings-error"), "Project changed, reopen Settings", "error");
       return;
     }
     const saving = Symbol("settings-save");
     operation = saving;
-    appState.element("settings-save").disabled = true;
-    notice(appState.ui.settingsError, "");
+    element("settings-save").disabled = true;
+    notice(element("settings-error"), "");
     try {
       const preferences = ports.collect();
       const layout = {
-        pageWidth: appState.ui.settingsPageWidth.value,
-        sidebarWidth: Number(appState.ui.settingsSidebarWidth.value),
-        commandShortcut: appState.ui.settingsCommandShortcut.value,
+        pageWidth: element("settings-page-width").value,
+        sidebarWidth: Number(element("settings-sidebar-width").value),
+        commandShortcut: element("settings-command-shortcut").value,
       };
       const signature = formSignature();
-      const directory = appState.element("settings-image-directory").value.trim();
+      const directory = element("settings-image-directory").value.trim();
       const project =
         opened.project?.owned && directory !== opened.project.imageDirectory
           ? { id: opened.project.id, imageDirectory: directory }
@@ -105,8 +105,8 @@ export function initializeSettingsSaving(ports: SettingsUiPorts): void {
       storeLayoutPreference(appState.PAGE_WIDTH_KEY, layout.pageWidth);
       storeLayoutPreference(appState.SIDEBAR_WIDTH_KEY, layout.sidebarWidth);
       storeLayoutPreference(appState.COMMAND_SHORTCUT_KEY, layout.commandShortcut);
-      if (appState.ui.settingsDialog.open) ports.checkpoint({ preferences: result.preferences, ...layout });
-      if (unchanged || !appState.ui.settingsDialog.open) {
+      if (element("settings-dialog").open) ports.checkpoint({ preferences: result.preferences, ...layout });
+      if (unchanged || !element("settings-dialog").open) {
         setPageWidth(layout.pageWidth);
         setSidebarWidth(layout.sidebarWidth);
         ports.shortcut(layout.commandShortcut);
@@ -115,10 +115,10 @@ export function initializeSettingsSaving(ports: SettingsUiPorts): void {
       }
       if (unchanged) {
         ports.checkpoint(null);
-        appState.ui.settingsDialog.close();
-      } else if (appState.ui.settingsDialog.open) {
+        element("settings-dialog").close();
+      } else if (element("settings-dialog").open) {
         notice(
-          appState.ui.settingsError,
+          element("settings-error"),
           opened.selection === projectModel.selection ? "Saved; newer edits unsaved" : "Saved for the original project",
           "warning",
         );
@@ -128,12 +128,12 @@ export function initializeSettingsSaving(ports: SettingsUiPorts): void {
       const error = errorContext(cause);
       const message =
         cause instanceof SettingsSaveError && cause.projectSaved ? `Partly saved: ${error.message}` : error.message;
-      if (view === opened && appState.ui.settingsDialog.open) notice(appState.ui.settingsError, message, "error");
+      if (view === opened && element("settings-dialog").open) notice(element("settings-error"), message, "error");
       else documentNotice(message, "error");
     } finally {
       if (operation === saving) {
         operation = null;
-        if (!owner.aborted) appState.element("settings-save").disabled = false;
+        if (!owner.aborted) element("settings-save").disabled = false;
       }
     }
   });

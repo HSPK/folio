@@ -46,8 +46,8 @@ test("keyboard focus uses shared rounded surfaces across menus, lists and settin
         node.dataset.strongFocus = value;
       }, strength);
       for (const selector of [
-        "#sidebar-hide", "#more-menu > summary",
-        "#new-menu > summary", "#file-list .file-button",
+        "#sidebar-hide", "#more-menu > button",
+        "#new-menu > button", "#file-list .file-button",
       ]) {
         await expectQuietFocus(page, page.locator(selector).first());
       }
@@ -69,7 +69,7 @@ test("keyboard focus uses shared rounded surfaces across menus, lists and settin
     await page.screenshot({ path: path.join(buildRoot, `focus-settings-${theme}.png`) });
     await page.keyboard.press("Escape");
     await expect(page.locator("#settings-dialog")).toBeHidden();
-    await expectQuietFocus(page, page.locator("#more-menu > summary"));
+    await expectQuietFocus(page, page.locator("#more-menu > button"));
   }
 });
 
@@ -89,8 +89,8 @@ test("writing surfaces stay frameless and forced colors retain keyboard focus", 
   await expectQuietFocus(page, page.locator("#preview"), "none");
   await page.emulateMedia({ forcedColors: "active" });
   await page.keyboard.press("Tab");
-  await page.locator("#more-menu > summary").focus();
-  const forced = await page.locator("#more-menu > summary").evaluate((node) => ({
+  await page.locator("#more-menu > button").focus();
+  const forced = await page.locator("#more-menu > button").evaluate((node) => ({
     style: getComputedStyle(node).outlineStyle,
     width: getComputedStyle(node).outlineWidth,
     offset: getComputedStyle(node).outlineOffset,
@@ -121,5 +121,5 @@ test("modifier-click block selection adds no line below text or code and still o
     getComputedStyle(node).outlineStyle)).toBe("solid");
   await page.emulateMedia({ forcedColors: "none" });
   await page.getByRole("link", { name: "Second", exact: true }).click({ modifiers: [primaryModifier] });
-  await expect(page.locator("#document-title")).toHaveText("Second.md");
+  await expect(page.locator("#document-title")).toHaveText("Second");
 });

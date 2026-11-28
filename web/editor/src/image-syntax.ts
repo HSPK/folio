@@ -67,7 +67,7 @@ interface ImageReplacement extends ImageHtmlSpan {
   toB: number;
 }
 
-export function imageDimension(value: unknown) {
+function imageDimension(value: unknown) {
   if (value == null || value === "" || value === "auto") return null;
   const match = String(value)
     .trim()
@@ -191,7 +191,7 @@ export function parseImageHtml(source: string): ParsedImage | null {
   }
 }
 
-export function imageHtmlSpans(source: string) {
+function imageHtmlSpans(source: string) {
   const result: ImageHtmlSpan[] = [];
   const lower = source.replace(/[A-Z]/g, (character) => character.toLowerCase());
   let cursor = 0;

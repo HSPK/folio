@@ -2,11 +2,11 @@ import { projectModel } from "../../state/projects";
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
 import { decodedResource } from "../../api/contracts";
-import { isResourceId, normalizeNotePath } from "@folio/model";
+import { isResourceId, normalizeNotePath, rememberPageCode } from "@folio/model";
 import { notePathFromTitle } from "@folio/workspace-model";
 import { shell } from "../../state/shell";
 import type { DocumentPermissions, ResourceEntry, ResourceKind } from "../../types/domain";
-import { requireValue } from "../../types/elements";
+import { element, requireValue } from "../../types/elements";
 import { isRecord } from "../../types/guards";
 import { api } from "../core/api";
 import { appState } from "../core/bootstrap";
@@ -63,6 +63,7 @@ export function rememberResource(
 ) {
   if (!isRecord(value) || !isResourceId(value.id) || typeof value.path !== "string") return;
   const resourceKind = value.kind === "file" ? "document" : (value.kind ?? kind);
+  if (!publicState.publicView && resourceKind === "document") rememberPageCode("n", value.id, value.code);
   if (resourceKind !== "document" && resourceKind !== "directory" && resourceKind !== "asset") {
     throw new ApiError("Unknown resource kind");
   }
@@ -110,12 +111,21 @@ export function rememberResources(payload: unknown, project: string): void {
       ...(Array.isArray(payload.workspace.recent) ? payload.workspace.recent : []),
     ]) {
       changed =
-        rememberResource(note, isRecord(note) && typeof note.project === "string" ? note.project : project) || changed;
+        rememberResource(
+          note,
+          isRecord(note) && typeof note.project === "string" ? note.project : project,
+          isRecord(note) && typeof note.path === "string" && !/\.(md|markdown)$/i.test(note.path)
+            ? "asset"
+            : "document",
+        ) || changed;
     }
   }
   if (payload?.document && typeof payload.document === "object")
     changed = rememberResource(payload.document, project) || changed;
-  if (changed && resourceState.refreshFrame === null)
+  if (changed) scheduleLinkRefresh();
+}
+function scheduleLinkRefresh(): void {
+  if (resourceState.refreshFrame === null)
     resourceState.refreshFrame = requestAnimationFrame(() => {
       resourceState.refreshFrame = null;
       appState.inlineEditor.refreshLinks?.();
@@ -123,6 +133,7 @@ export function rememberResources(payload: unknown, project: string): void {
     });
 }
 export function requestResourceLink(path: string, kind: ResourceKind): void {
+  if (documentSession.current && !documentSession.resourceId) return;
   const owner = applicationSignal();
   const project = documentSession.current?.project ?? projectModel.active?.id ?? "local";
   const key = resourceState.resourceLocation(project, path);
@@ -136,17 +147,14 @@ export function requestResourceLink(path: string, kind: ResourceKind): void {
   })
     .then((resource) => {
       resourceState.resourceLocations.set(key, resource);
-      if (current === documentSession.id) {
-        appState.inlineEditor.refreshLinks?.();
-        refreshPreviewLinks();
-      }
+      if (current === documentSession.id) scheduleLinkRefresh();
     })
     .catch((cause: unknown) => {
       if (owner.aborted) return;
       const error = errorContext(cause);
       resourceState.unavailableResourceLinks.set(key, error.status);
       if (current === documentSession.id) {
-        appState.inlineEditor.refreshLinks?.();
+        scheduleLinkRefresh();
         if (![403, 404].includes(error.status)) documentNotice(`Link load failed: ${error.message}`, "warning");
       }
     })
@@ -154,7 +162,7 @@ export function requestResourceLink(path: string, kind: ResourceKind): void {
       if (!owner.aborted) resourceState.resolvingResourceLinks.delete(key);
     });
 }
-export function linkedNotePath(value: string) {
+function linkedNotePath(value: string) {
   if (!value?.startsWith("/") || value.startsWith("//")) return null;
   try {
     return decodeURIComponent(new URL(value, window.location.href).pathname.slice(1));
@@ -193,7 +201,7 @@ export async function openLinkedNote(value: string): Promise<void> {
   const parts = requireValue(path).split("/");
   const title = requireValue(parts.pop()).replace(/\.md$/i, "");
   if (!(await openNewNote(parts.join("/")))) return;
-  appState.ui.newTitle.value = title;
+  element("new-note-title").value = title;
   refreshNewNoteHint();
 }
 export async function documentResource(value: string | null, signal?: AbortSignal) {
@@ -213,7 +221,7 @@ export async function documentResource(value: string | null, signal?: AbortSigna
     decode: decodedResource,
     method: "POST",
     signal,
-    body: { path: value, kind: "document", document: documentSession.current?.id ?? null },
+    body: { path: value, kind: "document", document: documentSession.resourceId },
   });
 }
 export function currentResourceId(path: string, kind = "document") {
@@ -222,5 +230,17 @@ export function currentResourceId(path: string, kind = "document") {
     resourceState.resourceLocation(documentSession.current?.project ?? projectModel.active?.id ?? "local", path),
   );
   if (!resource || resource.kind !== kind) throw new ApiError("Resource unavailable");
+  return resource.id;
+}
+export async function entryResourceId(path: string, kind: "file" | "directory" = "file") {
+  const type = kind === "directory" ? "directory" : /\.(md|markdown)$/i.test(path) ? "document" : "asset";
+  if (type !== "asset") return currentResourceId(path, type);
+  const resource = await api("/api/resources/resolve", {
+    decode: decodedResource,
+    method: "POST",
+    body: { path, kind: type },
+    signal: authenticationSession.scope.signal,
+  });
+  rememberResource(resource);
   return resource.id;
 }

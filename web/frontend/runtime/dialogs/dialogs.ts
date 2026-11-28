@@ -1,32 +1,29 @@
 import type { ConfirmationChoice } from "../../types/domain";
-import { htmlChildren, requiredQuery } from "../../types/elements";
+import { element, htmlChildren, requiredQuery } from "../../types/elements";
 import { closeMenus } from "../accounts/authentication";
-import { appState } from "../core/bootstrap";
 import { listen, onApplicationDispose } from "../lifecycle";
 
-class DialogState {
-  dialogParents!: WeakMap<HTMLDialogElement, HTMLDialogElement>;
-  dialogTransitions!: WeakSet<HTMLDialogElement>;
-  registeredDialogs!: WeakSet<HTMLDialogElement>;
-  dialogConfirmations!: WeakMap<
-    HTMLDialogElement,
-    {
-      region: HTMLElement;
-      inert: [HTMLElement, boolean][];
-      focus: Element | null;
-      resolve: (choice: ConfirmationChoice) => void;
-      cleanup: () => void;
-    }
-  >;
-  confirmationDialog!: HTMLDialogElement | null;
-}
-export const dialogState = new DialogState();
+let dialogParents: WeakMap<HTMLDialogElement, HTMLDialogElement>;
+let dialogTransitions: WeakSet<HTMLDialogElement>;
+let registeredDialogs: WeakSet<HTMLDialogElement>;
+let dialogConfirmations: WeakMap<
+  HTMLDialogElement,
+  {
+    region: HTMLElement;
+    inert: [HTMLElement, boolean][];
+    focus: Element | null;
+    resolve: (choice: ConfirmationChoice) => void;
+    cleanup: () => void;
+  }
+>;
+let confirmationDialog: HTMLDialogElement | null;
+
 export function initializeDialogsDialogs(): void {
-  dialogState.dialogParents = new WeakMap();
-  dialogState.dialogTransitions = new WeakSet();
-  dialogState.registeredDialogs = new WeakSet();
-  dialogState.dialogConfirmations = new WeakMap();
-  dialogState.confirmationDialog = appState.element("confirmation-dialog");
+  dialogParents = new WeakMap();
+  dialogTransitions = new WeakSet();
+  registeredDialogs = new WeakSet();
+  dialogConfirmations = new WeakMap();
+  confirmationDialog = element("confirmation-dialog");
   onApplicationDispose(closeAllDialogs);
   for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog")) registerDialog(dialog);
 }
@@ -37,11 +34,11 @@ export function showDialog(
   if (dialog.open) return;
   closeMenus();
   registerDialog(dialog);
-  dialogState.dialogParents.delete(dialog);
+  dialogParents.delete(dialog);
   const current = document.querySelector<HTMLDialogElement>("dialog[open]");
   if (current) {
-    if (restoreParent) dialogState.dialogParents.set(dialog, current);
-    dialogState.dialogTransitions.add(current);
+    if (restoreParent) dialogParents.set(dialog, current);
+    dialogTransitions.add(current);
     current.close();
   }
   dialog.showModal();
@@ -50,17 +47,17 @@ export function showDialog(
 export function closeAllDialogs(): void {
   for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog")) {
     settleDialogConfirmation(dialog, false);
-    dialogState.dialogParents.delete(dialog);
+    dialogParents.delete(dialog);
     if (dialog.open) {
-      dialogState.dialogTransitions.add(dialog);
+      dialogTransitions.add(dialog);
       dialog.close();
     }
   }
 }
 
-export function registerDialog(dialog: HTMLDialogElement): void {
-  if (dialogState.registeredDialogs.has(dialog)) return;
-  dialogState.registeredDialogs.add(dialog);
+function registerDialog(dialog: HTMLDialogElement): void {
+  if (registeredDialogs.has(dialog)) return;
+  registeredDialogs.add(dialog);
   listen(
     dialog,
     "cancel",
@@ -74,12 +71,12 @@ export function registerDialog(dialog: HTMLDialogElement): void {
   );
   listen(dialog, "close", () => {
     settleDialogConfirmation(dialog, false);
-    if (dialogState.dialogTransitions.delete(dialog)) return;
-    const parent = dialogState.dialogParents.get(dialog);
-    dialogState.dialogParents.delete(dialog);
+    if (dialogTransitions.delete(dialog)) return;
+    const parent = dialogParents.get(dialog);
+    dialogParents.delete(dialog);
     if (
       parent?.isConnected &&
-      appState.ui.authScreen.hidden &&
+      element("auth-screen").hidden &&
       !document.querySelector<HTMLDialogElement>("dialog[open]")
     ) {
       parent.showModal();
@@ -89,7 +86,7 @@ export function registerDialog(dialog: HTMLDialogElement): void {
 }
 
 export function hasDialogConfirmation(dialog: HTMLDialogElement | null) {
-  return dialog !== null && dialogState.dialogConfirmations.has(dialog);
+  return dialog !== null && dialogConfirmations.has(dialog);
 }
 
 export function settleDialogConfirmation(
@@ -98,15 +95,15 @@ export function settleDialogConfirmation(
   { restoreFocus = true } = {},
 ): void {
   if (!dialog) return;
-  const pending = dialogState.dialogConfirmations.get(dialog);
+  const pending = dialogConfirmations.get(dialog);
   if (!pending) return;
-  dialogState.dialogConfirmations.delete(dialog);
+  dialogConfirmations.delete(dialog);
   pending.cleanup();
   delete dialog.dataset.confirmation;
   pending.region.hidden = true;
   for (const [node, inert] of pending.inert) node.inert = inert;
   dialog.dispatchEvent(new Event("confirmationchange"));
-  if (dialog === dialogState.confirmationDialog && dialog.open) dialog.close();
+  if (dialog === confirmationDialog && dialog.open) dialog.close();
   else if (
     restoreFocus &&
     pending.focus?.isConnected &&
@@ -134,18 +131,18 @@ export function confirmAction(
 ) {
   if (signal?.aborted) return Promise.resolve(false);
   if (!dialog) {
-    if (!dialogState.confirmationDialog) {
-      dialogState.confirmationDialog = document.createElement("dialog");
-      dialogState.confirmationDialog.id = "confirmation-dialog";
-      dialogState.confirmationDialog.className = "confirmation-dialog";
-      dialogState.confirmationDialog.setAttribute("aria-labelledby", "confirmation-title");
+    if (!confirmationDialog) {
+      confirmationDialog = document.createElement("dialog");
+      confirmationDialog.id = "confirmation-dialog";
+      confirmationDialog.className = "confirmation-dialog";
+      confirmationDialog.setAttribute("aria-labelledby", "confirmation-title");
       const title = document.createElement("h2");
       title.id = "confirmation-title";
       title.textContent = "Confirm action";
-      dialogState.confirmationDialog.append(title);
-      document.body.append(dialogState.confirmationDialog);
+      confirmationDialog.append(title);
+      document.body.append(confirmationDialog);
     }
-    dialog = dialogState.confirmationDialog;
+    dialog = confirmationDialog;
     showDialog(dialog);
   }
   if (hasDialogConfirmation(dialog)) return Promise.resolve(false);
@@ -199,7 +196,7 @@ export function confirmAction(
       .map((node): [HTMLElement, boolean] => [node, node.inert]);
     const abort = () => settleDialogConfirmation(dialog, false, { restoreFocus: false });
     const cleanup = () => signal?.removeEventListener("abort", abort);
-    dialogState.dialogConfirmations.set(dialog, { region, inert, resolve, cleanup, focus: document.activeElement });
+    dialogConfirmations.set(dialog, { region, inert, resolve, cleanup, focus: document.activeElement });
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) {
       abort();

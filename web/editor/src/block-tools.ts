@@ -3,12 +3,12 @@ import type { Node as ProseNode } from "@milkdown/prose/model";
 import type { EditorView } from "@milkdown/prose/view";
 import { CellSelection } from "@milkdown/prose/tables";
 import { $prose } from "@milkdown/utils";
-import { createNodeToolbar, setToolVisibility, toolButton } from "./node-toolbar.ts";
+import { createNodeToolbar, setToolVisibility } from "./node-toolbar.ts";
 import { blockActionTransaction } from "./line-keymap.ts";
 import { focusEditorView, syncViewSelection } from "./cursor-coordinates.ts";
-import { closestElement, nodeElement } from "./dom.ts";
+import { closestElement, nodeElement, createButton } from "./dom.ts";
 import { errorMessage } from "./errors.ts";
-import type { CursorRect, InlineEditorOptions, NodeActivity } from "./types/editor.ts";
+import type { InlineEditorOptions, NodeActivity } from "./types/editor.ts";
 import type { createTableTools } from "./tables.ts";
 import type { Lifetime } from "../../shared/lifetime.ts";
 const names: Record<string, string> = {
@@ -25,7 +25,6 @@ const names: Record<string, string> = {
   math_block: "Math block",
 };
 interface BlockHandle extends NodeActivity {
-  label_fn: () => string;
   anchor_fn: () => HTMLElement;
   selected_fn: () => boolean;
   focus_fn: () => void;
@@ -36,7 +35,6 @@ interface CurrentBlock {
   position: number;
   view: EditorView;
   handle: BlockHandle;
-  corridor?: CursorRect;
 }
 function blockAtDOM(view: EditorView, target: Node | null) {
   const element = nodeElement(target);
@@ -87,9 +85,6 @@ export function createBlockTools({
   toolbar.id = "folio-block-tools";
   toolbar.className = "folio-block-tools";
   toolbar.setAttribute("aria-label", "Block actions");
-  const heading = document.createElement("div");
-  heading.className = "folio-block-menu-heading";
-  heading.setAttribute("role", "presentation");
   const actions = document.createElement("div");
   actions.className = "folio-block-actions";
   const views = new WeakMap<
@@ -100,7 +95,6 @@ export function createBlockTools({
   >();
   let current: CurrentBlock | null = null;
   let unregister: (() => void) | null = null;
-  let timer = 0;
   let frame = 0;
   let restoreSelection: Selection | null = null;
   let restoreDocument: ProseNode | null = null;
@@ -110,8 +104,8 @@ export function createBlockTools({
   controls.setAttribute("role", "group");
   controls.setAttribute("aria-label", "Block controls");
   setToolVisibility(controls, false);
-  const add = toolButton({
-    label: "Add block below",
+  const add = createButton({
+    label: "Add below",
     icon: "plus",
     onClick() {
       try {
@@ -128,17 +122,17 @@ export function createBlockTools({
     },
   });
   add.className = "folio-block-add";
-  const grip = toolButton({ label: "Block actions", icon: "grip", onClick: open });
+  const grip = createButton({ label: "Block actions", icon: "grip", onClick: open });
   grip.className = "folio-block-grip";
   grip.setAttribute("aria-haspopup", "menu");
   grip.setAttribute("aria-expanded", "false");
   controls.append(add, grip);
   lifetime.listen(controls, "pointerdown", (event) => event.preventDefault());
   for (const [action, label, icon] of [
-    ["duplicate", "Duplicate block", "copy"],
-    ["delete", "Delete block", "trash"],
+    ["duplicate", "Duplicate", "copy"],
+    ["delete", "Delete", "trash"],
   ]) {
-    const button = toolButton({
+    const button = createButton({
       label,
       text: label,
       icon,
@@ -161,7 +155,7 @@ export function createBlockTools({
     button.dataset.blockAction = action;
     actions.append(button);
   }
-  toolbar.append(heading, actions);
+  toolbar.append(actions);
   const menu = createNodeToolbar<BlockHandle>({
     lifetime,
     root,
@@ -170,13 +164,11 @@ export function createBlockTools({
     placement: "below-start",
     openOnHover: false,
     onShow(target) {
-      heading.textContent = target.label_fn();
       grip.setAttribute("aria-expanded", "true");
       for (const button of actions.querySelectorAll("button")) button.disabled = !target.editable_fn();
     },
     onHide() {
       grip.setAttribute("aria-expanded", "false");
-      hideLater();
     },
   });
   const expanded = () => grip.getAttribute("aria-expanded") === "true";
@@ -187,16 +179,8 @@ export function createBlockTools({
     unregister = null;
     current = null;
     setToolVisibility(controls, false);
-    clearTimeout(timer);
     cancelAnimationFrame(frame);
-    timer = frame = 0;
-  }
-  function hideLater() {
-    clearTimeout(timer);
-    timer = window.setTimeout(() => {
-      timer = 0;
-      if (!expanded() && !controls.matches(":hover, :focus-within") && !current?.dom.matches(":hover")) close();
-    }, 160);
+    frame = 0;
   }
   function position() {
     frame = 0;
@@ -228,7 +212,6 @@ export function createBlockTools({
     controls.style.width = `${width}px`;
     controls.style.left = `${x}px`;
     controls.style.top = `${y}px`;
-    current.corridor = { left: x - 2, right: Math.max(bounds.left, x + width), top: y - 4, bottom: y + 28 };
     menu.position();
     if (current.node.type.name === "table") tableTools.position();
   }
@@ -239,7 +222,6 @@ export function createBlockTools({
     if (!active_fn() || expanded()) return;
     const block = blockAtDOM(view, target);
     if (!block) return;
-    clearTimeout(timer);
     const changed = current?.view !== view || current.position !== block.position || current.node !== block.node;
     if (changed) {
       unregister?.();
@@ -254,7 +236,6 @@ export function createBlockTools({
           view.state.doc.nodeAt(at) === node &&
           view.nodeDOM(at) === dom,
         editable_fn,
-        label_fn: () => label,
         anchor_fn: () => grip,
         selected_fn: () =>
           view.state.doc === restoreDocument && restoreSelection !== null && view.state.selection.eq(restoreSelection),
@@ -263,7 +244,7 @@ export function createBlockTools({
       current = { ...block, view, handle };
       unregister = menu.register(grip, handle);
       grip.setAttribute("aria-label", `${label} actions`);
-      grip.title = `${label} actions`;
+      grip.title = "Actions";
       grip.setAttribute("aria-controls", node.type.name === "table" ? "folio-table-tools" : toolbar.id);
       grip.dataset.blockType = node.type.name;
     }
@@ -281,7 +262,6 @@ export function createBlockTools({
     try {
       if (!current?.handle.active_fn()) throw new Error("Block is gone");
       const { view, node, position: at } = current;
-      clearTimeout(timer);
       if (expanded()) {
         if (node.type.name === "table") tableTools.dismiss();
         else menu.dismiss();
@@ -289,7 +269,7 @@ export function createBlockTools({
       }
       if (!(view.state.selection instanceof CellSelection)) syncViewSelection(view);
       if (node.type.name === "table") {
-        tableTools.openBlock(view, at, grip, hideLater);
+        tableTools.openBlock(view, at, grip);
         return;
       }
       restoreSelection = view.state.selection;
@@ -308,30 +288,13 @@ export function createBlockTools({
     const direction = event.key === "ArrowDown" ? 1 : -1;
     options[(index + direction + options.length) % options.length].focus();
   });
-  lifetime.listen(controls, "pointerenter", () => clearTimeout(timer));
-  lifetime.listen(controls, "pointerleave", hideLater);
-  lifetime.listen(controls, "focusin", () => clearTimeout(timer));
-  lifetime.listen(controls, "focusout", hideLater);
-  const hover = (event: PointerEvent) => {
-    if (current && !current.handle.active_fn()) close();
-    const corridor = current?.corridor;
-    if (
-      corridor &&
-      event.clientX >= corridor.left &&
-      event.clientX <= corridor.right &&
-      event.clientY >= corridor.top &&
-      event.clientY <= corridor.bottom
-    ) {
-      clearTimeout(timer);
-      return;
-    }
+  lifetime.listen(document, "pointerdown", (event) => {
+    if (event.button !== 0 || closestElement(event.target, ".folio-block-controls, .folio-node-toolbar")) return;
+    close();
     const dom = closestElement(event.target, ".ProseMirror");
     const owner = dom && views.get(dom);
     if (owner && event.target instanceof Node) show(owner.view, event.target, owner.active_fn, owner.editable_fn);
-  };
-  lifetime.listen(root, "pointerover", hover);
-  lifetime.listen(root, "pointermove", hover);
-  lifetime.listen(root, "pointerout", hideLater);
+  });
   lifetime.listen(root, "dragstart", close);
   lifetime.listen(root, "scroll", schedule, true);
   lifetime.listen(root, "load", schedule, true);

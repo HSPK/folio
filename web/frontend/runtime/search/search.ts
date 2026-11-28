@@ -3,11 +3,11 @@ import { projectModel } from "../../state/projects";
 import { authenticationSession } from "../../state/authentication";
 import { documentSession } from "../../state/document";
 import { decodedSearch } from "../../api/contracts";
-import { createIcon } from "@folio/editor-runtime";
+import { createIcon, createButton } from "@folio/editor-runtime";
 import { searchUi, updateSearchUi } from "../../state/search";
 import { shell } from "../../state/shell";
 import type { Project, SearchResult } from "../../types/domain";
-import { clearTimer } from "../../types/elements";
+import { element, clearTimer } from "../../types/elements";
 import { errorContext } from "../../types/errors";
 import { closeMenus } from "../accounts/authentication";
 import { api } from "../core/api";
@@ -19,56 +19,54 @@ import { setView } from "../navigation/files";
 import { listen, onApplicationDispose } from "../lifecycle";
 import { projectDialogState, projectManagerOpen } from "../projects/dialog";
 import { switchProject } from "../projects/projects";
-class SearchState {
-  searchDialog!: HTMLDialogElement;
-  searchTimer!: number | null;
-  searchController!: AbortController | null;
-  searchGeneration!: number;
-  searchTags!: string[];
-  searchResultKey!: string | null;
-}
-export const searchState = new SearchState();
+let searchDialog: HTMLDialogElement;
+let searchTimer: number | null;
+let searchController: AbortController | null;
+let searchGeneration: number;
+let searchTags: string[];
+let searchResultKey: string | null;
+
 export function initializeSearchSearch(): void {
-  searchState.searchDialog = appState.element("search-dialog");
-  searchState.searchTimer = null;
-  searchState.searchController = null;
-  searchState.searchGeneration = 0;
+  searchDialog = element("search-dialog");
+  searchTimer = null;
+  searchController = null;
+  searchGeneration = 0;
   onApplicationDispose(() => {
-    clearTimer(searchState.searchTimer);
-    searchState.searchController?.abort();
-    searchState.searchGeneration++;
+    clearTimer(searchTimer);
+    searchController?.abort();
+    searchGeneration++;
     updateSearchUi({ opened: false, results: [], pending: false });
   });
-  searchState.searchTags = [];
+  searchTags = [];
   updateSearchUi({ results: [] });
   updateSearchUi({ selection: 0 });
   updateSearchUi({ pending: false });
-  searchState.searchResultKey = null;
-  listen(appState.element("workspace-search-open"), "click", () => void openWorkspaceSearch());
-  listen(appState.element("sidebar-search-open"), "click", () => void openWorkspaceSearch());
-  listen(appState.element("search-close"), "click", () => searchState.searchDialog.close());
-  listen(searchState.searchDialog, "close", () => {
-    clearTimer(searchState.searchTimer);
-    searchState.searchController?.abort();
-    searchState.searchGeneration += 1;
+  searchResultKey = null;
+  listen(element("workspace-search-open"), "click", () => void openWorkspaceSearch());
+  listen(element("sidebar-search-open"), "click", () => void openWorkspaceSearch());
+  listen(element("search-close"), "click", () => searchDialog.close());
+  listen(searchDialog, "close", () => {
+    clearTimer(searchTimer);
+    searchController?.abort();
+    searchGeneration += 1;
     updateSearchUi({ opened: false });
   });
-  listen(appState.element("search-query"), "input", () => {
-    clearTimer(searchState.searchTimer);
-    searchState.searchController?.abort();
-    searchState.searchGeneration += 1;
+  listen(element("search-query"), "input", () => {
+    clearTimer(searchTimer);
+    searchController?.abort();
+    searchGeneration += 1;
     setSearchPending(true);
-    appState.element("search-empty").hidden = true;
-    notice(appState.element("search-message"), "Searching…");
-    searchState.searchTimer = window.setTimeout(() => void runWorkspaceSearch(), 200);
+    element("search-empty").hidden = true;
+    notice(element("search-message"), "Searching…");
+    searchTimer = window.setTimeout(() => void runWorkspaceSearch(), 200);
   });
   for (const id of ["search-project", "search-field"] as const)
-    listen(appState.element(id), "change", () => void runWorkspaceSearch());
-  listen(appState.element("search-form"), "submit", (event) => {
+    listen(element(id), "change", () => void runWorkspaceSearch());
+  listen(element("search-form"), "submit", (event) => {
     event.preventDefault();
     void openSearchResult(searchUi.selection);
   });
-  listen(appState.element("search-query"), "keydown", (event) => {
+  listen(element("search-query"), "keydown", (event) => {
     const count = searchUi.results.length;
     if (searchUi.pending || !count || !["ArrowDown", "ArrowUp"].includes(event.key)) return;
     event.preventDefault();
@@ -85,22 +83,22 @@ export function initializeSearchSearch(): void {
     ) {
       event.preventDefault();
       if (projectManagerOpen()) {
-        if (projectDialogState.projectView === "browse") appState.element("projects-filter").focus();
+        if (projectDialogState.projectView === "browse") element("projects-filter").focus();
         return;
       }
       if (!document.querySelector<HTMLDialogElement>("dialog[open]")) void openWorkspaceSearch();
     }
   });
 }
-export function searchKey() {
+function searchKey() {
   return JSON.stringify([
-    appState.element("search-query").value,
-    appState.element("search-project").value,
-    appState.element("search-field").value,
-    searchState.searchTags,
+    element("search-query").value,
+    element("search-project").value,
+    element("search-field").value,
+    searchTags,
   ]);
 }
-export function setSearchPending(value: boolean): void {
+function setSearchPending(value: boolean): void {
   updateSearchUi({ pending: value });
 }
 export async function openWorkspaceSearch({
@@ -108,94 +106,90 @@ export async function openWorkspaceSearch({
 }: {
   tags?: string[];
 } = {}): Promise<void> {
+  if (authenticationSession.mode === "public") return;
   if (authenticationSession.mode !== "users") {
     documentNotice("Sign in to search", "warning");
     return;
   }
   closeMenus();
-  searchState.searchTags = [...tags];
+  searchTags = [...tags];
   updateSearchUi({ selection: 0 });
-  searchState.searchResultKey = null;
+  searchResultKey = null;
   renderSearchResults([], new Map());
-  appState.element("search-empty").hidden = true;
-  appState.element("search-query").value = "";
-  appState
-    .element("search-project")
-    .replaceChildren(
-      new Option("All projects", ""),
-      ...projectModel.items.map((project) => new Option(project.name, project.id)),
-    );
-  appState.element("search-project").value = projectModel.active?.id ?? "";
-  appState.element("search-field").value = "all";
-  appState.element("search-filters").open = !appState.compactLayout.matches || tags.length > 0;
+  element("search-empty").hidden = true;
+  element("search-query").value = "";
+  element("search-project").replaceChildren(
+    new Option("All projects", ""),
+    ...projectModel.items.map((project) => new Option(project.name, project.id)),
+  );
+  element("search-project").value = projectModel.active?.id ?? "";
+  element("search-field").value = "all";
+  element("search-filters").open = !appState.compactLayout.matches || tags.length > 0;
   renderSearchTags([]);
-  showDialog(searchState.searchDialog);
+  showDialog(searchDialog);
   updateSearchUi({ opened: true });
-  appState.element("search-query").focus();
+  element("search-query").focus();
   await runWorkspaceSearch(0, true);
 }
-export function renderSearchTags(
+function renderSearchTags(
   facets: {
     tag: string;
     count: number;
   }[],
 ): void {
-  appState.element("search-tag-filters").hidden = facets.length === 0;
-  const project = appState.element("search-project").selectedOptions[0]?.textContent || "All projects";
-  appState.element("search-filter-label").textContent =
-    `Filters · ${project}${searchState.searchTags.length ? ` · ${searchState.searchTags.length} tags` : ""}`;
-  appState.element("search-selected-tags").replaceChildren(
-    ...searchState.searchTags.map((tag) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.append(document.createTextNode(tag), createIcon("x"));
-      button.setAttribute("aria-label", `Remove tag filter ${tag}`);
+  element("search-tag-filters").hidden = facets.length === 0;
+  const project = element("search-project").selectedOptions[0]?.textContent || "All projects";
+  element("search-filter-label").textContent =
+    `Filters · ${project}${searchTags.length ? ` · ${searchTags.length} tags` : ""}`;
+  element("search-selected-tags").replaceChildren(
+    ...searchTags.map((tag) => {
+      const button = createButton({ label: `Remove tag filter ${tag}`, text: tag });
+      button.append(createIcon("x"));
       button.addEventListener("click", () => {
-        searchState.searchTags = searchState.searchTags.filter((value) => value !== tag);
+        searchTags = searchTags.filter((value) => value !== tag);
         void runWorkspaceSearch();
       });
       return button;
     }),
   );
-  appState.element("search-tags").replaceChildren(
+  element("search-tags").replaceChildren(
     ...facets.map(({ tag, count }) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = `${tag} · ${count}`;
-      const selected = searchState.searchTags.some((value) => value.toLowerCase() === tag.toLowerCase());
+      const button = createButton({ label: `${tag} · ${count}` });
+
+      const selected = searchTags.some((value) => value.toLowerCase() === tag.toLowerCase());
       button.setAttribute("aria-pressed", String(selected));
       button.addEventListener("click", () => {
-        const active = searchState.searchTags.some((value) => value.toLowerCase() === tag.toLowerCase());
-        searchState.searchTags = active
-          ? searchState.searchTags.filter((value) => value.toLowerCase() !== tag.toLowerCase())
-          : [...searchState.searchTags, tag];
+        const active = searchTags.some((value) => value.toLowerCase() === tag.toLowerCase());
+        searchTags = active
+          ? searchTags.filter((value) => value.toLowerCase() !== tag.toLowerCase())
+          : [...searchTags, tag];
         void runWorkspaceSearch();
       });
       return button;
     }),
   );
 }
-export function renderSearchResults(results: SearchResult[], labels: Map<string, string>): void {
+function renderSearchResults(results: SearchResult[], labels: Map<string, string>): void {
   updateSearchUi({
     results,
     labels,
-    query: appState.element("search-query").value,
+    query: element("search-query").value,
     selection: Math.min(searchUi.selection, Math.max(0, results.length - 1)),
   });
-  appState.element("search-empty").hidden = results.length > 0;
+  element("search-empty").hidden = results.length > 0;
 }
-export async function runWorkspaceSearch(cursor = 0, refresh = false): Promise<void> {
-  clearTimer(searchState.searchTimer);
-  searchState.searchController?.abort();
-  if (!searchState.searchDialog.open) return;
+async function runWorkspaceSearch(cursor = 0, refresh = false): Promise<void> {
+  clearTimer(searchTimer);
+  searchController?.abort();
+  if (!searchDialog.open) return;
   const controller = new AbortController();
-  searchState.searchController = controller;
-  const generation = ++searchState.searchGeneration;
+  searchController = controller;
+  const generation = ++searchGeneration;
   const key = searchKey();
-  const query = appState.element("search-query").value;
+  const query = element("search-query").value;
   setSearchPending(true);
-  appState.element("search-empty").hidden = true;
-  notice(appState.element("search-message"), "Searching…");
+  element("search-empty").hidden = true;
+  notice(element("search-message"), "Searching…");
   try {
     const result = await api("/api/search", {
       decode: decodedSearch,
@@ -203,43 +197,42 @@ export async function runWorkspaceSearch(cursor = 0, refresh = false): Promise<v
       signal: controller.signal,
       body: {
         query,
-        project: appState.element("search-project").value || null,
-        field: appState.element("search-field").value,
-        tags: searchState.searchTags,
+        project: element("search-project").value || null,
+        field: element("search-field").value,
+        tags: searchTags,
         cursor,
         refresh,
       },
     });
-    if (generation !== searchState.searchGeneration || !searchState.searchDialog.open || key !== searchKey()) return;
+    if (generation !== searchGeneration || !searchDialog.open || key !== searchKey()) return;
     if (!Array.isArray(result.results) || !Array.isArray(result.tags) || !Array.isArray(result.projects)) {
       throw new ApiError("Incomplete search response");
     }
     renderSearchTags(result.tags);
-    if (searchState.searchResultKey !== key) updateSearchUi({ selection: 0 });
+    if (searchResultKey !== key) updateSearchUi({ selection: 0 });
     renderSearchResults(
       result.results,
       new Map(result.projects.map((project: Pick<Project, "id" | "name">) => [project.id, project.name])),
     );
-    searchState.searchResultKey = key;
+    searchResultKey = key;
     setSearchPending(false);
     const message =
       result.warnings?.join("\n") || (result.indexing ? "Indexing…" : result.truncated ? "Results limited" : "");
-    notice(appState.element("search-message"), message, result.warnings?.length ? "warning" : "");
-    if (result.indexing) searchState.searchTimer = window.setTimeout(() => void runWorkspaceSearch(result.cursor), 350);
+    notice(element("search-message"), message, result.warnings?.length ? "warning" : "");
+    if (result.indexing) searchTimer = window.setTimeout(() => void runWorkspaceSearch(result.cursor), 350);
   } catch (errorCause) {
     const error = errorContext(errorCause);
-    if (!aborted(error) && generation === searchState.searchGeneration)
-      notice(appState.element("search-message"), error.message, "error");
+    if (!aborted(error) && generation === searchGeneration) notice(element("search-message"), error.message, "error");
   }
 }
 export async function openSearchResult(index: number): Promise<void> {
-  if (searchUi.pending || searchState.searchResultKey !== searchKey()) return;
+  if (searchUi.pending || searchResultKey !== searchKey()) return;
   const result = searchUi.results[index];
   if (!result) return;
-  searchState.searchDialog.close();
+  searchDialog.close();
   if (projectModel.active?.id !== result.project) {
     await loadProjects();
-    const url = new URL(window.location.href);
+    const url = new URL(appState.committedUrl);
     url.searchParams.set("project", result.project);
     url.searchParams.set("document", result.id);
     url.hash = "";
@@ -250,14 +243,14 @@ export async function openSearchResult(index: number): Promise<void> {
   if (documentSession.current?.version !== result.version) return;
   if (result.matchedField === "metadata" && shell.view === "rich") {
     setView("editor");
-    appState.ui.editor.revealSelection(result.offset, result.offset, { focus: true });
+    appState.editor.revealSelection(result.offset, result.offset, { focus: true });
     return;
   }
   if (shell.view === "rich") {
-    if (appState.element("rich-editor").getAttribute("aria-busy") === "true") appState.pendingHeading = result.offset;
+    if (element("rich-editor").getAttribute("aria-busy") === "true") appState.pendingHeading = result.offset;
     else appState.inlineEditor.jumpTo(result.offset);
   } else if (shell.view !== "preview") {
-    appState.ui.editor.focus();
-    appState.ui.editor.setSelectionRange(result.offset, result.offset);
+    appState.editor.focus();
+    appState.editor.setSelectionRange(result.offset, result.offset);
   }
 }
