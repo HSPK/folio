@@ -9,7 +9,7 @@ async function capture(page, name, browserName) {
 }
 
 test("link selection stays native and editing requires an explicit action", async ({ page, browserName }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const source = "Visit https://example.com/guide for details.\n\nContinue writing here.\n";
   await openFixture(page, "Link-selection.md", source);
   const link = page.locator(".ProseMirror a");
@@ -168,6 +168,7 @@ test("link selection stays native and editing requires an explicit action", asyn
         }));
         state.cssTrials = [];
         for (const sheet of sheets) {
+          if (process.env.FOLIO_NATIVE_CSS_DIAGNOSTICS && !sheet.href?.includes("/editor.bundle.css")) continue;
           await control.evaluate(index => { document.styleSheets[index].disabled = true; }, sheet.index);
           const text = await select();
           state.cssTrials.push({ ...sheet, text });
@@ -218,35 +219,50 @@ test("link selection stays native and editing requires an explicit action", asyn
                 state.propertyTrials.push({ property, text: await select() });
               }
               await control.evaluate(() => window.nativeCssRules.forEach(rule => { rule.style.cssText = rule.text; }));
-              state.typography = await clonedLink.evaluate(node => ({
-                font: getComputedStyle(node).font, rect: node.getBoundingClientRect().toJSON(),
-                paragraph: node.closest("p").getBoundingClientRect().toJSON(),
-              }));
-              state.pointerTrials = [];
-              for (const offset of [-4, -2, -1, 0, 1, 2, 4]) {
-                for (const rounded of [false, true])
-                  state.pointerTrials.push({ offset, rounded, text: await select(offset, rounded) });
-              }
-              const matched = await control.evaluate(() => {
-                const elements = [];
-                for (let node = document.querySelector(".ProseMirror a"); node; node = node.parentElement) elements.push(node);
-                return window.nativeCssRules.flatMap((rule, index) => {
-                  try { return elements.some(node => node.matches(rule.style.parentRule.selectorText)) ? [{ index, rule: rule.rule }] : []; }
-                  catch { return []; }
-                });
+              state.typography = await clonedLink.evaluate(node => {
+                const style = getComputedStyle(node);
+                return { family: style.fontFamily, size: style.fontSize, lineHeight: style.lineHeight };
               });
-              state.matchedRuleTrials = [];
-              for (const rule of matched)
-                state.matchedRuleTrials.push({ ...rule, selectable: await trial([rule.index]) });
-              await control.evaluate(() => window.nativeCssRules.forEach(rule => { rule.style.cssText = rule.text; }));
-              await control.locator(".folio-live-caret, .folio-caret-metrics").evaluateAll(nodes => nodes.forEach(node => node.remove()));
-              state.withoutCaretNodes = await select();
               await control.evaluate(() => {
                 const editor = document.querySelector(".ProseMirror").outerHTML;
                 for (const style of document.body.querySelectorAll("style")) document.head.append(style);
                 document.body.innerHTML = `<div class="folio-prose"><div class="folio-live-page">${editor}</div></div>`;
               });
               state.minimalEditor = await select();
+              let kept = Array.from({ length: count }, (_, index) => index), chunks = 2;
+              while (!state.minimalEditor && kept.length >= 2) {
+                const width = Math.ceil(kept.length / chunks);
+                let reduced = false;
+                for (let start = 0; start < kept.length; start += width) {
+                  const candidate = kept.filter((_, index) => index < start || index >= start + width);
+                  const enabled = new Set(candidate);
+                  if (await trial(Array.from({ length: count }, (_, index) => index).filter(index => !enabled.has(index)))) continue;
+                  kept = candidate; chunks = Math.max(2, chunks - 1); reduced = true; break;
+                }
+                if (!reduced) {
+                  if (chunks >= kept.length) break;
+                  chunks = Math.min(kept.length, chunks * 2);
+                }
+              }
+              state.minimumFailingRules = await control.evaluate(indices => indices.map(index => window.nativeCssRules[index].rule), kept);
+              await control.evaluate(() => { for (const sheet of document.styleSheets) sheet.disabled = true; });
+              state.standalone = [];
+              for (const family of ["sans-serif", state.typography.family]) {
+                for (const tag of ["p", "div"]) {
+                  for (const lineHeight of ["normal", "1.75"]) {
+                    await control.evaluate(({ family, tag, lineHeight }) => {
+                      const editor = document.createElement(tag);
+                      editor.className = "ProseMirror";
+                      editor.contentEditable = "true";
+                      editor.style.fontFamily = family; editor.style.fontSize = "17px"; editor.style.lineHeight = lineHeight;
+                      const content = 'Visit <a href="https://example.com/guide" draggable="false">https://example.com/guide</a> for details.';
+                      editor.innerHTML = tag === "p" ? content : `<p>${content}</p>`;
+                      document.body.replaceChildren(editor);
+                    }, { family, tag, lineHeight });
+                    state.standalone.push({ family, tag, lineHeight, text: await select() });
+                  }
+                }
+              }
             }
           }
           break;
