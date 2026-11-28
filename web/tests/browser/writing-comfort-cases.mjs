@@ -12,6 +12,26 @@ test("link selection stays native and editing requires an explicit action", asyn
   const source = "Visit https://example.com/guide for details.\n\nContinue writing here.\n";
   await openFixture(page, "Link-selection.md", source);
   const link = page.locator(".ProseMirror a");
+  await link.evaluate(node => {
+    window.linkSelectionEvents = [{
+      type: "initial", editable: node.isContentEditable, draggable: node.draggable,
+      userSelect: getComputedStyle(node).userSelect, userModify: getComputedStyle(node).webkitUserModify,
+    }];
+    for (const type of ["pointerdown", "mousedown", "mousemove", "mouseup", "selectstart", "dragstart", "selectionchange"]) {
+      document.addEventListener(type, event => {
+        const selection = document.getSelection();
+        const entry = {
+          type, time: performance.now(), target: event.target.tagName, x: event.clientX, y: event.clientY,
+          button: event.button, buttons: event.buttons, focused: document.hasFocus(),
+          active: document.activeElement?.className, text: selection?.toString(),
+          anchor: selection?.anchorNode?.textContent, anchorOffset: selection?.anchorOffset,
+          focusOffset: selection?.focusOffset, prevented: event.defaultPrevented,
+        };
+        window.linkSelectionEvents.push(entry);
+        queueMicrotask(() => { entry.prevented = event.defaultPrevented; });
+      }, true);
+    }
+  });
   await link.click();
   await expect(page.locator(".folio-link-dialog")).toBeHidden();
   await expect(page.locator(".ProseMirror")).toBeFocused();
@@ -20,10 +40,18 @@ test("link selection stays native and editing requires an explicit action", asyn
   const box = await link.boundingBox();
   await page.mouse.move(box.x + 12, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 15, box.y + box.height / 2, { steps: 12 });
-  await expect.poll(() => page.evaluate(() => document.getSelection().toString().length)).toBeGreaterThan(5);
-  const selected = await page.evaluate(() => document.getSelection().toString());
-  await page.mouse.up();
+  let selected;
+  try {
+    await page.mouse.move(box.x + box.width - 15, box.y + box.height / 2, { steps: 12 });
+    await expect.poll(() => page.evaluate(() => document.getSelection().toString().length)).toBeGreaterThan(5);
+    selected = await page.evaluate(() => document.getSelection().toString());
+  } finally {
+    await page.mouse.up();
+    await test.info().attach("native-link-events", {
+      body: JSON.stringify(await page.evaluate(() => window.linkSelectionEvents), null, 2),
+      contentType: "application/json",
+    });
+  }
   await expect(page.locator(".folio-link-dialog")).toBeHidden();
   await expect(page.getByRole("toolbar", { name: "Link actions" })).toBeHidden();
   expect(await page.evaluate(() => document.getSelection().toString())).toBe(selected);
