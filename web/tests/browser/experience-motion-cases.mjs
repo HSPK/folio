@@ -231,6 +231,12 @@ test("saving settings responds immediately without interrupting newer edits", as
     await expect(page.locator("#settings-dialog")).toBeVisible();
     await expect(page.locator("#settings-theme")).toHaveValue("light");
     await expect(page.locator("#settings-form #settings-error")).toHaveText("Saved; newer edits unsaved");
+    const [appearance] = await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === "/api/appearance" && response.ok()),
+      page.evaluate(() => window.dispatchEvent(new Event("focus"))),
+    ]);
+    await appearance.finished();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     await page.locator("#settings-save").click();
     await expect(page.locator("#settings-dialog")).toBeHidden();
