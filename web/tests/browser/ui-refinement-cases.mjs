@@ -164,6 +164,8 @@ test("visual refinement walkthrough covers workspace controls at desktop and nar
     await page.keyboard.press("Control+p");
     await page.locator("#search-query").fill("design");
     await expect(page.locator("#search-results")).toContainText("Design notes");
+    if (!await page.locator("#search-filters").evaluate(node => node.open))
+      await page.locator("#search-filters > summary").click();
     await capture("desktop-search");
     await expect(page.locator(".search-snippet mark").first()).toBeVisible();
     await expect(page.locator(".search-snippet").first()).not.toContainText("tags:");
