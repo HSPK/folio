@@ -227,6 +227,26 @@ test("link selection stays native and editing requires an explicit action", asyn
                 for (const rounded of [false, true])
                   state.pointerTrials.push({ offset, rounded, text: await select(offset, rounded) });
               }
+              const matched = await control.evaluate(() => {
+                const elements = [];
+                for (let node = document.querySelector(".ProseMirror a"); node; node = node.parentElement) elements.push(node);
+                return window.nativeCssRules.flatMap((rule, index) => {
+                  try { return elements.some(node => node.matches(rule.style.parentRule.selectorText)) ? [{ index, rule: rule.rule }] : []; }
+                  catch { return []; }
+                });
+              });
+              state.matchedRuleTrials = [];
+              for (const rule of matched)
+                state.matchedRuleTrials.push({ ...rule, selectable: await trial([rule.index]) });
+              await control.evaluate(() => window.nativeCssRules.forEach(rule => { rule.style.cssText = rule.text; }));
+              await control.locator(".folio-live-caret, .folio-caret-metrics").evaluateAll(nodes => nodes.forEach(node => node.remove()));
+              state.withoutCaretNodes = await select();
+              await control.evaluate(() => {
+                const editor = document.querySelector(".ProseMirror").outerHTML;
+                for (const style of document.body.querySelectorAll("style")) document.head.append(style);
+                document.body.innerHTML = `<div class="folio-prose"><div class="folio-live-page">${editor}</div></div>`;
+              });
+              state.minimalEditor = await select();
             }
           }
           break;
